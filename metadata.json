@@ -1,0 +1,6 @@
+{
+  "name": "ChatCore",
+  "description": "A high-performance real-time WhatsApp Web clone featuring direct messaging, group contacts, simulated and native voice recordings, custom AI agent configurations, and the official ExpoCore WhatsApp Smart Agent featuring real-time dynamic exhibition database queries and RBAC protection.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
