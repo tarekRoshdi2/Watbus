@@ -436,9 +436,28 @@ function getAllUsers() {
 }
 function saveUser(user) {
   const db = readDb();
+  if (!user.subscriptionPlan) user.subscriptionPlan = "starter";
+  if (user.aiMessagesUsed === void 0) user.aiMessagesUsed = 0;
+  if (user.aiMessagesLimit === void 0) {
+    if (user.subscriptionPlan === "starter") user.aiMessagesLimit = 2500;
+    else if (user.subscriptionPlan === "pro") user.aiMessagesLimit = 7e3;
+    else if (user.subscriptionPlan === "enterprise") user.aiMessagesLimit = 2e4;
+  }
   db.users[user.id] = user;
   writeDb(db);
   return user;
+}
+function incrementUserAiUsage(userId) {
+  const db = readDb();
+  const user = db.users[userId];
+  if (!user) return { limitReached: true };
+  if (user.aiMessagesUsed >= (user.aiMessagesLimit || 2e3)) {
+    return { limitReached: true, user };
+  }
+  user.aiMessagesUsed += 1;
+  db.users[userId] = user;
+  writeDb(db);
+  return { limitReached: false, user };
 }
 function updateUserPresence(userId, isOnline) {
   const db = readDb();
@@ -3313,6 +3332,10 @@ app.post("/api/devices", (req, res) => {
     return;
   }
   const tenantId = getTenantId(req);
+  const user = getUser(tenantId);
+  if (user?.subscriptionPlan === "starter" && method !== "qr") {
+    return res.status(403).json({ error: "\u0639\u0630\u0631\u0627\u064B\u060C \u0631\u0628\u0637 \u05D4\u0640 API \u0648\u0627\u0644\u0640 Gateways \u0645\u062A\u0648\u0641\u0631 \u0641\u0642\u0637 \u0641\u064A \u0628\u0627\u0642\u0629 \u0627\u0644\u0645\u062D\u062A\u0631\u0641\u064A\u0646 \u0648\u0627\u0644\u0634\u0631\u0643\u0627\u062A. \u064A\u0631\u062C\u0649 \u0627\u0644\u062A\u0631\u0642\u064A\u0629." });
+  }
   const id = `dev_${Math.random().toString(36).substring(2, 11)}`;
   const displayPhone = phoneNumber ? String(phoneNumber).trim() : "+201012345678";
   const isDirectConnection = method === "cloud_api" || method === "ultramsg" || method === "greenapi";
@@ -4538,6 +4561,24 @@ async function startServer() {
       }
       let responseText = "";
       let responseAudioBuffer = null;
+      const usageCheck = incrementUserAiUsage(ownerId);
+      if (usageCheck.limitReached) {
+        console.log(`[AI Quota Reached] User ${ownerId} reached AI limit (${usageCheck.user?.aiMessagesLimit}). Skipping Gemini call.`);
+        const quotaMsg = {
+          id: `msg_${Math.random().toString(36).substring(2, 11)}`,
+          conversationId: conv.id,
+          senderId: ownerId,
+          recipientId: contactId,
+          content: "\u0639\u0630\u0631\u0627\u064B\u060C \u0627\u0644\u0645\u0633\u0627\u0639\u062F \u0627\u0644\u0630\u0643\u064A \u063A\u064A\u0631 \u0645\u062A\u0627\u062D \u062D\u0627\u0644\u064A\u0627\u064B (\u062A\u0645 \u0627\u0633\u062A\u0647\u0644\u0627\u0643 \u0627\u0644\u0628\u0627\u0642\u0629). \u0633\u064A\u062A\u0645 \u062A\u062D\u0648\u064A\u0644\u0643 \u0642\u0631\u064A\u0628\u0627\u064B \u0644\u0623\u062D\u062F \u0645\u0648\u0638\u0641\u064A \u0627\u0644\u0645\u0628\u064A\u0639\u0627\u062A.",
+          type: "text",
+          status: "delivered",
+          timestamp: (/* @__PURE__ */ new Date()).toISOString()
+        };
+        saveMessage(quotaMsg);
+        broadcast({ type: "message:new", message: quotaMsg });
+        await sendBaileysMessage(deviceId, jid, quotaMsg.content);
+        return;
+      }
       if (ai) {
         try {
           const historyMsgs = getMessagesForConversation(conv.id);
