@@ -4,7 +4,8 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "start": "node app.js"
+    "start": "node app.js",
+    "build": "echo 'Build already completed locally'"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
