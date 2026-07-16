@@ -29,7 +29,6 @@ var import_ws = require("ws");
 var import_path4 = __toESM(require("path"), 1);
 var import_fs4 = __toESM(require("fs"), 1);
 var import_dotenv = __toESM(require("dotenv"), 1);
-var import_vite = require("vite");
 var import_genai = require("@google/genai");
 
 // src/db.ts
@@ -103,7 +102,7 @@ async function backupSessionToSupabase(deviceId) {
       try {
         const stat = import_fs.default.statSync(filePath);
         if (stat.isFile()) {
-          const fileContent = import_fs.default.readFileSync(filePath, "utf-8");
+          const fileContent = import_fs.default.readFileSync(filePath, "utf-8").replace(/\0/g, "");
           const id = `${deviceId}/${fileName}`;
           upsertData.push({
             id,
@@ -4961,7 +4960,7 @@ We look forward to seeing you! I am your WhatsApp Smart Agent. If you have any q
     }
   });
   if (process.env.NODE_ENV !== "production") {
-    const vite = await (0, import_vite.createServer)({
+    const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa"
     });
