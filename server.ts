@@ -81,7 +81,7 @@ import { downloadMediaMessage } from '@whiskeysockets/baileys';
 
 import { User, Conversation, Message, StatusStory, WsEvent, DeviceLink, Campaign } from './src/types.js';
 
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 const app = express();
 
 // Set high body limits to handle image & audio base64 uploads easily
