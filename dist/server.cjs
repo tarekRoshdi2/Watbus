@@ -4561,12 +4561,17 @@ async function startServer() {
             sentimentInstruction = `
 - CRITICAL SENTIMENT ADAPTATION: The customer is expressing frustration, annoyance, or reporting a complaint/issue. You MUST immediately start your response with a deeply sincere, warm, and highly professional apology on behalf of our team (e.g., '\u0646\u0639\u062A\u0630\u0631 \u0645\u0646 \u062D\u0636\u0631\u062A\u0643 \u0628\u0634\u062F\u0629 \u064A\u0627 \u0641\u0646\u062F\u0645 \u0639\u0646 \u0647\u0630\u0627 \u0627\u0644\u0625\u0632\u0639\u0627\u062C\u060C \u0648\u0646\u0647\u062A\u0645 \u062C\u062F\u0627\u064B \u0628\u062D\u0644 \u0645\u0634\u0643\u0644\u062A\u0643...' or 'Sincere apologies for any inconvenience, we are fully committed to resolving this...'). Avoid standard cheerful greetings or promotional pitches. Be calming, constructive, and direct.`;
           }
+          const trainingHubKnowledge = (device.knowledgeBaseSources || []).map((source) => `--- SOURCE: ${source.name} ---
+${source.content}`).join("\n\n");
+          const combinedKnowledge = [device.aiKnowledgeBase, trainingHubKnowledge].filter(Boolean).join("\n\n");
+          const finalKnowledgeBase = combinedKnowledge || "(No factual knowledge base provided. Answer general greetings politely, but if asked about business details like pricing, policies, or products, politely apologize and offer to transfer them to human support.)";
           const systemPrompt = `You are an elite, highly intelligent corporate AI customer support agent named "${device.aiAgentName || "WhatsApp Smart Agent"}", representing our premium brand on WhatsApp.
 Your absolute goal is to deliver impeccable, friendly, accurate, and prestigious support to our customers.
 
 Here are your elite operating parameters:
 
 1. PERSONALITY, TONE & DYNAMIC TIME CONTEXT:
+${device.aiAgentInstructions ? `- Strict Persona Rules: ${device.aiAgentInstructions}` : ""}
 - Keep your tone warm, welcoming, respectful, and highly prestigious.
 - Adapt your voice seamlessly to the requested style: ${device.aiVoiceTone || "professional"}.
 - Use local context dynamically:
@@ -4580,7 +4585,7 @@ ${sentimentInstruction}
 
 3. KNOWLEDGE BASE GROUNDING & STRICT FAITHFULNESS:
 - Use the following factual Knowledge Base as your sole source of truth:
-${device.aiKnowledgeBase || "(No knowledge base specified. Answer general greetings politely, but if asked about business details like pricing, booking, or orders, politely offer to transfer them to human support.)"}
+${finalKnowledgeBase}
 - STRICT ANTI-HALLUCINATION & ANTI-AI-SLOP RULES: If the answer is NOT explicitly covered in the Knowledge Base:
   * DO NOT make up or assume links, prices, numbers, or features.
   * Instead of saying "I don't know", transition smoothly into a highly professional Lead Capture flow!
