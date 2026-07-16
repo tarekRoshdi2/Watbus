@@ -1,0 +1,41 @@
+{
+  "users": {
+    "meta-ai": {
+      "id": "meta-ai",
+      "username": "Meta AI",
+      "role": "user",
+      "avatarUrl": "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=150&q=80",
+      "statusText": "with Gemini AI. Type anything to start talking!",
+      "isOnline": true,
+      "lastSeenAt": "2026-07-16T02:34:26.524Z",
+      "subscriptionStatus": "active",
+      "totalTokensUsed": 0,
+      "costInDollars": 0
+    },
+    "admin-tarek": {
+      "id": "admin-tarek",
+      "username": "Tarek Roshdi",
+      "email": "tarekroshdi@gmail.com",
+      "password": "Tarek@2026",
+      "role": "admin",
+      "avatarUrl": "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=150&q=80",
+      "statusText": "System Administrator",
+      "isOnline": true,
+      "lastSeenAt": "2026-07-16T02:34:26.525Z",
+      "subscriptionStatus": "active",
+      "totalTokensUsed": 0,
+      "costInDollars": 0
+    }
+  },
+  "conversations": {},
+  "messages": [],
+  "statuses": [],
+  "devices": {},
+  "campaigns": {},
+  "catalog": [],
+  "demoLeads": [],
+  "otpLogs": [],
+  "otpSettings": {
+    "template": "مرحباً بك في ChatCore. رمز التحقق الخاص بك هو: {otp}. يرجى إدخاله في الموقع لتفعيل حسابك."
+  }
+}
