@@ -1445,6 +1445,7 @@ var PORT = Number(process.env.PORT) || 3e3;
 var app = (0, import_express.default)();
 app.use(import_express.default.json({ limit: "50mb" }));
 app.use(import_express.default.urlencoded({ limit: "50mb", extended: true }));
+app.set("trust proxy", 1);
 var apiLimiter = (0, import_express_rate_limit.default)({
   windowMs: 15 * 60 * 1e3,
   // 15 minutes
