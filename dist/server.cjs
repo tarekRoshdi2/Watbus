@@ -30,7 +30,6 @@ var import_path4 = __toESM(require("path"), 1);
 var import_fs4 = __toESM(require("fs"), 1);
 var import_dotenv = __toESM(require("dotenv"), 1);
 var import_genai = require("@google/genai");
-var import_vite = require("vite");
 
 // src/db.ts
 var import_fs2 = __toESM(require("fs"), 1);
@@ -5029,7 +5028,7 @@ We look forward to seeing you! I am your WhatsApp Smart Agent. If you have any q
     }
   });
   if (process.env.NODE_ENV !== "production") {
-    const vite = await (0, import_vite.createServer)({
+    const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa"
     });
