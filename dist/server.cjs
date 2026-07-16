@@ -1439,11 +1439,32 @@ function stopWhatsAppSession(deviceId) {
 
 // server.ts
 var import_baileys2 = require("@whiskeysockets/baileys");
+var import_express_rate_limit = __toESM(require("express-rate-limit"), 1);
 import_dotenv.default.config();
 var PORT = Number(process.env.PORT) || 3e3;
 var app = (0, import_express.default)();
 app.use(import_express.default.json({ limit: "50mb" }));
 app.use(import_express.default.urlencoded({ limit: "50mb", extended: true }));
+var apiLimiter = (0, import_express_rate_limit.default)({
+  windowMs: 15 * 60 * 1e3,
+  // 15 minutes
+  max: 1e3,
+  // Limit each IP to 1000 requests per windowMs
+  message: { error: "Too many requests from this IP, please try again after 15 minutes" },
+  standardHeaders: true,
+  legacyHeaders: false
+});
+app.use("/api/", apiLimiter);
+app.post("/api/auth/admin-login", (req, res) => {
+  const { email, password } = req.body;
+  const db = readDb();
+  const adminUser = Object.values(db.users).find((u) => u.email === email && u.password === password && u.role === "admin");
+  if (adminUser) {
+    res.json({ success: true, user: adminUser });
+  } else {
+    res.status(401).json({ error: "\u0627\u0644\u0628\u0631\u064A\u062F \u0627\u0644\u0625\u0644\u0643\u062A\u0631\u0648\u0646\u064A \u0623\u0648 \u0643\u0644\u0645\u0629 \u0627\u0644\u0645\u0631\u0648\u0631 \u063A\u064A\u0631 \u0635\u062D\u064A\u062D\u0629" });
+  }
+});
 app.get("/api/catalog", (req, res) => {
   const db = readDb();
   res.json({ catalog: db.catalog || [] });
