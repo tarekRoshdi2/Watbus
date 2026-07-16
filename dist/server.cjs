@@ -422,44 +422,44 @@ function writeDb(data) {
   }
 }
 function getUser(userId) {
-  const db2 = readDb();
-  return db2.users[userId];
+  const db = readDb();
+  return db.users[userId];
 }
 function getUserByUsername2(username) {
-  const db2 = readDb();
-  return Object.values(db2.users).find(
+  const db = readDb();
+  return Object.values(db.users).find(
     (u) => u.username.toLowerCase() === username.toLowerCase()
   );
 }
 function getAllUsers() {
-  const db2 = readDb();
-  return Object.values(db2.users);
+  const db = readDb();
+  return Object.values(db.users);
 }
 function saveUser(user) {
-  const db2 = readDb();
-  db2.users[user.id] = user;
-  writeDb(db2);
+  const db = readDb();
+  db.users[user.id] = user;
+  writeDb(db);
   return user;
 }
 function updateUserPresence(userId, isOnline) {
-  const db2 = readDb();
-  if (db2.users[userId]) {
-    db2.users[userId].isOnline = isOnline;
-    db2.users[userId].lastSeenAt = (/* @__PURE__ */ new Date()).toISOString();
-    writeDb(db2);
-    return db2.users[userId];
+  const db = readDb();
+  if (db.users[userId]) {
+    db.users[userId].isOnline = isOnline;
+    db.users[userId].lastSeenAt = (/* @__PURE__ */ new Date()).toISOString();
+    writeDb(db);
+    return db.users[userId];
   }
   return void 0;
 }
 function getOrCreateConversation(userA, userB, deviceId) {
-  const db2 = readDb();
-  const existing = Object.values(db2.conversations).find(
+  const db = readDb();
+  const existing = Object.values(db.conversations).find(
     (c) => c.participantIds.includes(userA) && c.participantIds.includes(userB) && (!deviceId || !c.deviceId || c.deviceId === deviceId)
   );
   if (existing) {
     if (deviceId && !existing.deviceId) {
       existing.deviceId = deviceId;
-      writeDb(db2);
+      writeDb(db);
     }
     return existing;
   }
@@ -471,106 +471,106 @@ function getOrCreateConversation(userA, userB, deviceId) {
     updatedAt: (/* @__PURE__ */ new Date()).toISOString(),
     deviceId
   };
-  db2.conversations[newId] = newConv;
-  writeDb(db2);
+  db.conversations[newId] = newConv;
+  writeDb(db);
   return newConv;
 }
 function getConversationsForUser(userId) {
-  const db2 = readDb();
-  const user = db2.users[userId];
+  const db = readDb();
+  const user = db.users[userId];
   if (user && user.role === "admin") {
-    return Object.values(db2.conversations);
+    return Object.values(db.conversations);
   }
-  return Object.values(db2.conversations).filter(
+  return Object.values(db.conversations).filter(
     (c) => c.participantIds.includes(userId)
   );
 }
 function saveConversation(conv) {
-  const db2 = readDb();
-  db2.conversations[conv.id] = conv;
-  writeDb(db2);
+  const db = readDb();
+  db.conversations[conv.id] = conv;
+  writeDb(db);
   return conv;
 }
 function getMessagesForConversation(convId) {
-  const db2 = readDb();
-  return db2.messages.filter((m) => m.conversationId === convId);
+  const db = readDb();
+  return db.messages.filter((m) => m.conversationId === convId);
 }
 function saveMessage(message) {
-  const db2 = readDb();
-  db2.messages.push(message);
-  if (db2.conversations[message.conversationId]) {
-    db2.conversations[message.conversationId].updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+  const db = readDb();
+  db.messages.push(message);
+  if (db.conversations[message.conversationId]) {
+    db.conversations[message.conversationId].updatedAt = (/* @__PURE__ */ new Date()).toISOString();
   }
-  writeDb(db2);
+  writeDb(db);
   return message;
 }
 function updateMessageStatus(messageId, status) {
-  const db2 = readDb();
-  const msg = db2.messages.find((m) => m.id === messageId);
+  const db = readDb();
+  const msg = db.messages.find((m) => m.id === messageId);
   if (msg) {
     if (status === "failed" || status === "read" || status === "delivered" && msg.status === "sent") {
       msg.status = status;
-      writeDb(db2);
+      writeDb(db);
     }
     return msg;
   }
   return void 0;
 }
 function getActiveStatuses() {
-  const db2 = readDb();
+  const db = readDb();
   const now = (/* @__PURE__ */ new Date()).getTime();
   const twentyFourHours = 24 * 60 * 60 * 1e3;
-  return db2.statuses.filter((s) => {
+  return db.statuses.filter((s) => {
     const storyTime = new Date(s.createdAt).getTime();
     return now - storyTime < twentyFourHours;
   });
 }
 function saveStatus(status) {
-  const db2 = readDb();
-  db2.statuses.push(status);
-  writeDb(db2);
+  const db = readDb();
+  db.statuses.push(status);
+  writeDb(db);
   return status;
 }
 function addStatusViewer(statusId, viewerId) {
-  const db2 = readDb();
-  const status = db2.statuses.find((s) => s.id === statusId);
+  const db = readDb();
+  const status = db.statuses.find((s) => s.id === statusId);
   if (status) {
     if (!status.viewers.includes(viewerId) && status.userId !== viewerId) {
       status.viewers.push(viewerId);
-      writeDb(db2);
+      writeDb(db);
     }
     return status;
   }
   return void 0;
 }
 function getAllDevices(userId) {
-  const db2 = readDb();
-  const list = Object.values(db2.devices || {});
+  const db = readDb();
+  const list = Object.values(db.devices || {});
   if (userId) {
     return list.filter((d) => d.ownerId === userId || !d.ownerId);
   }
   return list;
 }
 function saveDevice(device) {
-  const db2 = readDb();
-  if (!db2.devices) db2.devices = {};
-  db2.devices[device.id] = device;
-  writeDb(db2);
+  const db = readDb();
+  if (!db.devices) db.devices = {};
+  db.devices[device.id] = device;
+  writeDb(db);
   return device;
 }
 function deleteDevice(deviceId) {
-  const db2 = readDb();
-  if (db2.devices && db2.devices[deviceId]) {
-    delete db2.devices[deviceId];
-    writeDb(db2);
+  const db = readDb();
+  if (db.devices && db.devices[deviceId]) {
+    delete db.devices[deviceId];
+    writeDb(db);
     console.log(`[Device Delete] Device ${deviceId} removed from DB.`);
   } else {
     console.warn(`[Device Delete] Device ${deviceId} not found in DB.`);
   }
 }
 function getAllCampaigns(userId, role) {
-  const db2 = readDb();
-  const list = Object.values(db2.campaigns || {});
+  const db = readDb();
+  const list = Object.values(db.campaigns || {});
   if (role === "admin") return list;
   if (userId) {
     return list.filter((c) => c.ownerId === userId);
@@ -578,28 +578,28 @@ function getAllCampaigns(userId, role) {
   return list;
 }
 function saveCampaign(campaign) {
-  const db2 = readDb();
-  if (!db2.campaigns) db2.campaigns = {};
-  db2.campaigns[campaign.id] = campaign;
-  writeDb(db2);
+  const db = readDb();
+  if (!db.campaigns) db.campaigns = {};
+  db.campaigns[campaign.id] = campaign;
+  writeDb(db);
   return campaign;
 }
 function deleteCampaign(campaignId) {
-  const db2 = readDb();
-  if (db2.campaigns && db2.campaigns[campaignId]) {
-    delete db2.campaigns[campaignId];
-    writeDb(db2);
+  const db = readDb();
+  if (db.campaigns && db.campaigns[campaignId]) {
+    delete db.campaigns[campaignId];
+    writeDb(db);
   }
 }
 function cloneDefaultUserConversations(newUserId) {
   if (newUserId === "user_default" || newUserId === "meta-ai" || newUserId.startsWith("contact_")) return;
-  const db2 = readDb();
-  const defaultConvList = Object.values(db2.conversations).filter((c) => c.participantIds.includes("user_default"));
+  const db = readDb();
+  const defaultConvList = Object.values(db.conversations).filter((c) => c.participantIds.includes("user_default"));
   let changed = false;
   for (const conv of defaultConvList) {
     const contactId = conv.participantIds.find((id) => id !== "user_default");
     if (!contactId) continue;
-    const exists = Object.values(db2.conversations).some(
+    const exists = Object.values(db.conversations).some(
       (c) => c.participantIds.includes(newUserId) && c.participantIds.includes(contactId)
     );
     if (exists) continue;
@@ -610,9 +610,9 @@ function cloneDefaultUserConversations(newUserId) {
       createdAt: conv.createdAt,
       updatedAt: conv.updatedAt
     };
-    db2.conversations[newConvId] = newConv;
+    db.conversations[newConvId] = newConv;
     changed = true;
-    const defaultMessages = db2.messages.filter((m) => m.conversationId === conv.id);
+    const defaultMessages = db.messages.filter((m) => m.conversationId === conv.id);
     for (const m of defaultMessages) {
       const clonedMsg = {
         ...m,
@@ -621,35 +621,35 @@ function cloneDefaultUserConversations(newUserId) {
         senderId: m.senderId === "user_default" ? newUserId : m.senderId,
         recipientId: m.recipientId === "user_default" ? newUserId : m.recipientId
       };
-      db2.messages.push(clonedMsg);
+      db.messages.push(clonedMsg);
     }
   }
   if (changed) {
-    writeDb(db2);
+    writeDb(db);
   }
 }
 function updateConversationLabel(convId, label) {
-  const db2 = readDb();
-  if (db2.conversations[convId]) {
-    db2.conversations[convId].label = label;
-    writeDb(db2);
-    return db2.conversations[convId];
+  const db = readDb();
+  if (db.conversations[convId]) {
+    db.conversations[convId].label = label;
+    writeDb(db);
+    return db.conversations[convId];
   }
   return void 0;
 }
 function updateConversationAiPaused(convId, aiPaused) {
-  const db2 = readDb();
-  if (db2.conversations[convId]) {
-    db2.conversations[convId].aiPaused = aiPaused;
-    writeDb(db2);
-    return db2.conversations[convId];
+  const db = readDb();
+  if (db.conversations[convId]) {
+    db.conversations[convId].aiPaused = aiPaused;
+    writeDb(db);
+    return db.conversations[convId];
   }
   return void 0;
 }
 function mergeLidContactsAndConversations() {
   const sessionParent = import_path2.default.join(process.cwd(), "whatsapp-sessions");
   if (!import_fs2.default.existsSync(sessionParent)) return;
-  const db2 = readDb();
+  const db = readDb();
   let changed = false;
   try {
     const devices = import_fs2.default.readdirSync(sessionParent);
@@ -666,21 +666,21 @@ function mergeLidContactsAndConversations() {
             if (mappedPhone && typeof mappedPhone === "string") {
               const duplicateContactId = `contact_${lidId}`;
               const realContactId = `contact_${mappedPhone}`;
-              if (db2.users[duplicateContactId]) {
+              if (db.users[duplicateContactId]) {
                 console.log(`[Migration] Found duplicate LID contact ${duplicateContactId} which should map to ${realContactId}`);
-                if (!db2.users[realContactId]) {
-                  db2.users[realContactId] = {
-                    ...db2.users[duplicateContactId],
+                if (!db.users[realContactId]) {
+                  db.users[realContactId] = {
+                    ...db.users[duplicateContactId],
                     id: realContactId,
-                    username: db2.users[duplicateContactId].username === `+${lidId}` ? `+${mappedPhone}` : db2.users[duplicateContactId].username
+                    username: db.users[duplicateContactId].username === `+${lidId}` ? `+${mappedPhone}` : db.users[duplicateContactId].username
                   };
                 }
-                const conversations = Object.values(db2.conversations);
+                const conversations = Object.values(db.conversations);
                 for (const conv of conversations) {
                   if (conv.participantIds.includes(duplicateContactId)) {
                     const userId = conv.participantIds.find((id) => id !== duplicateContactId);
                     if (!userId) continue;
-                    let realConv = Object.values(db2.conversations).find(
+                    let realConv = Object.values(db.conversations).find(
                       (c) => c.participantIds.includes(userId) && c.participantIds.includes(realContactId)
                     );
                     if (!realConv) {
@@ -693,25 +693,25 @@ function mergeLidContactsAndConversations() {
                         label: conv.label
                         // Preserve any label like "VIP"
                       };
-                      db2.conversations[newConvId] = realConv;
+                      db.conversations[newConvId] = realConv;
                       console.log(`[Migration] Created new merged conversation ${newConvId} for user ${userId} and contact ${realContactId}`);
                     } else {
                       if (conv.label && !realConv.label) {
                         realConv.label = conv.label;
                       }
                     }
-                    db2.messages.forEach((m) => {
+                    db.messages.forEach((m) => {
                       if (m.conversationId === conv.id) {
                         m.conversationId = realConv.id;
                         if (m.senderId === duplicateContactId) m.senderId = realContactId;
                         if (m.recipientId === duplicateContactId) m.recipientId = realContactId;
                       }
                     });
-                    delete db2.conversations[conv.id];
+                    delete db.conversations[conv.id];
                     console.log(`[Migration] Merged and deleted conversation ${conv.id} into ${realConv.id}`);
                   }
                 }
-                delete db2.users[duplicateContactId];
+                delete db.users[duplicateContactId];
                 console.log(`[Migration] Deleted duplicate contact ${duplicateContactId}`);
                 changed = true;
               }
@@ -726,14 +726,14 @@ function mergeLidContactsAndConversations() {
     console.error("[Migration] Failed scanning session parent directory for LID mappings:", err);
   }
   if (changed) {
-    writeDb(db2);
+    writeDb(db);
     console.log("[Migration] Database write successful after LID migration.");
   }
 }
 function mergeDuplicateConversations() {
-  const db2 = readDb();
+  const db = readDb();
   let changed = false;
-  const conversations = Object.values(db2.conversations);
+  const conversations = Object.values(db.conversations);
   const grouped = {};
   for (const conv of conversations) {
     const sortedParticipants = [...conv.participantIds].sort().join(",");
@@ -748,7 +748,7 @@ function mergeDuplicateConversations() {
       const toKeep = convs.find((c) => !!c.deviceId) || convs[0];
       const toDelete = convs.filter((c) => c.id !== toKeep.id);
       for (const conv of toDelete) {
-        db2.messages.forEach((m) => {
+        db.messages.forEach((m) => {
           if (m.conversationId === conv.id) {
             m.conversationId = toKeep.id;
           }
@@ -759,40 +759,40 @@ function mergeDuplicateConversations() {
         if (conv.deviceId && !toKeep.deviceId) {
           toKeep.deviceId = conv.deviceId;
         }
-        delete db2.conversations[conv.id];
+        delete db.conversations[conv.id];
         console.log(`[Migration] Merged conversation ${conv.id} into ${toKeep.id}`);
         changed = true;
       }
     }
   }
   if (changed) {
-    writeDb(db2);
+    writeDb(db);
     console.log("[Migration] Database write successful after merging duplicate conversations.");
   }
 }
 function getOtpLogs() {
-  const db2 = readDb();
-  return db2.otpLogs || [];
+  const db = readDb();
+  return db.otpLogs || [];
 }
 function saveOtpLog(log) {
-  const db2 = readDb();
-  if (!db2.otpLogs) db2.otpLogs = [];
-  db2.otpLogs.push(log);
-  writeDb(db2);
+  const db = readDb();
+  if (!db.otpLogs) db.otpLogs = [];
+  db.otpLogs.push(log);
+  writeDb(db);
 }
 function getOtpSettings() {
-  const db2 = readDb();
-  if (!db2.otpSettings) {
-    db2.otpSettings = {
+  const db = readDb();
+  if (!db.otpSettings) {
+    db.otpSettings = {
       template: "\u0645\u0631\u062D\u0628\u0627\u064B \u0628\u0643 \u0641\u064A ChatCore. \u0631\u0645\u0632 \u0627\u0644\u062A\u062D\u0642\u0642 \u0627\u0644\u062E\u0627\u0635 \u0628\u0643 \u0647\u0648: {otp}. \u064A\u0631\u062C\u0649 \u0625\u062F\u062E\u0627\u0644\u0647 \u0641\u064A \u0627\u0644\u0645\u0648\u0642\u0639 \u0644\u062A\u0641\u0639\u064A\u0644 \u062D\u0633\u0627\u0628\u0643."
     };
   }
-  return db2.otpSettings;
+  return db.otpSettings;
 }
 function saveOtpSettings(settings) {
-  const db2 = readDb();
-  db2.otpSettings = settings;
-  writeDb(db2);
+  const db = readDb();
+  db.otpSettings = settings;
+  writeDb(db);
 }
 
 // src/whatsapp.ts
@@ -1443,15 +1443,15 @@ var app = (0, import_express.default)();
 app.use(import_express.default.json({ limit: "50mb" }));
 app.use(import_express.default.urlencoded({ limit: "50mb", extended: true }));
 app.get("/api/catalog", (req, res) => {
-  const db2 = readDb();
-  res.json({ catalog: db2.catalog || [] });
+  const db = readDb();
+  res.json({ catalog: db.catalog || [] });
 });
 app.post("/api/catalog", (req, res) => {
-  const db2 = readDb();
+  const db = readDb();
   const newItem = req.body;
   newItem.id = `item_${Math.random().toString(36).substring(2, 11)}`;
-  db2.catalog.push(newItem);
-  writeDb(db2);
+  db.catalog.push(newItem);
+  writeDb(db);
   res.json({ item: newItem });
 });
 var server = import_http.default.createServer(app);
@@ -1675,14 +1675,14 @@ app.post("/api/demo-verify", (req, res) => {
     return;
   }
   demoOtpStore.delete(phone);
-  const db2 = readDb();
-  db2.demoLeads.push({
+  const db = readDb();
+  db.demoLeads.push({
     id: `lead_${Math.random().toString(36).substring(2, 11)}`,
     username: stored.username,
     phone: stored.phone,
     createdAt: (/* @__PURE__ */ new Date()).toISOString()
   });
-  writeDb(db2);
+  writeDb(db);
   res.json({ success: true });
 });
 async function sendWhatsAppOtp(phone, otp) {
@@ -1904,8 +1904,8 @@ app.post("/api/auth/login", async (req, res) => {
   const cleanName = username.trim();
   let user = getUserByUsername2(cleanName);
   if (!user) {
-    const db2 = readDb();
-    const isDemoLead = db2.demoLeads.some((lead) => lead.username === cleanName);
+    const db = readDb();
+    const isDemoLead = db.demoLeads.some((lead) => lead.username === cleanName);
     if (!isDemoLead && cleanName !== "Roshdi") {
       res.status(403).json({ error: "\u064A\u062C\u0628 \u062D\u062C\u0632 \u0646\u0633\u062E\u0629 \u062F\u064A\u0645\u0648 \u0623\u0648\u0644\u0627\u064B \u0642\u0628\u0644 \u062A\u0633\u062C\u064A\u0644 \u0627\u0644\u062F\u062E\u0648\u0644" });
       return;
@@ -2099,9 +2099,9 @@ app.delete("/api/admin/users/:id", (req, res) => {
     res.status(404).json({ error: "User not found" });
     return;
   }
-  const db2 = readDb();
-  delete db2.users[id];
-  writeDb(db2);
+  const db = readDb();
+  delete db.users[id];
+  writeDb(db);
   res.json({ success: true });
 });
 app.get("/api/admin/users/:id/work", (req, res) => {
@@ -2111,15 +2111,15 @@ app.get("/api/admin/users/:id/work", (req, res) => {
     res.status(404).json({ error: "User not found" });
     return;
   }
-  const db2 = readDb();
-  const devices = Object.values(db2.devices || {}).filter((d) => d.ownerId === id);
+  const db = readDb();
+  const devices = Object.values(db.devices || {}).filter((d) => d.ownerId === id);
   const deviceIds = devices.map((d) => d.id);
-  const campaigns = Object.values(db2.campaigns || {}).filter((c) => c.ownerId === id);
-  const conversations = Object.values(db2.conversations || {}).filter((c) => c.participantIds.includes(id));
+  const campaigns = Object.values(db.campaigns || {}).filter((c) => c.ownerId === id);
+  const conversations = Object.values(db.conversations || {}).filter((c) => c.participantIds.includes(id));
   const conversationIds = conversations.map((c) => c.id);
-  const messages = (db2.messages || []).filter((m) => m.senderId === id || conversationIds.includes(m.conversationId));
-  const messagesSentCount = (db2.messages || []).filter((m) => m.senderId === id).length;
-  const otpLogs = (db2.otpLogs || []).filter((log) => log.deviceId && deviceIds.includes(log.deviceId));
+  const messages = (db.messages || []).filter((m) => m.senderId === id || conversationIds.includes(m.conversationId));
+  const messagesSentCount = (db.messages || []).filter((m) => m.senderId === id).length;
+  const otpLogs = (db.otpLogs || []).filter((log) => log.deviceId && deviceIds.includes(log.deviceId));
   res.json({
     user,
     devices,
@@ -2198,8 +2198,8 @@ app.get("/api/conversations/:convId/messages", (req, res) => {
 app.post("/api/conversations/:convId/messages", async (req, res) => {
   const { convId } = req.params;
   const { senderId, content, type, mediaData } = req.body;
-  const db2 = readDb();
-  const conv = db2.conversations[convId];
+  const db = readDb();
+  const conv = db.conversations[convId];
   if (!conv) {
     res.status(404).json({ error: "Conversation not found" });
     return;
@@ -2284,8 +2284,8 @@ app.post("/api/conversations/:convId/messages", async (req, res) => {
 app.post("/api/conversations/:convId/voice-settings", (req, res) => {
   const { convId } = req.params;
   const { enabled, accent, voiceName } = req.body;
-  const db2 = readDb();
-  const conv = db2.conversations[convId];
+  const db = readDb();
+  const conv = db.conversations[convId];
   if (!conv) {
     res.status(404).json({ error: "Conversation not found" });
     return;
@@ -2295,8 +2295,8 @@ app.post("/api/conversations/:convId/voice-settings", (req, res) => {
     accent: accent || "msa",
     voiceName: voiceName || "Zephyr"
   };
-  db2.conversations[convId] = conv;
-  writeDb(db2);
+  db.conversations[convId] = conv;
+  writeDb(db);
   broadcast({
     type: "conversation:update",
     conversation: conv
@@ -2411,13 +2411,13 @@ function analyzeMessagesLocal(messages, label) {
 }
 app.get("/api/crm/funnel", async (req, res) => {
   try {
-    const db2 = readDb();
-    const messages = db2.messages;
-    const users = db2.users;
+    const db = readDb();
+    const messages = db.messages;
+    const users = db.users;
     const tenantId = getTenantId(req);
     const userDevices = getAllDevices(tenantId);
     const userDeviceIds = new Set(userDevices.map((d) => d.id));
-    let filteredConvs = Object.values(db2.conversations);
+    let filteredConvs = Object.values(db.conversations);
     if (tenantId) {
       filteredConvs = filteredConvs.filter((c) => c.deviceId && userDeviceIds.has(c.deviceId));
     }
@@ -2520,8 +2520,8 @@ app.get("/api/crm/funnel", async (req, res) => {
 });
 app.get("/api/stats/events", (req, res) => {
   try {
-    const db2 = readDb();
-    const usersArray = Object.values(db2.users || {});
+    const db = readDb();
+    const usersArray = Object.values(db.users || {});
     const allEvents = {};
     usersArray.forEach((u) => {
       if (u.source === "EXPOCORE" && u.tags) {
@@ -2530,7 +2530,7 @@ app.get("/api/stats/events", (req, res) => {
             allEvents[eventName] = { name: eventName, attendees: 0, messagesSent: 0 };
           }
           allEvents[eventName].attendees++;
-          const messagesSentToUser = (db2.messages || []).filter((m) => m.conversationId && db2.conversations.find((c) => c.id === m.conversationId && c.participantIds.includes(u.id))).length;
+          const messagesSentToUser = (db.messages || []).filter((m) => m.conversationId && db.conversations.find((c) => c.id === m.conversationId && c.participantIds.includes(u.id))).length;
           allEvents[eventName].messagesSent += messagesSentToUser;
         });
       }
@@ -2542,13 +2542,13 @@ app.get("/api/stats/events", (req, res) => {
 });
 app.get("/api/crm/analytics-summary", (req, res) => {
   try {
-    const db2 = readDb();
-    const messages = db2.messages;
-    const users = db2.users;
+    const db = readDb();
+    const messages = db.messages;
+    const users = db.users;
     const tenantId = getTenantId(req);
     const userDevices = getAllDevices(tenantId);
     const userDeviceIds = new Set(userDevices.map((d) => d.id));
-    let filteredConvs = Object.values(db2.conversations);
+    let filteredConvs = Object.values(db.conversations);
     if (tenantId) {
       filteredConvs = filteredConvs.filter((c) => c.deviceId && userDeviceIds.has(c.deviceId));
     }
@@ -2873,8 +2873,8 @@ app.get("/api/crm/analytics-summary", (req, res) => {
 });
 app.post("/api/crm/generate-playbook", async (req, res) => {
   try {
-    const db2 = readDb();
-    const messages = db2.messages || [];
+    const db = readDb();
+    const messages = db.messages || [];
     const customerMsgs = messages.filter((m) => m.senderId && m.senderId.startsWith("contact_")).slice(-30).map((m) => m.content).filter(Boolean);
     let systemContext = "The business is a SaaS platform integrated with interactive WhatsApp API chatbots. Customers ask about prices, packages, and technical support.";
     if (customerMsgs.length > 0) {
@@ -2969,9 +2969,9 @@ app.post("/api/crm/analyze-customer", async (req, res) => {
     return res.status(400).json({ error: "Customer ID is required" });
   }
   try {
-    const db2 = readDb();
-    const conversations = Object.values(db2.conversations);
-    const messages = db2.messages;
+    const db = readDb();
+    const conversations = Object.values(db.conversations);
+    const messages = db.messages;
     const conv = conversations.find((c) => c.participantIds.includes(customerId));
     if (!conv) {
       return res.status(404).json({ error: "Conversation not found for customer" });
@@ -3034,11 +3034,11 @@ app.post("/api/crm/analyze-customer", async (req, res) => {
         console.error("Failed to run on-demand Gemini analysis, falling back to local analysis:", geminiErr);
       }
     }
-    db2.conversations[conv.id] = {
+    db.conversations[conv.id] = {
       ...conv,
       aiAnalysis: finalAiAnalysis
     };
-    writeDb(db2);
+    writeDb(db);
     res.json({ success: true, aiAnalysis: finalAiAnalysis });
   } catch (err) {
     console.error("Failed to run on-demand Gemini analysis:", err);
@@ -3122,8 +3122,8 @@ app.post("/api/calls/respond", async (req, res) => {
 app.post("/api/conversations/:convId/generate-admin-report", async (req, res) => {
   const { convId } = req.params;
   const { isCall, callTranscript } = req.body;
-  const db2 = readDb();
-  const conv = db2.conversations[convId];
+  const db = readDb();
+  const conv = db.conversations[convId];
   if (!conv) {
     res.status(404).json({ error: "Conversation not found" });
     return;
@@ -3206,8 +3206,8 @@ ${formattedReport}
     content: formattedReport,
     updatedAt: (/* @__PURE__ */ new Date()).toISOString()
   };
-  db2.conversations[convId] = conv;
-  writeDb(db2);
+  db.conversations[convId] = conv;
+  writeDb(db);
   broadcast({
     type: "conversation:report_update",
     conversationId: convId,
@@ -3354,9 +3354,9 @@ app.post("/api/devices/:id/pair", async (req, res) => {
   res.json({ device: dbDevice });
 });
 app.post("/api/admin/ai-report", async (req, res) => {
-  const db2 = readDb();
-  const users = Object.values(db2.users).filter((u) => u.id !== "meta-ai" && u.id !== "user_default" && !u.id.startsWith("contact_"));
-  const demoLeads = db2.demoLeads;
+  const db = readDb();
+  const users = Object.values(db.users).filter((u) => u.id !== "meta-ai" && u.id !== "user_default" && !u.id.startsWith("contact_"));
+  const demoLeads = db.demoLeads;
   const prompt = `Here is the current system data:
 
   Users: ${JSON.stringify(users.map((u) => ({ username: u.username, status: u.subscriptionStatus })))}
@@ -3384,10 +3384,10 @@ app.post("/api/admin/ai-report", async (req, res) => {
   }
 });
 app.get("/api/admin/otp-report", (req, res) => {
-  const db2 = readDb();
+  const db = readDb();
   res.json({
-    users: Object.values(db2.users).filter((u) => u.role !== "admin" && u.id !== "meta-ai" && u.id !== "user_default" && !u.id.startsWith("contact_")),
-    demoLeads: db2.demoLeads
+    users: Object.values(db.users).filter((u) => u.role !== "admin" && u.id !== "meta-ai" && u.id !== "user_default" && !u.id.startsWith("contact_")),
+    demoLeads: db.demoLeads
   });
 });
 app.delete("/api/devices/:id", (req, res) => {
@@ -4118,8 +4118,8 @@ async function handleMetaAIResponse(userId, conversationId, userMessage, message
     recipientId: userId,
     isTyping: true
   }));
-  const db2 = readDb();
-  const conv = db2.conversations[conversationId];
+  const db = readDb();
+  const conv = db.conversations[conversationId];
   const voiceSettings = conv?.voiceSettings || { enabled: false, accent: "msa", voiceName: "Zephyr" };
   await new Promise((resolve) => setTimeout(resolve, 1500));
   let responseText = "";
@@ -4972,6 +4972,7 @@ You can access your digital ticket and access QR code here:
 
 We look forward to seeing you! I am your WhatsApp Smart Agent. If you have any questions, feel free to ask me! \u{1F91D}`;
     }
+    const db = readDb();
     const cleanPhone = phone.replace(/[\s\+\-\(\)]/g, "").trim();
     const contactId = `contact_${cleanPhone}`;
     if (!db.users[contactId]) {
@@ -5013,7 +5014,7 @@ We look forward to seeing you! I am your WhatsApp Smart Agent. If you have any q
       status: "sent"
     };
     db.messages.push(newMsg);
-    saveDb();
+    writeDb(db);
     const allDevices = getAllDevices();
     const activeDevices = allDevices.filter((d) => d.status === "connected" || d.method === "qr" || d.method === "greenapi" || d.method === "cloud_api");
     let device = null;
@@ -5064,8 +5065,8 @@ We look forward to seeing you! I am your WhatsApp Smart Agent. If you have any q
       res.sendFile(import_path4.default.join(distPath, "index.html"));
     });
   }
-  server.listen(PORT, "0.0.0.0", () => {
-    console.log(`WhatsApp Server listening on http://localhost:${PORT}`);
+  server.listen(PORT, () => {
+    console.log(`WhatsApp Server listening on ${typeof PORT === "string" && isNaN(Number(PORT)) ? "socket" : "http://localhost:"}${PORT}`);
   });
 }
 startServer();
