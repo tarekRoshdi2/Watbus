@@ -479,14 +479,29 @@ app.post('/api/expocore/webhook', async (req, res) => {
   // Use specific deviceId if provided, else fallback to any connected device
   // Accept 'connected', 'ready', or 'authenticated' as valid states
   const ACTIVE_STATUSES = ['connected', 'ready', 'authenticated'];
-  let targetDevice = devices.find(d => d.id === deviceId && ACTIVE_STATUSES.includes(d.status));
+  let targetDevice = devices.find(d => d.id === deviceId && ACTIVE_STATUSES.includes(d.status) && activeSockets.has(d.id));
+  if (!targetDevice) {
+    targetDevice = devices.find(d => ACTIVE_STATUSES.includes(d.status) && activeSockets.has(d.id));
+  }
+  // Fallback: find any device with ACTIVE status even if socket is reinitializing
+  if (!targetDevice) {
+    targetDevice = devices.find(d => d.id === deviceId && ACTIVE_STATUSES.includes(d.status));
+  }
   if (!targetDevice) {
     targetDevice = devices.find(d => ACTIVE_STATUSES.includes(d.status));
   }
 
   if (!targetDevice) {
     console.error('[ExpoCore Webhook] No connected WhatsApp device available');
-    res.status(503).json({ error: 'No connected WhatsApp device available' });
+    res.status(503).json({ error: 'No connected WhatsApp device available. Please connect a device in ChatCore settings.' });
+    return;
+  }
+
+  // Check socket is actually alive
+  if (!activeSockets.has(targetDevice.id)) {
+    console.warn(`[ExpoCore Webhook] Device ${targetDevice.id} is in DB as connected but has no live socket. Triggering auto-reboot...`);
+    startWhatsAppSession(targetDevice.id).catch(console.error);
+    res.status(503).json({ error: 'WhatsApp socket is reconnecting, please try again in 10 seconds.' });
     return;
   }
 
@@ -525,12 +540,32 @@ app.post('/api/expocore/webhook', async (req, res) => {
 
 app.get('/api/expocore/status', (req, res) => {
   const devices = getAllDevices();
-  const connectedDevice = devices.find(d => d.status === 'connected' || d.status === 'ready' || d.status === 'authenticated');
-  if (connectedDevice) {
-    res.json({ status: 'connected', deviceId: connectedDevice.id, deviceName: connectedDevice.name });
-  } else {
-    res.json({ status: 'disconnected' });
+  const ACTIVE_STATUSES = ['connected', 'ready', 'authenticated'];
+  
+  // First, check if ANY device has an actual live socket (not just DB status)
+  const devicesWithSocket = devices.filter(d => 
+    ACTIVE_STATUSES.includes(d.status) && activeSockets.has(d.id)
+  );
+  
+  if (devicesWithSocket.length > 0) {
+    const dev = devicesWithSocket[0];
+    res.json({ status: 'connected', deviceId: dev.id, deviceName: dev.name, socketAlive: true });
+    return;
   }
+  
+  // Fallback: device is marked connected in DB but socket may be reinitializing
+  const dbConnectedDevice = devices.find(d => ACTIVE_STATUSES.includes(d.status));
+  if (dbConnectedDevice) {
+    // Socket not alive yet - try to reboot it automatically
+    console.log(`[Status] Device ${dbConnectedDevice.id} is connected in DB but has no live socket. Auto-rebooting...`);
+    startWhatsAppSession(dbConnectedDevice.id).catch(err => {
+      console.error(`[Status Auto-reboot] Failed for device ${dbConnectedDevice.id}:`, err);
+    });
+    res.json({ status: 'connecting', deviceId: dbConnectedDevice.id, deviceName: dbConnectedDevice.name, socketAlive: false, note: 'Reconnecting socket...' });
+    return;
+  }
+  
+  res.json({ status: 'disconnected', socketAlive: false });
 });
 
 // Helper to generate and send OTP via WhatsApp
