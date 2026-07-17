@@ -3961,7 +3961,7 @@ server.on("upgrade", (request, socket, head) => {
   }
 });
 wss.on("connection", (ws) => {
-  let authenticatedUserId = null;
+  let authenticatedUserId = "";
   ws.on("message", async (data) => {
     try {
       const event = JSON.parse(data);
@@ -3973,7 +3973,8 @@ wss.on("connection", (ws) => {
           break;
         }
         case "auth": {
-          authenticatedUserId = event.userId;
+          authenticatedUserId = event.userId || "";
+          if (!authenticatedUserId) break;
           const existingWs = activeConnections.get(authenticatedUserId);
           if (existingWs && existingWs !== ws) {
             console.log(`[WS] Cleaned up duplicate connection for user ${authenticatedUserId}`);
@@ -4944,6 +4945,39 @@ ${eventDetails.parking}. \u{1F4CD}`;
     }
     return res.json({ thoughts, reply });
   });
+  app.get("/api/expocore/settings", (req, res) => {
+    const db = readDb();
+    if (!db.expocoreSettings) {
+      db.expocoreSettings = {
+        welcomeMessageAr: `\u{1F3AB} *\u0645\u0631\u062D\u0628\u0627\u064B \u0628\u0643 \u064A\u0627 {{name}}!*
+\u0644\u0642\u062F \u062A\u0645 \u062A\u0633\u062C\u064A\u0644 \u062D\u0636\u0648\u0631\u0643 \u0628\u0646\u062C\u0627\u062D.
+
+\u062A\u062C\u062F \u062A\u0630\u0643\u0631\u062A\u0643 \u0648\u0631\u0645\u0632 \u0627\u0644\u062F\u062E\u0648\u0644 \u0627\u0644\u062E\u0627\u0635 \u0628\u0643 \u0647\u0646\u0627:
+\u{1F449} {{ticketUrl}}
+
+\u0623\u0646\u0627 \u0645\u0633\u0627\u0639\u062F\u0643 \u0627\u0644\u0630\u0643\u064A \u0639\u0628\u0631 \u0627\u0644\u0648\u0627\u062A\u0633\u0627\u0628\u060C \u0641\u064A \u062E\u062F\u0645\u062A\u0643 \u0644\u0644\u0631\u062F \u0639\u0644\u0649 \u0627\u0633\u062A\u0641\u0633\u0627\u0631\u0627\u062A\u0643 \u{1F91D}`,
+        welcomeMessageEn: `\u{1F3AB} *Hello {{name}}!*
+Your registration has been successfully confirmed.
+
+You can access your ticket and QR code here:
+\u{1F449} {{ticketUrl}}
+
+I am your WhatsApp Smart Agent, at your service! \u{1F91D}`,
+        isActive: true
+      };
+      writeDb(db);
+    }
+    return res.json(db.expocoreSettings);
+  });
+  app.post("/api/expocore/settings", (req, res) => {
+    const db = readDb();
+    db.expocoreSettings = {
+      ...db.expocoreSettings || {},
+      ...req.body
+    };
+    writeDb(db);
+    return res.json({ success: true, settings: db.expocoreSettings });
+  });
   app.post("/api/expocore/webhook", async (req, res) => {
     const apiKeyHeader = req.headers["api_key"] || req.headers["x-api-key"] || req.query.api_key;
     let { name, phone, ticket, ticketUrl, customMessage, eventName } = req.body;
@@ -4964,23 +4998,31 @@ ${eventDetails.parking}. \u{1F4CD}`;
     }
     const isArabic = /[\u0600-\u06FF]/.test(name) || phone.startsWith("+20") || phone.startsWith("20") || phone.startsWith("010") || phone.startsWith("011") || phone.startsWith("012") || phone.startsWith("015");
     const qrUrl = ticketUrl || `https://expocore.io/t/${ticket || "9842"}-qr`;
+    const db = readDb();
+    if (db.expocoreSettings && db.expocoreSettings.isActive === false) {
+      return res.status(403).json({ success: false, error: "ExpoCore WhatsApp integration is currently paused in settings." });
+    }
     let messageText = "";
     if (customMessage && customMessage.trim() !== "") {
       messageText = customMessage.replace(/{{name}}/g, name || "").replace(/{{ticketUrl}}/g, qrUrl || "");
     } else {
-      messageText = isArabic ? `\u{1F3AB} *\u0645\u0631\u062D\u0628\u0627\u064B \u0628\u0643 \u064A\u0627 ${name}!* \u0644\u0642\u062F \u062A\u0645 \u062A\u0633\u062C\u064A\u0644 \u062D\u0636\u0648\u0631\u0643 \u0628\u0646\u062C\u0627\u062D \u0641\u064A \u0627\u0644\u0645\u0639\u0631\u0636.
+      const defaultAr = `\u{1F3AB} *\u0645\u0631\u062D\u0628\u0627\u064B \u0628\u0643 \u064A\u0627 {{name}}!*
+\u0644\u0642\u062F \u062A\u0645 \u062A\u0633\u062C\u064A\u0644 \u062D\u0636\u0648\u0631\u0643 \u0628\u0646\u062C\u0627\u062D \u0641\u064A \u0627\u0644\u0645\u0639\u0631\u0636.
 
 \u062A\u062C\u062F \u062A\u0630\u0643\u0631\u062A\u0643 \u0648\u0631\u0645\u0632 \u0627\u0644\u062F\u062E\u0648\u0644 \u0627\u0644\u0640 QR \u0627\u0644\u062E\u0627\u0635 \u0628\u0643 \u0647\u0646\u0627:
-\u{1F449} ${qrUrl}
+\u{1F449} {{ticketUrl}}
 
-\u0646\u062D\u0646 \u0628\u0627\u0646\u062A\u0638\u0627\u0631\u0643! \u0648\u0633\u0623\u0643\u0648\u0646 \u0645\u0639\u0643 \u0643\u0640 \u0645\u0633\u0627\u0639\u062F \u0630\u0643\u064A \u0639\u0628\u0631 \u0627\u0644\u0648\u0627\u062A\u0633\u0627\u0628 \u0644\u0644\u0625\u062C\u0627\u0628\u0629 \u0639\u0644\u0649 \u062C\u0645\u064A\u0639 \u0627\u0633\u062A\u0641\u0633\u0627\u0631\u0627\u062A\u0643 \u062D\u0648\u0644 \u0627\u0644\u0645\u0639\u0631\u0636 \u0648\u0627\u0644\u0634\u0631\u0643\u0627\u062A \u0627\u0644\u0639\u0627\u0631\u0636\u0629 \u0641\u0648\u0631\u0627\u064B! \u{1F91D}` : `\u{1F3AB} *Hello ${name}!* Your registration has been successfully confirmed.
+\u0646\u062D\u0646 \u0628\u0627\u0646\u062A\u0638\u0627\u0631\u0643! \u0648\u0633\u0623\u0643\u0648\u0646 \u0645\u0639\u0643 \u0643\u0640 \u0645\u0633\u0627\u0639\u062F \u0630\u0643\u064A \u0639\u0628\u0631 \u0627\u0644\u0648\u0627\u062A\u0633\u0627\u0628 \u0644\u0644\u0625\u062C\u0627\u0628\u0629 \u0639\u0644\u0649 \u062C\u0645\u064A\u0639 \u0627\u0633\u062A\u0641\u0633\u0627\u0631\u0627\u062A\u0643 \u062D\u0648\u0644 \u0627\u0644\u0645\u0639\u0631\u0636 \u0648\u0627\u0644\u0634\u0631\u0643\u0627\u062A \u0627\u0644\u0639\u0627\u0631\u0636\u0629 \u0641\u0648\u0631\u0627\u064B! \u{1F91D}`;
+      const defaultEn = `\u{1F3AB} *Hello {{name}}!*
+Your registration has been successfully confirmed.
 
 You can access your digital ticket and access QR code here:
-\u{1F449} ${qrUrl}
+\u{1F449} {{ticketUrl}}
 
 We look forward to seeing you! I am your WhatsApp Smart Agent. If you have any questions, feel free to ask me! \u{1F91D}`;
+      const template = isArabic ? db.expocoreSettings?.welcomeMessageAr || defaultAr : db.expocoreSettings?.welcomeMessageEn || defaultEn;
+      messageText = template.replace(/{{name}}/g, name || "").replace(/{{ticketUrl}}/g, qrUrl || "");
     }
-    const db = readDb();
     const cleanPhone = phone.replace(/[\s\+\-\(\)]/g, "").trim();
     const contactId = `contact_${cleanPhone}`;
     if (!db.users[contactId]) {
@@ -4988,8 +5030,13 @@ We look forward to seeing you! I am your WhatsApp Smart Agent. If you have any q
         id: contactId,
         username: name || `Contact ${cleanPhone}`,
         role: "user",
-        avatar: "",
-        status: "offline",
+        avatarUrl: "",
+        statusText: "offline",
+        isOnline: false,
+        lastSeenAt: (/* @__PURE__ */ new Date()).toISOString(),
+        subscriptionStatus: "inactive",
+        totalTokensUsed: 0,
+        costInDollars: 0,
         source: "EXPOCORE",
         tags: eventName ? [eventName] : []
       };
@@ -5007,8 +5054,7 @@ We look forward to seeing you! I am your WhatsApp Smart Agent. If you have any q
         id: convId,
         participantIds: ["meta-ai", contactId],
         createdAt: (/* @__PURE__ */ new Date()).toISOString(),
-        updatedAt: (/* @__PURE__ */ new Date()).toISOString(),
-        status: "active"
+        updatedAt: (/* @__PURE__ */ new Date()).toISOString()
       };
       db.conversations.push(conv);
     }
@@ -5017,7 +5063,9 @@ We look forward to seeing you! I am your WhatsApp Smart Agent. If you have any q
       id: `msg_${Date.now()}_${Math.random().toString(36).substring(7)}`,
       conversationId: conv.id,
       senderId: "meta-ai",
+      recipientId: contactId,
       content: messageText,
+      type: "text",
       timestamp: (/* @__PURE__ */ new Date()).toISOString(),
       status: "sent"
     };
