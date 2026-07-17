@@ -4,8 +4,13 @@ var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __getProtoOf = Object.getPrototypeOf;
 var __hasOwnProp = Object.prototype.hasOwnProperty;
-var __esm = (fn, res) => function __init() {
-  return fn && (res = (0, fn[__getOwnPropNames(fn)[0]])(fn = 0)), res;
+var __esm = (fn, res, err) => function __init() {
+  if (err) throw err[0];
+  try {
+    return fn && (res = (0, fn[__getOwnPropNames(fn)[0]])(fn = 0)), res;
+  } catch (e) {
+    throw err = [e], e;
+  }
 };
 var __export = (target, all) => {
   for (var name in all)
@@ -305,8 +310,8 @@ async function updateUser(user) {
 var import_fs, import_path, import_supabase_js, supabaseClient;
 var init_supabase = __esm({
   "src/supabase.ts"() {
-    import_fs = __toESM(require("fs"), 1);
-    import_path = __toESM(require("path"), 1);
+    import_fs = __toESM(require("fs"));
+    import_path = __toESM(require("path"));
     import_supabase_js = require("@supabase/supabase-js");
     supabaseClient = null;
   }
@@ -843,8 +848,8 @@ function saveOtpSettings(settings) {
 var import_fs2, import_path2, DB_FILE, META_AI_USER, ADMIN_USER, cachedDb;
 var init_db = __esm({
   "src/db.ts"() {
-    import_fs2 = __toESM(require("fs"), 1);
-    import_path2 = __toESM(require("path"), 1);
+    import_fs2 = __toESM(require("fs"));
+    import_path2 = __toESM(require("path"));
     init_supabase();
     DB_FILE = import_path2.default.join(process.cwd(), "db-store.json");
     META_AI_USER = {
@@ -884,22 +889,22 @@ var init_db = __esm({
 
 // server.ts
 var import_crypto = require("crypto");
-var import_express = __toESM(require("express"), 1);
-var import_http = __toESM(require("http"), 1);
+var import_express = __toESM(require("express"));
+var import_http = __toESM(require("http"));
 var import_ws = require("ws");
-var import_path4 = __toESM(require("path"), 1);
-var import_fs4 = __toESM(require("fs"), 1);
-var import_dotenv = __toESM(require("dotenv"), 1);
+var import_path4 = __toESM(require("path"));
+var import_fs4 = __toESM(require("fs"));
+var import_dotenv = __toESM(require("dotenv"));
 var import_genai = require("@google/genai");
 var import_vite = require("vite");
 init_db();
 init_supabase();
 
 // src/whatsapp.ts
-var import_baileys = __toESM(require("@whiskeysockets/baileys"), 1);
-var import_pino = __toESM(require("pino"), 1);
-var import_path3 = __toESM(require("path"), 1);
-var import_fs3 = __toESM(require("fs"), 1);
+var import_baileys = __toESM(require("@whiskeysockets/baileys"));
+var import_pino = __toESM(require("pino"));
+var import_path3 = __toESM(require("path"));
+var import_fs3 = __toESM(require("fs"));
 init_db();
 init_supabase();
 var activeSockets = /* @__PURE__ */ new Map();
@@ -1546,9 +1551,32 @@ function stopWhatsAppSession(deviceId) {
 
 // server.ts
 var import_baileys2 = require("@whiskeysockets/baileys");
-var import_express_rate_limit = __toESM(require("express-rate-limit"), 1);
+var import_express_rate_limit = __toESM(require("express-rate-limit"));
+var debugLogPath = import_path4.default.join(process.cwd(), "startup-error.log");
+try {
+  import_fs4.default.appendFileSync(debugLogPath, `
+
+[${(/* @__PURE__ */ new Date()).toISOString()}] Server starting up...
+`);
+} catch (e) {
+}
+process.on("uncaughtException", (err) => {
+  try {
+    import_fs4.default.appendFileSync(debugLogPath, `[FATAL] Uncaught Exception: ${err.stack || err}
+`);
+  } catch (e) {
+  }
+  process.exit(1);
+});
+process.on("unhandledRejection", (reason) => {
+  try {
+    import_fs4.default.appendFileSync(debugLogPath, `[FATAL] Unhandled Rejection: ${reason}
+`);
+  } catch (e) {
+  }
+});
 import_dotenv.default.config();
-var PORT = process.env.PORT || 3e3;
+var PORT = Number(process.env.PORT) || 3e3;
 var app = (0, import_express.default)();
 app.use(import_express.default.json({ limit: "50mb" }));
 app.use(import_express.default.urlencoded({ limit: "50mb", extended: true }));

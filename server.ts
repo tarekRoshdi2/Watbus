@@ -13,6 +13,19 @@ import dotenv from 'dotenv';
 import { GoogleGenAI } from '@google/genai';
 import { createServer as createViteServer } from 'vite';
 
+// CRITICAL HOSTINGER DEBUGGING LOGIC
+const debugLogPath = path.join(process.cwd(), 'startup-error.log');
+try {
+  fs.appendFileSync(debugLogPath, `\n\n[${new Date().toISOString()}] Server starting up...\n`);
+} catch(e) {}
+process.on('uncaughtException', (err) => {
+  try { fs.appendFileSync(debugLogPath, `[FATAL] Uncaught Exception: ${err.stack || err}\n`); } catch(e) {}
+  process.exit(1);
+});
+process.on('unhandledRejection', (reason) => {
+  try { fs.appendFileSync(debugLogPath, `[FATAL] Unhandled Rejection: ${reason}\n`); } catch(e) {}
+});
+
 // Load environment variables
 dotenv.config();
 
