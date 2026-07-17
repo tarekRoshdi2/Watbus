@@ -1,4 +1,4 @@
-import makeWASocket, { useMultiFileAuthState, DisconnectReason } from '@whiskeysockets/baileys';
+import makeWASocket, { useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } from '@whiskeysockets/baileys';
 import pino from 'pino';
 import path from 'path';
 import fs from 'fs';
@@ -560,11 +560,21 @@ export async function startWhatsAppSession(deviceId: string) {
       saveCreds = auth.saveCreds;
     }
 
+    let version: any = [2, 3000, 1017577713]; // Fallback version
+    try {
+      const latest = await fetchLatestBaileysVersion();
+      version = latest.version;
+      console.log(`[WhatsApp Session] Dynamically fetched latest WhatsApp version: ${version.join('.')}`);
+    } catch (verErr) {
+      console.warn(`[WhatsApp Session] Failed to fetch latest WhatsApp version, using fallback:`, verErr);
+    }
+
     console.log(`Initializing Baileys session for device: ${deviceId}`);
 
     const makeSocketFn = (makeWASocket as any).default || makeWASocket;
     const sock = makeSocketFn({
       auth: state,
+      version,
       logger: pino({ level: 'silent' }),
       printQRInTerminal: false,
       syncFullHistory: false,

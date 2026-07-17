@@ -1313,10 +1313,19 @@ async function startWhatsAppSession(deviceId) {
       state = auth.state;
       saveCreds = auth.saveCreds;
     }
+    let version = [2, 3e3, 1017577713];
+    try {
+      const latest = await (0, import_baileys.fetchLatestBaileysVersion)();
+      version = latest.version;
+      console.log(`[WhatsApp Session] Dynamically fetched latest WhatsApp version: ${version.join(".")}`);
+    } catch (verErr) {
+      console.warn(`[WhatsApp Session] Failed to fetch latest WhatsApp version, using fallback:`, verErr);
+    }
     console.log(`Initializing Baileys session for device: ${deviceId}`);
     const makeSocketFn = import_baileys.default.default || import_baileys.default;
     const sock = makeSocketFn({
       auth: state,
+      version,
       logger: (0, import_pino.default)({ level: "silent" }),
       printQRInTerminal: false,
       syncFullHistory: false,
