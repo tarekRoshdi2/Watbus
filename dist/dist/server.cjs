@@ -1277,7 +1277,27 @@ async function startWhatsAppSession(deviceId) {
   try {
     closeSocketOnly(deviceId);
     const sessionPath = import_path3.default.join(process.cwd(), "whatsapp-sessions", deviceId);
-    const { state, saveCreds } = await (0, import_baileys.useMultiFileAuthState)(sessionPath);
+    const sessionExists = import_fs3.default.existsSync(sessionPath) && import_fs3.default.readdirSync(sessionPath).length > 0;
+    if (!sessionExists) {
+      console.log(`[WhatsApp Session] Local session for device ${deviceId} is missing or empty. Attempting to restore from Supabase...`);
+      await restoreSessionFromSupabase(deviceId);
+    }
+    let state;
+    let saveCreds;
+    try {
+      const auth = await (0, import_baileys.useMultiFileAuthState)(sessionPath);
+      state = auth.state;
+      saveCreds = auth.saveCreds;
+    } catch (authErr) {
+      console.error(`[WhatsApp Session] Local session data for device ${deviceId} is corrupted. Deleting and forcing a clean re-fetch from Supabase...`, authErr);
+      if (import_fs3.default.existsSync(sessionPath)) {
+        import_fs3.default.rmSync(sessionPath, { recursive: true, force: true });
+      }
+      await restoreSessionFromSupabase(deviceId);
+      const auth = await (0, import_baileys.useMultiFileAuthState)(sessionPath);
+      state = auth.state;
+      saveCreds = auth.saveCreds;
+    }
     console.log(`Initializing Baileys session for device: ${deviceId}`);
     const makeSocketFn = import_baileys.default.default || import_baileys.default;
     const sock = makeSocketFn({

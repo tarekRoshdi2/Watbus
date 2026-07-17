@@ -13,7 +13,7 @@ import {
   getMessagesForConversation
 } from './db.js';
 import { Message, User } from './types.js';
-import { backupSessionToSupabase, deleteSessionFromSupabase } from './supabase.js';
+import { backupSessionToSupabase, deleteSessionFromSupabase, restoreSessionFromSupabase } from './supabase.js';
 
 
 // Map of active WhatsApp socket connections by device ID
@@ -534,7 +534,31 @@ export async function startWhatsAppSession(deviceId: string) {
     closeSocketOnly(deviceId);
 
     const sessionPath = path.join(process.cwd(), 'whatsapp-sessions', deviceId);
-    const { state, saveCreds } = await useMultiFileAuthState(sessionPath);
+    
+    // Check if session exists locally, if not or if it's empty, try to restore from Supabase
+    const sessionExists = fs.existsSync(sessionPath) && fs.readdirSync(sessionPath).length > 0;
+    if (!sessionExists) {
+      console.log(`[WhatsApp Session] Local session for device ${deviceId} is missing or empty. Attempting to restore from Supabase...`);
+      await restoreSessionFromSupabase(deviceId);
+    }
+
+    let state: any;
+    let saveCreds: any;
+
+    try {
+      const auth = await useMultiFileAuthState(sessionPath);
+      state = auth.state;
+      saveCreds = auth.saveCreds;
+    } catch (authErr) {
+      console.error(`[WhatsApp Session] Local session data for device ${deviceId} is corrupted. Deleting and forcing a clean re-fetch from Supabase...`, authErr);
+      if (fs.existsSync(sessionPath)) {
+        fs.rmSync(sessionPath, { recursive: true, force: true });
+      }
+      await restoreSessionFromSupabase(deviceId);
+      const auth = await useMultiFileAuthState(sessionPath);
+      state = auth.state;
+      saveCreds = auth.saveCreds;
+    }
 
     console.log(`Initializing Baileys session for device: ${deviceId}`);
 
