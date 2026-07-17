@@ -1954,6 +1954,35 @@ app.post("/api/expocore/webhook", async (req, res) => {
     res.status(500).json({ error: err.message || "Failed to send message" });
   }
 });
+app.get("/api/expocore/debug", async (req, res) => {
+  const devices = getAllDevices();
+  const ACTIVE_STATUSES = ["connected", "ready", "authenticated"];
+  const report = devices.filter((d) => d.method === "qr").map((d) => ({
+    id: d.id,
+    name: d.name,
+    dbStatus: d.status,
+    socketAlive: activeSockets.has(d.id),
+    phoneNumber: d.phoneNumber || null
+  }));
+  const hasLiveSocket = report.some((r) => r.socketAlive && ACTIVE_STATUSES.includes(r.dbStatus));
+  const testPhone = req.query.phone || null;
+  let sendResult = null;
+  if (testPhone) {
+    const activeDevice = report.find((r) => r.socketAlive && ACTIVE_STATUSES.includes(r.dbStatus));
+    if (activeDevice) {
+      sendResult = await sendBaileysMessage(activeDevice.id, testPhone, "\u2705 ChatCore Debug Test Message \u2014 If you see this, sending works!");
+    } else {
+      sendResult = { success: false, error: "No device with live socket found" };
+    }
+  }
+  res.json({
+    timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+    overallStatus: hasLiveSocket ? "operational" : "no_live_socket",
+    devices: report,
+    sendTest: sendResult,
+    note: testPhone ? `Tested send to ${testPhone}` : "Add ?phone=20XXXXXXXXX to test actual sending"
+  });
+});
 app.get("/api/expocore/status", (req, res) => {
   const devices = getAllDevices();
   const ACTIVE_STATUSES = ["connected", "ready", "authenticated"];
