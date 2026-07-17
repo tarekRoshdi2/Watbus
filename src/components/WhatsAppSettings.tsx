@@ -111,6 +111,24 @@ export default function WhatsAppSettings({
     }
   };
 
+  const [isReconnecting, setIsReconnecting] = useState<string | null>(null);
+
+  const handleReconnect = async (deviceId: string) => {
+    setIsReconnecting(deviceId);
+    try {
+      await fetch(`/api/devices/${deviceId}/reconnect`, {
+        method: 'POST',
+        headers: {
+          'x-user-id': currentUser?.id || ''
+        }
+      });
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsReconnecting(null);
+    }
+  };
+
   const handleTestWebhook = async (device: DeviceLink) => {
     const deviceId = device.id;
     const logMsg = `[${new Date().toLocaleTimeString()}] TEST: Dispatched test payload POST to ${deviceWebhookUrls[deviceId] || device.webhookUrl || 'webhook'}...`;
@@ -708,6 +726,18 @@ ALTER TABLE crm_backups DISABLE ROW LEVEL SECURITY;`}
                   >
                     {lang === 'ar' ? 'حذف البوابة' : 'Delete Gateway'}
                   </button>
+
+                  {device.status !== 'connected' && device.status !== 'authenticated' && (
+                    <button
+                      type="button"
+                      onClick={() => handleReconnect(device.id)}
+                      disabled={isReconnecting === device.id}
+                      className="text-xs font-bold text-[#00a884] hover:underline cursor-pointer flex items-center gap-1"
+                    >
+                      {isReconnecting === device.id ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
+                      {lang === 'ar' ? 'تحديث الرمز (Reconnect)' : 'Reconnect'}
+                    </button>
+                  )}
 
                   <div className="flex items-center gap-2 flex-wrap">
                     {/* Developer settings toggle */}

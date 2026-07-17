@@ -2869,6 +2869,42 @@ app.post('/api/admin/reject-user/:id', (req, res) => {
   });
 });
 
+app.post('/api/devices/:id/reconnect', (req, res) => {
+  const { id } = req.params;
+  const tenantId = getTenantId(req);
+  const dbDevice = getAllDevices().find((d) => d.id === id);
+  
+  if (!dbDevice || (tenantId && dbDevice.ownerId && dbDevice.ownerId !== tenantId)) {
+    res.status(404).json({ error: 'Device not found or unauthorized' });
+    return;
+  }
+
+  // If using QR method, reset and generate new QR
+  if (dbDevice.method === 'qr') {
+    dbDevice.status = 'connecting';
+    dbDevice.qrCodeUrl = undefined;
+    updateDevice(dbDevice);
+    
+    // Attempt to close existing session if running, then start a new one
+    try {
+      stopWhatsAppSession(dbDevice.id);
+    } catch (e) {
+      console.log(`Failed to stop session before reconnect for ${dbDevice.id}`, e);
+    }
+    
+    startWhatsAppSession(dbDevice.id).catch(err => {
+      console.error(`Failed to reconnect WhatsApp session for ${dbDevice.id}:`, err);
+    });
+    
+    res.json({ success: true, device: dbDevice, message: 'Reconnecting and generating new QR' });
+  } else {
+    // For Cloud API or Green API, just reset to ready state
+    dbDevice.status = 'ready';
+    updateDevice(dbDevice);
+    res.json({ success: true, device: dbDevice, message: 'Device status reset to ready' });
+  }
+});
+
 app.delete('/api/devices/:id', (req, res) => {
   const { id } = req.params;
   const tenantId = getTenantId(req);
