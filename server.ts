@@ -151,6 +151,18 @@ app.post('/api/catalog', (req, res) => {
   res.json({ item: newItem });
 });
 
+// Enable CORS for API routes so external systems like ticket.expocore.net can connect
+app.use('/api', (req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, api_key, x-api-key, Authorization');
+  if (req.method === 'OPTIONS') {
+    res.sendStatus(200);
+    return;
+  }
+  next();
+});
+
 // Create HTTP Server
 const server = http.createServer(app);
 
@@ -4738,10 +4750,20 @@ ${eventDetails.parking}. 📍`;
 
   // --- REAL EXPOCORE WEBHOOK RECEIVER ---
   // This endpoint accepts webhook payload from ticket.expocore.net when a guest registers
+  app.get('/api/expocore/webhook', (req, res) => {
+    res.json({ success: true, message: 'ChatCore Webhook is active and reachable!' });
+  });
+
   app.post('/api/expocore/webhook', async (req, res) => {
     const apiKeyHeader = req.headers['api_key'] || req.headers['x-api-key'] || req.query.api_key;
-    const { name, phone, ticket, ticketUrl, deviceId } = req.body;
+    const { name, phone, ticket, ticketUrl, deviceId, test } = req.body;
     const targetDeviceId = deviceId || req.query.deviceId;
+
+    // Handle test connection
+    if (test || (!name && !phone)) {
+      console.log(`[ExpoCore Webhook] Received Test Connection`);
+      return res.json({ success: true, message: 'ChatCore connection successful!' });
+    }
 
     console.log(`[ExpoCore Webhook] Received registration check-in:`, { name, phone, ticket, ticketUrl, deviceId: targetDeviceId, apiKeyHeader });
 
