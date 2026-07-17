@@ -2007,6 +2007,8 @@ app.get("/api/expocore/debug", async (req, res) => {
   res.json({
     timestamp: (/* @__PURE__ */ new Date()).toISOString(),
     overallStatus: hasLiveSocket ? "operational" : "no_live_socket",
+    serverVersion: "1.0.5-latest-baileys",
+    uptime: `${Math.floor(process.uptime())} seconds`,
     devices: report,
     sendTest: sendResult,
     note: testPhone ? `Tested send to ${testPhone}` : "Add ?phone=20XXXXXXXXX to test actual sending"
