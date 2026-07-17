@@ -569,7 +569,18 @@ export async function startWhatsAppSession(deviceId: string) {
       printQRInTerminal: false,
       syncFullHistory: false,
       shouldSyncHistoryMessage: () => false,
-      linkPreviewImageUpload: false
+      linkPreviewImageUpload: false,
+      // --- Stability Settings ---
+      // Keep the TCP connection alive with periodic pings to prevent server-side timeout
+      keepAliveIntervalMs: 25000, // 25 second keepalive ping
+      // Retry failed message deliveries with a small delay instead of immediately
+      retryRequestDelayMs: 2000,
+      // Maximum number of message retries before giving up
+      maxMsgRetryCount: 5,
+      // Emulate a real browser to avoid WhatsApp flagging the connection as a bot
+      browser: ['ChatCore', 'Chrome', '124.0.0'],
+      // Do not generate high-res link previews to reduce bandwidth and avoid disconnects
+      generateHighQualityLinkPreview: false,
     });
 
     activeSockets.set(deviceId, sock);

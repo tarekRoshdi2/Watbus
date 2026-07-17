@@ -477,9 +477,11 @@ app.post('/api/expocore/webhook', async (req, res) => {
 
   const devices = getAllDevices();
   // Use specific deviceId if provided, else fallback to any connected device
-  let targetDevice = devices.find(d => d.id === deviceId && d.status === 'connected');
+  // Accept 'connected', 'ready', or 'authenticated' as valid states
+  const ACTIVE_STATUSES = ['connected', 'ready', 'authenticated'];
+  let targetDevice = devices.find(d => d.id === deviceId && ACTIVE_STATUSES.includes(d.status));
   if (!targetDevice) {
-    targetDevice = devices.find(d => d.status === 'connected');
+    targetDevice = devices.find(d => ACTIVE_STATUSES.includes(d.status));
   }
 
   if (!targetDevice) {
@@ -494,7 +496,12 @@ app.post('/api/expocore/webhook', async (req, res) => {
     // Clean phone number (remove +, spaces, etc)
     const cleanPhone = phone.replace(/[^\d]/g, '');
     
-    await sendBaileysMessage(targetDevice.id, cleanPhone, messageToSend);
+    const result = await sendBaileysMessage(targetDevice.id, cleanPhone, messageToSend);
+    if (!result.success) {
+      console.error(`[ExpoCore Webhook] sendBaileysMessage failed for device ${targetDevice.id}:`, result.error);
+      res.status(500).json({ error: result.error || 'WhatsApp socket failed to send the message' });
+      return;
+    }
     console.log(`[ExpoCore Webhook] Message sent successfully to ${cleanPhone} via device ${targetDevice.id}`);
     
     // Optional: Log it in Watbus CRM if needed
@@ -532,9 +539,11 @@ async function sendWhatsAppOtp(phone: string, otp: string, isDemo = false) {
   const settings = getOtpSettings();
   
   // Find device specified in settings, or fallback to the first connected device
-  let targetDevice = devices.find(d => d.id === settings.defaultDeviceId && d.status === 'connected');
+  // Accept 'connected', 'ready', or 'authenticated' as valid states
+  const ACTIVE_STATUSES = ['connected', 'ready', 'authenticated'];
+  let targetDevice = devices.find(d => d.id === settings.defaultDeviceId && ACTIVE_STATUSES.includes(d.status));
   if (!targetDevice) {
-    targetDevice = devices.find(d => d.status === 'connected');
+    targetDevice = devices.find(d => ACTIVE_STATUSES.includes(d.status));
   }
   
   if (!targetDevice) {
@@ -631,9 +640,9 @@ app.post('/api/admin/test-otp', async (req, res) => {
   const devices = getAllDevices();
   const settings = getOtpSettings();
   
-  let targetDevice = devices.find(d => d.id === settings.defaultDeviceId && d.status === 'connected');
+  let targetDevice = devices.find(d => d.id === settings.defaultDeviceId && ['connected', 'ready', 'authenticated'].includes(d.status));
   if (!targetDevice) {
-    targetDevice = devices.find(d => d.status === 'connected');
+    targetDevice = devices.find(d => ['connected', 'ready', 'authenticated'].includes(d.status));
   }
 
   if (!targetDevice) {
@@ -1243,7 +1252,7 @@ app.post('/api/conversations/:convId/messages', async (req, res) => {
   // If the recipient is a real contact, route to WhatsApp
   if (recipientId.startsWith('contact_')) {
     const targetPhone = recipientId.replace('contact_', '');
-    const activeDevices = getAllDevices().filter((d) => d.status === 'connected');
+    const activeDevices = getAllDevices().filter((d) => ['connected', 'ready', 'authenticated'].includes(d.status));
     const qrDevice = activeDevices.find((d) => d.id === conv.deviceId) || activeDevices.find((d) => d.method === 'qr') || activeDevices[0];
     if (qrDevice) {
       console.log(`Routing manual Web UI message via real device "${qrDevice.name}" (id: ${qrDevice.id}) to +${targetPhone}`);
@@ -2869,7 +2878,7 @@ app.post('/api/admin/reject-user/:id', (req, res) => {
   });
 });
 
-app.post('/api/devices/:id/reconnect', (req, res) => {
+app.post('/api/devices/:id/reconnect', async (req, res) => {
   const { id } = req.params;
   const tenantId = getTenantId(req);
   const dbDevice = getAllDevices().find((d) => d.id === id);
@@ -2879,28 +2888,44 @@ app.post('/api/devices/:id/reconnect', (req, res) => {
     return;
   }
 
-  // If using QR method, reset and generate new QR
   if (dbDevice.method === 'qr') {
-    dbDevice.status = 'connecting';
-    dbDevice.qrCodeUrl = undefined;
-    updateDevice(dbDevice);
-    
-    // Attempt to close existing session if running, then start a new one
+    // 1. Stop any existing socket first
     try {
       stopWhatsAppSession(dbDevice.id);
     } catch (e) {
-      console.log(`Failed to stop session before reconnect for ${dbDevice.id}`, e);
+      console.log(`[Reconnect] Failed to stop existing session for ${dbDevice.id}`, e);
     }
-    
+
+    // 2. Try restoring saved session from Supabase BEFORE generating a new QR
+    console.log(`[Reconnect] Attempting to restore session from Supabase for device ${dbDevice.id}...`);
+    const { restoreSessionFromSupabase } = await import('./src/supabase.js');
+    const restored = await restoreSessionFromSupabase(dbDevice.id);
+
+    dbDevice.status = 'connecting';
+    dbDevice.qrCodeUrl = undefined;
+    saveDevice(dbDevice);
+
+    if (restored) {
+      console.log(`[Reconnect] Session restored from Supabase for device ${dbDevice.id}. Starting session without new QR...`);
+    } else {
+      console.log(`[Reconnect] No saved session found for device ${dbDevice.id}. Will generate new QR code.`);
+    }
+
+    // 3. Start session - will use restored creds if available, else generate QR
     startWhatsAppSession(dbDevice.id).catch(err => {
-      console.error(`Failed to reconnect WhatsApp session for ${dbDevice.id}:`, err);
+      console.error(`[Reconnect] Failed to start WhatsApp session for ${dbDevice.id}:`, err);
     });
     
-    res.json({ success: true, device: dbDevice, message: 'Reconnecting and generating new QR' });
+    res.json({ 
+      success: true, 
+      device: dbDevice, 
+      restoredFromBackup: restored,
+      message: restored ? 'Restoring session from backup — no QR needed!' : 'No backup found, generating new QR code'
+    });
   } else {
     // For Cloud API or Green API, just reset to ready state
     dbDevice.status = 'ready';
-    updateDevice(dbDevice);
+    saveDevice(dbDevice);
     res.json({ success: true, device: dbDevice, message: 'Device status reset to ready' });
   }
 });
@@ -3453,7 +3478,7 @@ async function runCampaignSimulation(campaignId: string) {
     let campaign = getAllCampaigns().find((c) => c.id === campaignId);
     if (!campaign) return;
 
-    const activeDevices = getAllDevices().filter((d) => d.status === 'connected');
+    const activeDevices = getAllDevices().filter((d) => ['connected', 'ready', 'authenticated'].includes(d.status));
     const primaryDevice = activeDevices.length > 0 ? activeDevices[0] : null;
     const deviceName = primaryDevice ? primaryDevice.name : 'Default System Gateway';
 
@@ -3728,7 +3753,7 @@ wss.on('connection', (ws: WebSocket) => {
           // Real WhatsApp Routing: Dispatch message to WhatsApp contact
           if (recipientId.startsWith('contact_')) {
             const targetPhone = recipientId.replace('contact_', '');
-            const activeDevices = getAllDevices().filter((d) => d.status === 'connected');
+            const activeDevices = getAllDevices().filter((d) => ['connected', 'ready', 'authenticated'].includes(d.status));
             
             // Look up the device explicitly tied to this conversation
             const conv = Object.values(readDb().conversations).find(c => c.id === conversationId);
