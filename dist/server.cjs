@@ -1548,7 +1548,7 @@ function stopWhatsAppSession(deviceId) {
 var import_baileys2 = require("@whiskeysockets/baileys");
 var import_express_rate_limit = __toESM(require("express-rate-limit"), 1);
 import_dotenv.default.config();
-var PORT = Number(process.env.PORT) || 3e3;
+var PORT = process.env.PORT || 3e3;
 var app = (0, import_express.default)();
 app.use(import_express.default.json({ limit: "50mb" }));
 app.use(import_express.default.urlencoded({ limit: "50mb", extended: true }));
