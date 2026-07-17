@@ -1,4 +1,18 @@
 // Entry point for Hostinger Node.js
-// Hostinger uses cPanel Passenger which looks for app.js or server.js by default.
 process.env.NODE_ENV = 'production';
-require('./dist/server.cjs');
+const fs = require('fs');
+
+process.on('uncaughtException', (err) => {
+    fs.appendFileSync('startup-error.log', new Date().toISOString() + ' Uncaught Exception: ' + (err.stack || err) + '\n');
+});
+
+process.on('unhandledRejection', (reason) => {
+    fs.appendFileSync('startup-error.log', new Date().toISOString() + ' Unhandled Rejection: ' + (reason.stack || reason) + '\n');
+});
+
+try {
+    require('./dist/server.cjs');
+} catch (error) {
+    fs.appendFileSync('startup-error.log', new Date().toISOString() + ' Startup Crash: ' + (error.stack || error) + '\n');
+    throw error;
+}
