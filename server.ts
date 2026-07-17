@@ -15,6 +15,33 @@ import { GoogleGenAI } from '@google/genai';
 
 // CRITICAL HOSTINGER DEBUGGING LOGIC
 const debugLogPath = path.join(process.cwd(), 'startup-error.log');
+export const memoryLogs: string[] = [];
+const maxMemoryLogs = 1000;
+
+function captureLog(type: string, ...args: any[]) {
+  const time = new Date().toISOString();
+  const msg = args.map(arg => typeof arg === 'object' ? JSON.stringify(arg) : String(arg)).join(' ');
+  const line = `[${time}] [${type}] ${msg}`;
+  memoryLogs.push(line);
+  if (memoryLogs.length > maxMemoryLogs) {
+    memoryLogs.shift();
+  }
+  // Also write to original console
+  originalConsole[type](...args);
+}
+
+const originalConsole: any = {
+  log: console.log,
+  info: console.info,
+  warn: console.warn,
+  error: console.error
+};
+
+console.log = (...args) => captureLog('log', ...args);
+console.info = (...args) => captureLog('info', ...args);
+console.warn = (...args) => captureLog('warn', ...args);
+console.error = (...args) => captureLog('error', ...args);
+
 try {
   fs.appendFileSync(debugLogPath, `\n\n[${new Date().toISOString()}] Server starting up...\n`);
 } catch(e) {}
@@ -575,6 +602,11 @@ app.get('/api/expocore/debug', async (req, res) => {
     sendTest: sendResult,
     note: testPhone ? `Tested send to ${testPhone}` : 'Add ?phone=20XXXXXXXXX to test actual sending'
   });
+});
+
+app.get('/api/expocore/logs', (req, res) => {
+  res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+  res.send(memoryLogs.join('\n'));
 });
 
 app.get('/api/expocore/status', (req, res) => {
@@ -4965,6 +4997,7 @@ ${eventDetails.parking}. 📍`;
   });
 
   if (process.env.NODE_ENV !== 'production') {
+    // @ts-ignore
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: { middlewareMode: true },

@@ -27,6 +27,7 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
   isNodeMode || !mod || !mod.__esModule ? __defProp(target, "default", { value: mod, enumerable: true }) : target,
   mod
 ));
+var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
 // src/supabase.ts
 var supabase_exports = {};
@@ -898,6 +899,11 @@ var init_db = __esm({
 });
 
 // server.ts
+var server_exports = {};
+__export(server_exports, {
+  memoryLogs: () => memoryLogs
+});
+module.exports = __toCommonJS(server_exports);
 var import_crypto = require("crypto");
 var import_express = __toESM(require("express"), 1);
 var import_http = __toESM(require("http"), 1);
@@ -1623,6 +1629,28 @@ function stopWhatsAppSession(deviceId) {
 var import_baileys2 = require("@whiskeysockets/baileys");
 var import_express_rate_limit = __toESM(require("express-rate-limit"), 1);
 var debugLogPath = import_path4.default.join(process.cwd(), "startup-error.log");
+var memoryLogs = [];
+var maxMemoryLogs = 1e3;
+function captureLog(type, ...args) {
+  const time = (/* @__PURE__ */ new Date()).toISOString();
+  const msg = args.map((arg) => typeof arg === "object" ? JSON.stringify(arg) : String(arg)).join(" ");
+  const line = `[${time}] [${type}] ${msg}`;
+  memoryLogs.push(line);
+  if (memoryLogs.length > maxMemoryLogs) {
+    memoryLogs.shift();
+  }
+  originalConsole[type](...args);
+}
+var originalConsole = {
+  log: console.log,
+  info: console.info,
+  warn: console.warn,
+  error: console.error
+};
+console.log = (...args) => captureLog("log", ...args);
+console.info = (...args) => captureLog("info", ...args);
+console.warn = (...args) => captureLog("warn", ...args);
+console.error = (...args) => captureLog("error", ...args);
 try {
   import_fs4.default.appendFileSync(debugLogPath, `
 
@@ -2013,6 +2041,10 @@ app.get("/api/expocore/debug", async (req, res) => {
     sendTest: sendResult,
     note: testPhone ? `Tested send to ${testPhone}` : "Add ?phone=20XXXXXXXXX to test actual sending"
   });
+});
+app.get("/api/expocore/logs", (req, res) => {
+  res.setHeader("Content-Type", "text/plain; charset=utf-8");
+  res.send(memoryLogs.join("\n"));
 });
 app.get("/api/expocore/status", (req, res) => {
   const devices = getAllDevices();
@@ -5609,6 +5641,10 @@ We look forward to seeing you! I am your WhatsApp Smart Agent. If you have any q
   });
 }
 startServer();
+// Annotate the CommonJS export names for ESM import in node:
+0 && (module.exports = {
+  memoryLogs
+});
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
