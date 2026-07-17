@@ -1555,6 +1555,16 @@ async function sendBaileysMessage(deviceId, to, text, audioBuffer) {
       cleanPhone = `${cleanPhone}@s.whatsapp.net`;
     }
     if (audioBuffer) {
+      try {
+        const [result] = await sock.onWhatsApp(cleanPhone);
+        if (!result || !result.exists) {
+          console.warn(`[Baileys Send] Number ${cleanPhone} is not registered on WhatsApp!`);
+          return { success: false, error: "Target phone number is not registered on WhatsApp" };
+        }
+        cleanPhone = result.jid;
+      } catch (checkErr) {
+        console.warn(`[Baileys Send] Failed to verify number on WhatsApp, attempting anyway:`, checkErr);
+      }
       await sock.sendMessage(cleanPhone, {
         audio: audioBuffer,
         mimetype: "audio/mpeg",
@@ -1563,6 +1573,16 @@ async function sendBaileysMessage(deviceId, to, text, audioBuffer) {
         // Send as a real Voice Note
       });
     } else {
+      try {
+        const [result] = await sock.onWhatsApp(cleanPhone);
+        if (!result || !result.exists) {
+          console.warn(`[Baileys Send] Number ${cleanPhone} is not registered on WhatsApp!`);
+          return { success: false, error: "Target phone number is not registered on WhatsApp" };
+        }
+        cleanPhone = result.jid;
+      } catch (checkErr) {
+        console.warn(`[Baileys Send] Failed to verify number on WhatsApp, attempting anyway:`, checkErr);
+      }
       await sock.sendMessage(cleanPhone, { text });
     }
     return { success: true };

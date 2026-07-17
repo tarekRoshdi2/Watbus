@@ -874,12 +874,36 @@ export async function sendBaileysMessage(
     }
 
     if (audioBuffer) {
+      // Validate that the number is actually registered on WhatsApp
+      try {
+        const [result] = await sock.onWhatsApp(cleanPhone);
+        if (!result || !result.exists) {
+          console.warn(`[Baileys Send] Number ${cleanPhone} is not registered on WhatsApp!`);
+          return { success: false, error: 'Target phone number is not registered on WhatsApp' };
+        }
+        cleanPhone = result.jid;
+      } catch (checkErr) {
+        console.warn(`[Baileys Send] Failed to verify number on WhatsApp, attempting anyway:`, checkErr);
+      }
+
       await sock.sendMessage(cleanPhone, { 
         audio: audioBuffer, 
         mimetype: 'audio/mpeg', // MP3/MPEG compliant MIME type for Gemini TTS audio files
         ptt: true // Send as a real Voice Note
       });
     } else {
+      // Validate that the number is actually registered on WhatsApp
+      try {
+        const [result] = await sock.onWhatsApp(cleanPhone);
+        if (!result || !result.exists) {
+          console.warn(`[Baileys Send] Number ${cleanPhone} is not registered on WhatsApp!`);
+          return { success: false, error: 'Target phone number is not registered on WhatsApp' };
+        }
+        cleanPhone = result.jid;
+      } catch (checkErr) {
+        console.warn(`[Baileys Send] Failed to verify number on WhatsApp, attempting anyway:`, checkErr);
+      }
+
       await sock.sendMessage(cleanPhone, { text });
     }
     
