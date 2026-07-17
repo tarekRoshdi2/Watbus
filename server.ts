@@ -4808,8 +4808,8 @@ ${eventDetails.parking}. 📍`;
     });
   }
 
-  server.listen(PORT, '0.0.0.0', () => {
-    console.log(`WhatsApp Server listening on http://localhost:${PORT}`);
+  server.listen(PORT, () => {
+    console.log(`WhatsApp Server listening on ${PORT}`);
   });
 }
 

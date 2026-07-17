@@ -5386,8 +5386,8 @@ We look forward to seeing you! I am your WhatsApp Smart Agent. If you have any q
       res.sendFile(import_path4.default.join(distPath, "index.html"));
     });
   }
-  server.listen(PORT, "0.0.0.0", () => {
-    console.log(`WhatsApp Server listening on http://localhost:${PORT}`);
+  server.listen(PORT, () => {
+    console.log(`WhatsApp Server listening on ${PORT}`);
   });
 }
 startServer();
