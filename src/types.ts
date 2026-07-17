@@ -78,7 +78,7 @@ export interface StatusStory {
 export interface DeviceLink {
   id: string;
   name: string;
-  status: 'disconnected' | 'linking' | 'connecting' | 'connected' | 'disconnected_fatal';
+  status: 'disconnected' | 'linking' | 'connecting' | 'connected' | 'disconnected_fatal' | 'ready' | 'authenticated';
   method: 'qr' | 'cloud_api' | 'ultramsg' | 'greenapi';
   ownerId?: string; // Tenant/User owner of this WhatsApp device link
   gatewayType?: 'simulation' | 'ultramsg' | 'greenapi' | 'meta_cloud';

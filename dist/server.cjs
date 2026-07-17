@@ -1589,7 +1589,6 @@ var apiLimiter = (0, import_express_rate_limit.default)({
   standardHeaders: true,
   legacyHeaders: false
 });
-app.use("/api/", apiLimiter);
 app.post("/api/auth/admin-login", (req, res) => {
   const { email, password } = req.body;
   const db = readDb();
@@ -1611,6 +1610,16 @@ app.post("/api/catalog", (req, res) => {
   db.catalog.push(newItem);
   writeDb(db);
   res.json({ item: newItem });
+});
+app.use("/api", (req, res, next) => {
+  res.header("Access-Control-Allow-Origin", "*");
+  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+  res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, api_key, x-api-key, Authorization");
+  if (req.method === "OPTIONS") {
+    res.sendStatus(200);
+    return;
+  }
+  next();
 });
 var server = import_http.default.createServer(app);
 var wss = new import_ws.WebSocketServer({ noServer: true });
@@ -1887,7 +1896,7 @@ app.post("/api/expocore/webhook", async (req, res) => {
 });
 app.get("/api/expocore/status", (req, res) => {
   const devices = getAllDevices();
-  const connectedDevice = devices.find((d) => d.status === "connected");
+  const connectedDevice = devices.find((d) => d.status === "connected" || d.status === "ready" || d.status === "authenticated");
   if (connectedDevice) {
     res.json({ status: "connected", deviceId: connectedDevice.id, deviceName: connectedDevice.name });
   } else {
@@ -5335,10 +5344,17 @@ ${eventDetails.parking}. \u{1F4CD}`;
     }
     return res.json({ thoughts, reply });
   });
+  app.get("/api/expocore/webhook", (req, res) => {
+    res.json({ success: true, message: "ChatCore Webhook is active and reachable!" });
+  });
   app.post("/api/expocore/webhook", async (req, res) => {
     const apiKeyHeader = req.headers["api_key"] || req.headers["x-api-key"] || req.query.api_key;
-    const { name, phone, ticket, ticketUrl, deviceId } = req.body;
+    const { name, phone, ticket, ticketUrl, deviceId, test } = req.body;
     const targetDeviceId = deviceId || req.query.deviceId;
+    if (test || !name && !phone) {
+      console.log(`[ExpoCore Webhook] Received Test Connection`);
+      return res.json({ success: true, message: "ChatCore connection successful!" });
+    }
     console.log(`[ExpoCore Webhook] Received registration check-in:`, { name, phone, ticket, ticketUrl, deviceId: targetDeviceId, apiKeyHeader });
     if (!name || !phone) {
       return res.status(400).json({

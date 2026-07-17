@@ -119,7 +119,7 @@ const apiLimiter = rateLimit({
 });
 
 // Apply rate limiter to all API routes
-app.use('/api/', apiLimiter);
+// app.use('/api/', apiLimiter);
 
 // Auth Login for Admin
 app.post('/api/auth/admin-login', (req, res) => {
