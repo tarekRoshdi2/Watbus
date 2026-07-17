@@ -4,13 +4,8 @@ var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __getProtoOf = Object.getPrototypeOf;
 var __hasOwnProp = Object.prototype.hasOwnProperty;
-var __esm = (fn, res, err) => function __init() {
-  if (err) throw err[0];
-  try {
-    return fn && (res = (0, fn[__getOwnPropNames(fn)[0]])(fn = 0)), res;
-  } catch (e) {
-    throw err = [e], e;
-  }
+var __esm = (fn, res) => function __init() {
+  return fn && (res = (0, fn[__getOwnPropNames(fn)[0]])(fn = 0)), res;
 };
 var __export = (target, all) => {
   for (var name in all)
@@ -34,6 +29,21 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 ));
 
 // src/supabase.ts
+var supabase_exports = {};
+__export(supabase_exports, {
+  authenticateUser: () => authenticateUser,
+  backupDbToSupabase: () => backupDbToSupabase,
+  backupSessionToSupabase: () => backupSessionToSupabase,
+  checkSupabaseTablesExist: () => checkSupabaseTablesExist,
+  createUser: () => createUser,
+  deleteSessionFromSupabase: () => deleteSessionFromSupabase,
+  getSupabaseClient: () => getSupabaseClient,
+  getUserByUsername: () => getUserByUsername,
+  isSupabaseConfigured: () => isSupabaseConfigured,
+  restoreDbFromSupabase: () => restoreDbFromSupabase,
+  restoreSessionFromSupabase: () => restoreSessionFromSupabase,
+  updateUser: () => updateUser
+});
 function getSupabaseClient() {
   if (supabaseClient) {
     return supabaseClient;
@@ -310,8 +320,8 @@ async function updateUser(user) {
 var import_fs, import_path, import_supabase_js, supabaseClient;
 var init_supabase = __esm({
   "src/supabase.ts"() {
-    import_fs = __toESM(require("fs"));
-    import_path = __toESM(require("path"));
+    import_fs = __toESM(require("fs"), 1);
+    import_path = __toESM(require("path"), 1);
     import_supabase_js = require("@supabase/supabase-js");
     supabaseClient = null;
   }
@@ -848,8 +858,8 @@ function saveOtpSettings(settings) {
 var import_fs2, import_path2, DB_FILE, META_AI_USER, ADMIN_USER, cachedDb;
 var init_db = __esm({
   "src/db.ts"() {
-    import_fs2 = __toESM(require("fs"));
-    import_path2 = __toESM(require("path"));
+    import_fs2 = __toESM(require("fs"), 1);
+    import_path2 = __toESM(require("path"), 1);
     init_supabase();
     DB_FILE = import_path2.default.join(process.cwd(), "db-store.json");
     META_AI_USER = {
@@ -889,21 +899,21 @@ var init_db = __esm({
 
 // server.ts
 var import_crypto = require("crypto");
-var import_express = __toESM(require("express"));
-var import_http = __toESM(require("http"));
+var import_express = __toESM(require("express"), 1);
+var import_http = __toESM(require("http"), 1);
 var import_ws = require("ws");
-var import_path4 = __toESM(require("path"));
-var import_fs4 = __toESM(require("fs"));
-var import_dotenv = __toESM(require("dotenv"));
+var import_path4 = __toESM(require("path"), 1);
+var import_fs4 = __toESM(require("fs"), 1);
+var import_dotenv = __toESM(require("dotenv"), 1);
 var import_genai = require("@google/genai");
 init_db();
 init_supabase();
 
 // src/whatsapp.ts
-var import_baileys = __toESM(require("@whiskeysockets/baileys"));
-var import_pino = __toESM(require("pino"));
-var import_path3 = __toESM(require("path"));
-var import_fs3 = __toESM(require("fs"));
+var import_baileys = __toESM(require("@whiskeysockets/baileys"), 1);
+var import_pino = __toESM(require("pino"), 1);
+var import_path3 = __toESM(require("path"), 1);
+var import_fs3 = __toESM(require("fs"), 1);
 init_db();
 init_supabase();
 var activeSockets = /* @__PURE__ */ new Map();
@@ -1282,7 +1292,27 @@ async function startWhatsAppSession(deviceId) {
   try {
     closeSocketOnly(deviceId);
     const sessionPath = import_path3.default.join(process.cwd(), "whatsapp-sessions", deviceId);
-    const { state, saveCreds } = await (0, import_baileys.useMultiFileAuthState)(sessionPath);
+    const sessionExists = import_fs3.default.existsSync(sessionPath) && import_fs3.default.readdirSync(sessionPath).length > 0;
+    if (!sessionExists) {
+      console.log(`[WhatsApp Session] Local session for device ${deviceId} is missing or empty. Attempting to restore from Supabase...`);
+      await restoreSessionFromSupabase(deviceId);
+    }
+    let state;
+    let saveCreds;
+    try {
+      const auth = await (0, import_baileys.useMultiFileAuthState)(sessionPath);
+      state = auth.state;
+      saveCreds = auth.saveCreds;
+    } catch (authErr) {
+      console.error(`[WhatsApp Session] Local session data for device ${deviceId} is corrupted. Deleting and forcing a clean re-fetch from Supabase...`, authErr);
+      if (import_fs3.default.existsSync(sessionPath)) {
+        import_fs3.default.rmSync(sessionPath, { recursive: true, force: true });
+      }
+      await restoreSessionFromSupabase(deviceId);
+      const auth = await (0, import_baileys.useMultiFileAuthState)(sessionPath);
+      state = auth.state;
+      saveCreds = auth.saveCreds;
+    }
     console.log(`Initializing Baileys session for device: ${deviceId}`);
     const makeSocketFn = import_baileys.default.default || import_baileys.default;
     const sock = makeSocketFn({
@@ -1291,7 +1321,19 @@ async function startWhatsAppSession(deviceId) {
       printQRInTerminal: false,
       syncFullHistory: false,
       shouldSyncHistoryMessage: () => false,
-      linkPreviewImageUpload: false
+      linkPreviewImageUpload: false,
+      // --- Stability Settings ---
+      // Keep the TCP connection alive with periodic pings to prevent server-side timeout
+      keepAliveIntervalMs: 25e3,
+      // 25 second keepalive ping
+      // Retry failed message deliveries with a small delay instead of immediately
+      retryRequestDelayMs: 2e3,
+      // Maximum number of message retries before giving up
+      maxMsgRetryCount: 5,
+      // Emulate a real browser to avoid WhatsApp flagging the connection as a bot
+      browser: ["ChatCore", "Chrome", "124.0.0"],
+      // Do not generate high-res link previews to reduce bandwidth and avoid disconnects
+      generateHighQualityLinkPreview: false
     });
     activeSockets.set(deviceId, sock);
     sock.ev.on("creds.update", async () => {
@@ -1550,7 +1592,7 @@ function stopWhatsAppSession(deviceId) {
 
 // server.ts
 var import_baileys2 = require("@whiskeysockets/baileys");
-var import_express_rate_limit = __toESM(require("express-rate-limit"));
+var import_express_rate_limit = __toESM(require("express-rate-limit"), 1);
 var debugLogPath = import_path4.default.join(process.cwd(), "startup-error.log");
 try {
   import_fs4.default.appendFileSync(debugLogPath, `
@@ -1863,20 +1905,38 @@ app.post("/api/expocore/webhook", async (req, res) => {
     return;
   }
   const devices = getAllDevices();
-  let targetDevice = devices.find((d) => d.id === deviceId && d.status === "connected");
+  const ACTIVE_STATUSES = ["connected", "ready", "authenticated"];
+  let targetDevice = devices.find((d) => d.id === deviceId && ACTIVE_STATUSES.includes(d.status) && activeSockets.has(d.id));
   if (!targetDevice) {
-    targetDevice = devices.find((d) => d.status === "connected");
+    targetDevice = devices.find((d) => ACTIVE_STATUSES.includes(d.status) && activeSockets.has(d.id));
+  }
+  if (!targetDevice) {
+    targetDevice = devices.find((d) => d.id === deviceId && ACTIVE_STATUSES.includes(d.status));
+  }
+  if (!targetDevice) {
+    targetDevice = devices.find((d) => ACTIVE_STATUSES.includes(d.status));
   }
   if (!targetDevice) {
     console.error("[ExpoCore Webhook] No connected WhatsApp device available");
-    res.status(503).json({ error: "No connected WhatsApp device available" });
+    res.status(503).json({ error: "No connected WhatsApp device available. Please connect a device in ChatCore settings." });
+    return;
+  }
+  if (!activeSockets.has(targetDevice.id)) {
+    console.warn(`[ExpoCore Webhook] Device ${targetDevice.id} is in DB as connected but has no live socket. Triggering auto-reboot...`);
+    startWhatsAppSession(targetDevice.id).catch(console.error);
+    res.status(503).json({ error: "WhatsApp socket is reconnecting, please try again in 10 seconds." });
     return;
   }
   try {
     let messageToSend = customMessage || `\u0645\u0631\u062D\u0628\u0627\u064B ${name}\u060C \u062A\u0630\u0643\u0631\u062A\u0643 \u0644\u0645\u0639\u0631\u0636 ${eventName} \u0647\u064A: ${ticket}
 \u0631\u0627\u0628\u0637 \u0627\u0644\u062A\u0630\u0643\u0631\u0629: ${ticketUrl}`;
     const cleanPhone = phone.replace(/[^\d]/g, "");
-    await sendBaileysMessage(targetDevice.id, cleanPhone, messageToSend);
+    const result = await sendBaileysMessage(targetDevice.id, cleanPhone, messageToSend);
+    if (!result.success) {
+      console.error(`[ExpoCore Webhook] sendBaileysMessage failed for device ${targetDevice.id}:`, result.error);
+      res.status(500).json({ error: result.error || "WhatsApp socket failed to send the message" });
+      return;
+    }
     console.log(`[ExpoCore Webhook] Message sent successfully to ${cleanPhone} via device ${targetDevice.id}`);
     saveOtpLog({
       id: `expocore_log_${Math.random().toString(36).substring(2, 11)}`,
@@ -1894,21 +1954,64 @@ app.post("/api/expocore/webhook", async (req, res) => {
     res.status(500).json({ error: err.message || "Failed to send message" });
   }
 });
+app.get("/api/expocore/debug", async (req, res) => {
+  const devices = getAllDevices();
+  const ACTIVE_STATUSES = ["connected", "ready", "authenticated"];
+  const report = devices.filter((d) => d.method === "qr").map((d) => ({
+    id: d.id,
+    name: d.name,
+    dbStatus: d.status,
+    socketAlive: activeSockets.has(d.id),
+    phoneNumber: d.phoneNumber || null
+  }));
+  const hasLiveSocket = report.some((r) => r.socketAlive && ACTIVE_STATUSES.includes(r.dbStatus));
+  const testPhone = req.query.phone || null;
+  let sendResult = null;
+  if (testPhone) {
+    const activeDevice = report.find((r) => r.socketAlive && ACTIVE_STATUSES.includes(r.dbStatus));
+    if (activeDevice) {
+      sendResult = await sendBaileysMessage(activeDevice.id, testPhone, "\u2705 ChatCore Debug Test Message \u2014 If you see this, sending works!");
+    } else {
+      sendResult = { success: false, error: "No device with live socket found" };
+    }
+  }
+  res.json({
+    timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+    overallStatus: hasLiveSocket ? "operational" : "no_live_socket",
+    devices: report,
+    sendTest: sendResult,
+    note: testPhone ? `Tested send to ${testPhone}` : "Add ?phone=20XXXXXXXXX to test actual sending"
+  });
+});
 app.get("/api/expocore/status", (req, res) => {
   const devices = getAllDevices();
-  const connectedDevice = devices.find((d) => d.status === "connected" || d.status === "ready" || d.status === "authenticated");
-  if (connectedDevice) {
-    res.json({ status: "connected", deviceId: connectedDevice.id, deviceName: connectedDevice.name });
-  } else {
-    res.json({ status: "disconnected" });
+  const ACTIVE_STATUSES = ["connected", "ready", "authenticated"];
+  const devicesWithSocket = devices.filter(
+    (d) => ACTIVE_STATUSES.includes(d.status) && activeSockets.has(d.id)
+  );
+  if (devicesWithSocket.length > 0) {
+    const dev = devicesWithSocket[0];
+    res.json({ status: "connected", deviceId: dev.id, deviceName: dev.name, socketAlive: true });
+    return;
   }
+  const dbConnectedDevice = devices.find((d) => ACTIVE_STATUSES.includes(d.status));
+  if (dbConnectedDevice) {
+    console.log(`[Status] Device ${dbConnectedDevice.id} is connected in DB but has no live socket. Auto-rebooting...`);
+    startWhatsAppSession(dbConnectedDevice.id).catch((err) => {
+      console.error(`[Status Auto-reboot] Failed for device ${dbConnectedDevice.id}:`, err);
+    });
+    res.json({ status: "connecting", deviceId: dbConnectedDevice.id, deviceName: dbConnectedDevice.name, socketAlive: false, note: "Reconnecting socket..." });
+    return;
+  }
+  res.json({ status: "disconnected", socketAlive: false });
 });
 async function sendWhatsAppOtp(phone, otp, isDemo = false) {
   const devices = getAllDevices();
   const settings = getOtpSettings();
-  let targetDevice = devices.find((d) => d.id === settings.defaultDeviceId && d.status === "connected");
+  const ACTIVE_STATUSES = ["connected", "ready", "authenticated"];
+  let targetDevice = devices.find((d) => d.id === settings.defaultDeviceId && ACTIVE_STATUSES.includes(d.status));
   if (!targetDevice) {
-    targetDevice = devices.find((d) => d.status === "connected");
+    targetDevice = devices.find((d) => ACTIVE_STATUSES.includes(d.status));
   }
   if (!targetDevice) {
     const errorMsg = "No connected WhatsApp device to send OTP";
@@ -1989,9 +2092,9 @@ app.post("/api/admin/test-otp", async (req, res) => {
   }
   const devices = getAllDevices();
   const settings = getOtpSettings();
-  let targetDevice = devices.find((d) => d.id === settings.defaultDeviceId && d.status === "connected");
+  let targetDevice = devices.find((d) => d.id === settings.defaultDeviceId && ["connected", "ready", "authenticated"].includes(d.status));
   if (!targetDevice) {
-    targetDevice = devices.find((d) => d.status === "connected");
+    targetDevice = devices.find((d) => ["connected", "ready", "authenticated"].includes(d.status));
   }
   if (!targetDevice) {
     res.status(400).json({ error: "No connected WhatsApp device available to send test message" });
@@ -2491,7 +2594,7 @@ app.post("/api/conversations/:convId/messages", async (req, res) => {
   }
   if (recipientId.startsWith("contact_")) {
     const targetPhone = recipientId.replace("contact_", "");
-    const activeDevices = getAllDevices().filter((d) => d.status === "connected");
+    const activeDevices = getAllDevices().filter((d) => ["connected", "ready", "authenticated"].includes(d.status));
     const qrDevice = activeDevices.find((d) => d.id === conv.deviceId) || activeDevices.find((d) => d.method === "qr") || activeDevices[0];
     if (qrDevice) {
       console.log(`Routing manual Web UI message via real device "${qrDevice.name}" (id: ${qrDevice.id}) to +${targetPhone}`);
@@ -3807,6 +3910,46 @@ app.post("/api/admin/reject-user/:id", (req, res) => {
     res.status(500).json({ error: "Internal Server Error" });
   });
 });
+app.post("/api/devices/:id/reconnect", async (req, res) => {
+  const { id } = req.params;
+  const tenantId = getTenantId(req);
+  const dbDevice = getAllDevices().find((d) => d.id === id);
+  if (!dbDevice || tenantId && dbDevice.ownerId && dbDevice.ownerId !== tenantId) {
+    res.status(404).json({ error: "Device not found or unauthorized" });
+    return;
+  }
+  if (dbDevice.method === "qr") {
+    try {
+      stopWhatsAppSession(dbDevice.id);
+    } catch (e) {
+      console.log(`[Reconnect] Failed to stop existing session for ${dbDevice.id}`, e);
+    }
+    console.log(`[Reconnect] Attempting to restore session from Supabase for device ${dbDevice.id}...`);
+    const { restoreSessionFromSupabase: restoreSessionFromSupabase2 } = await Promise.resolve().then(() => (init_supabase(), supabase_exports));
+    const restored = await restoreSessionFromSupabase2(dbDevice.id);
+    dbDevice.status = "connecting";
+    dbDevice.qrCodeUrl = void 0;
+    saveDevice(dbDevice);
+    if (restored) {
+      console.log(`[Reconnect] Session restored from Supabase for device ${dbDevice.id}. Starting session without new QR...`);
+    } else {
+      console.log(`[Reconnect] No saved session found for device ${dbDevice.id}. Will generate new QR code.`);
+    }
+    startWhatsAppSession(dbDevice.id).catch((err) => {
+      console.error(`[Reconnect] Failed to start WhatsApp session for ${dbDevice.id}:`, err);
+    });
+    res.json({
+      success: true,
+      device: dbDevice,
+      restoredFromBackup: restored,
+      message: restored ? "Restoring session from backup \u2014 no QR needed!" : "No backup found, generating new QR code"
+    });
+  } else {
+    dbDevice.status = "ready";
+    saveDevice(dbDevice);
+    res.json({ success: true, device: dbDevice, message: "Device status reset to ready" });
+  }
+});
 app.delete("/api/devices/:id", (req, res) => {
   const { id } = req.params;
   const tenantId = getTenantId(req);
@@ -4261,7 +4404,7 @@ async function runCampaignSimulation(campaignId) {
   try {
     let campaign = getAllCampaigns().find((c) => c.id === campaignId);
     if (!campaign) return;
-    const activeDevices = getAllDevices().filter((d) => d.status === "connected");
+    const activeDevices = getAllDevices().filter((d) => ["connected", "ready", "authenticated"].includes(d.status));
     const primaryDevice = activeDevices.length > 0 ? activeDevices[0] : null;
     const deviceName = primaryDevice ? primaryDevice.name : "Default System Gateway";
     campaign.logs.push(`[${(/* @__PURE__ */ new Date()).toLocaleTimeString()}] Connected to linked device: "${deviceName}".`);
@@ -4471,7 +4614,7 @@ wss.on("connection", (ws) => {
           }
           if (recipientId.startsWith("contact_")) {
             const targetPhone = recipientId.replace("contact_", "");
-            const activeDevices = getAllDevices().filter((d) => d.status === "connected");
+            const activeDevices = getAllDevices().filter((d) => ["connected", "ready", "authenticated"].includes(d.status));
             const conv = Object.values(readDb().conversations).find((c) => c.id === conversationId);
             const targetDevice = activeDevices.find((d) => d.id === conv?.deviceId);
             if (targetDevice) {
