@@ -23,22 +23,21 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 
 // server.ts
 var import_crypto = require("crypto");
-var import_express = __toESM(require("express"));
-var import_http = __toESM(require("http"));
+var import_express = __toESM(require("express"), 1);
+var import_http = __toESM(require("http"), 1);
 var import_ws = require("ws");
-var import_path4 = __toESM(require("path"));
-var import_fs4 = __toESM(require("fs"));
-var import_dotenv = __toESM(require("dotenv"));
-var import_vite = require("vite");
+var import_path4 = __toESM(require("path"), 1);
+var import_fs4 = __toESM(require("fs"), 1);
+var import_dotenv = __toESM(require("dotenv"), 1);
 var import_genai = require("@google/genai");
 
 // src/db.ts
-var import_fs2 = __toESM(require("fs"));
-var import_path2 = __toESM(require("path"));
+var import_fs2 = __toESM(require("fs"), 1);
+var import_path2 = __toESM(require("path"), 1);
 
 // src/supabase.ts
-var import_fs = __toESM(require("fs"));
-var import_path = __toESM(require("path"));
+var import_fs = __toESM(require("fs"), 1);
+var import_path = __toESM(require("path"), 1);
 var import_supabase_js = require("@supabase/supabase-js");
 var supabaseClient = null;
 function getSupabaseClient() {
@@ -103,7 +102,7 @@ async function backupSessionToSupabase(deviceId) {
       try {
         const stat = import_fs.default.statSync(filePath);
         if (stat.isFile()) {
-          const fileContent = import_fs.default.readFileSync(filePath, "utf-8");
+          const fileContent = import_fs.default.readFileSync(filePath, "utf-8").replace(/\0/g, "");
           const id = `${deviceId}/${fileName}`;
           upsertData.push({
             id,
@@ -437,9 +436,28 @@ function getAllUsers() {
 }
 function saveUser(user) {
   const db = readDb();
+  if (!user.subscriptionPlan) user.subscriptionPlan = "starter";
+  if (user.aiMessagesUsed === void 0) user.aiMessagesUsed = 0;
+  if (user.aiMessagesLimit === void 0) {
+    if (user.subscriptionPlan === "starter") user.aiMessagesLimit = 2500;
+    else if (user.subscriptionPlan === "pro") user.aiMessagesLimit = 7e3;
+    else if (user.subscriptionPlan === "enterprise") user.aiMessagesLimit = 2e4;
+  }
   db.users[user.id] = user;
   writeDb(db);
   return user;
+}
+function incrementUserAiUsage(userId) {
+  const db = readDb();
+  const user = db.users[userId];
+  if (!user) return { limitReached: true };
+  if (user.aiMessagesUsed >= (user.aiMessagesLimit || 2e3)) {
+    return { limitReached: true, user };
+  }
+  user.aiMessagesUsed += 1;
+  db.users[userId] = user;
+  writeDb(db);
+  return { limitReached: false, user };
 }
 function updateUserPresence(userId, isOnline) {
   const db = readDb();
@@ -796,10 +814,10 @@ function saveOtpSettings(settings) {
 }
 
 // src/whatsapp.ts
-var import_baileys = __toESM(require("@whiskeysockets/baileys"));
-var import_pino = __toESM(require("pino"));
-var import_path3 = __toESM(require("path"));
-var import_fs3 = __toESM(require("fs"));
+var import_baileys = __toESM(require("@whiskeysockets/baileys"), 1);
+var import_pino = __toESM(require("pino"), 1);
+var import_path3 = __toESM(require("path"), 1);
+var import_fs3 = __toESM(require("fs"), 1);
 var activeSockets = /* @__PURE__ */ new Map();
 var activeReconnectTimeouts = /* @__PURE__ */ new Map();
 var conflictCounters = /* @__PURE__ */ new Map();
@@ -1190,6 +1208,9 @@ async function startWhatsAppSession(deviceId) {
     });
     sock.ev.on("connection.update", async (update) => {
       const { connection, lastDisconnect, qr } = update;
+      if (!connection && !qr) {
+        return;
+      }
       const devices = getAllDevices();
       const device = devices.find((d) => d.id === deviceId);
       if (!device) {
@@ -1437,11 +1458,33 @@ function stopWhatsAppSession(deviceId) {
 
 // server.ts
 var import_baileys2 = require("@whiskeysockets/baileys");
+var import_express_rate_limit = __toESM(require("express-rate-limit"), 1);
 import_dotenv.default.config();
 var PORT = Number(process.env.PORT) || 3e3;
 var app = (0, import_express.default)();
 app.use(import_express.default.json({ limit: "50mb" }));
 app.use(import_express.default.urlencoded({ limit: "50mb", extended: true }));
+app.set("trust proxy", 1);
+var apiLimiter = (0, import_express_rate_limit.default)({
+  windowMs: 15 * 60 * 1e3,
+  // 15 minutes
+  max: 1e3,
+  // Limit each IP to 1000 requests per windowMs
+  message: { error: "Too many requests from this IP, please try again after 15 minutes" },
+  standardHeaders: true,
+  legacyHeaders: false
+});
+app.use("/api/", apiLimiter);
+app.post("/api/auth/admin-login", (req, res) => {
+  const { email, password } = req.body;
+  const db = readDb();
+  const adminUser = Object.values(db.users).find((u) => u.email === email && u.password === password && u.role === "admin");
+  if (adminUser) {
+    res.json({ success: true, user: adminUser });
+  } else {
+    res.status(401).json({ error: "\u0627\u0644\u0628\u0631\u064A\u062F \u0627\u0644\u0625\u0644\u0643\u062A\u0631\u0648\u0646\u064A \u0623\u0648 \u0643\u0644\u0645\u0629 \u0627\u0644\u0645\u0631\u0648\u0631 \u063A\u064A\u0631 \u0635\u062D\u064A\u062D\u0629" });
+  }
+});
 app.get("/api/catalog", (req, res) => {
   const db = readDb();
   res.json({ catalog: db.catalog || [] });
@@ -1457,6 +1500,7 @@ app.post("/api/catalog", (req, res) => {
 var server = import_http.default.createServer(app);
 var wss = new import_ws.WebSocketServer({ noServer: true });
 var activeConnections = /* @__PURE__ */ new Map();
+var autoPairCooldowns = /* @__PURE__ */ new Map();
 var ai = null;
 if (process.env.GEMINI_API_KEY) {
   try {
@@ -1661,7 +1705,7 @@ app.post("/api/demo-register", async (req, res) => {
   const expires = Date.now() + 5 * 60 * 1e3;
   demoOtpStore.set(phone, { otp, username, phone, expires });
   try {
-    await sendWhatsAppOtp(phone, otp);
+    await sendWhatsAppOtp(phone, otp, true);
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: "Failed to send OTP" });
@@ -1685,7 +1729,7 @@ app.post("/api/demo-verify", (req, res) => {
   writeDb(db);
   res.json({ success: true });
 });
-async function sendWhatsAppOtp(phone, otp) {
+async function sendWhatsAppOtp(phone, otp, isDemo = false) {
   const devices = getAllDevices();
   const settings = getOtpSettings();
   let targetDevice = devices.find((d) => d.id === settings.defaultDeviceId && d.status === "connected");
@@ -1705,7 +1749,10 @@ async function sendWhatsAppOtp(phone, otp) {
     });
     throw new Error(errorMsg);
   }
-  const template = settings.template || "\u0645\u0631\u062D\u0628\u0627\u064B \u0628\u0643 \u0641\u064A ChatCore. \u0631\u0645\u0632 \u0627\u0644\u062A\u062D\u0642\u0642 \u0627\u0644\u062E\u0627\u0635 \u0628\u0643 \u0647\u0648: {otp}. \u064A\u0631\u062C\u0649 \u0625\u062F\u062E\u0627\u0644\u0647 \u0641\u064A \u0627\u0644\u0645\u0648\u0642\u0639 \u0644\u062A\u0641\u0639\u064A\u0644 \u062D\u0633\u0627\u0628\u0643.";
+  let template = settings.template || "\u0645\u0631\u062D\u0628\u0627\u064B \u0628\u0643 \u0641\u064A ChatCore. \u0631\u0645\u0632 \u0627\u0644\u062A\u062D\u0642\u0642 \u0627\u0644\u062E\u0627\u0635 \u0628\u0643 \u0647\u0648: {otp}. \u064A\u0631\u062C\u0649 \u0625\u062F\u062E\u0627\u0644\u0647 \u0641\u064A \u0627\u0644\u0645\u0648\u0642\u0639 \u0644\u062A\u0641\u0639\u064A\u0644 \u062D\u0633\u0627\u0628\u0643.";
+  if (isDemo) {
+    template = "\u0631\u0645\u0632 \u0627\u0644\u062A\u062D\u0642\u0642 (OTP) \u0644\u062A\u0641\u0639\u064A\u0644 \u0646\u0633\u062E\u062A\u0643 \u0627\u0644\u062A\u062C\u0631\u064A\u0628\u064A\u0629 \u0627\u0644\u0645\u0624\u0642\u062A\u0629 \u0645\u0646 \u0646\u0638\u0627\u0645 ChatCore \u0647\u0648: {otp}\n\n\u064A\u0631\u062C\u0649 \u0627\u0644\u0639\u0644\u0645 \u0623\u0646 \u0647\u0630\u0647 \u0627\u0644\u0646\u0633\u062E\u0629 \u0635\u0627\u0644\u062D\u0629 \u0644\u0641\u062A\u0631\u0629 \u062A\u062C\u0631\u064A\u0628\u064A\u0629 \u0645\u0624\u0642\u062A\u0629 \u0644\u0644\u0627\u062E\u062A\u0628\u0627\u0631 \u0648\u0627\u0644\u062A\u0642\u064A\u064A\u0645 \u0641\u0642\u0637.";
+  }
   const message = template.replace(/{otp}/gi, otp);
   try {
     await sendBaileysMessage(targetDevice.id, phone, message);
@@ -1927,6 +1974,7 @@ app.post("/api/auth/login", async (req, res) => {
       isOnline: true,
       lastSeenAt: (/* @__PURE__ */ new Date()).toISOString(),
       subscriptionStatus: "trial",
+      trialExpiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1e3).toISOString(),
       totalTokensUsed: 0,
       costInDollars: 0,
       role: "user"
@@ -1934,6 +1982,12 @@ app.post("/api/auth/login", async (req, res) => {
     saveUser(user);
     cloneDefaultUserConversations(user.id);
   } else {
+    if (user.subscriptionStatus === "trial" && user.trialExpiresAt) {
+      if (Date.now() > new Date(user.trialExpiresAt).getTime()) {
+        res.status(403).json({ error: "\u0644\u0642\u062F \u0627\u0646\u062A\u0647\u062A \u0641\u062A\u0631\u0629 \u0635\u0644\u0627\u062D\u064A\u0629 \u0627\u0644\u0646\u0633\u062E\u0629 \u0627\u0644\u062A\u062C\u0631\u064A\u0628\u064A\u0629 (7 \u0623\u064A\u0627\u0645). \u064A\u0631\u062C\u0649 \u0627\u0644\u062A\u0648\u0627\u0635\u0644 \u0645\u0639 \u0627\u0644\u0625\u062F\u0627\u0631\u0629 \u0644\u0644\u062A\u0631\u0642\u064A\u0629." });
+        return;
+      }
+    }
     updateUserPresence(user.id, true);
     cloneDefaultUserConversations(user.id);
   }
@@ -1955,12 +2009,19 @@ app.post("/api/auth/ensure", (req, res) => {
       isOnline: true,
       lastSeenAt: (/* @__PURE__ */ new Date()).toISOString(),
       subscriptionStatus: "trial",
+      trialExpiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1e3).toISOString(),
       totalTokensUsed: 0,
       costInDollars: 0,
       role: "user"
     };
     saveUser(user);
   } else {
+    if (user.subscriptionStatus === "trial" && user.trialExpiresAt) {
+      if (Date.now() > new Date(user.trialExpiresAt).getTime()) {
+        res.status(403).json({ error: "\u0644\u0642\u062F \u0627\u0646\u062A\u0647\u062A \u0641\u062A\u0631\u0629 \u0635\u0644\u0627\u062D\u064A\u0629 \u0627\u0644\u0646\u0633\u062E\u0629 \u0627\u0644\u062A\u062C\u0631\u064A\u0628\u064A\u0629 (7 \u0623\u064A\u0627\u0645). \u064A\u0631\u062C\u0649 \u0627\u0644\u062A\u0648\u0627\u0635\u0644 \u0645\u0639 \u0627\u0644\u0625\u062F\u0627\u0631\u0629 \u0644\u0644\u062A\u0631\u0642\u064A\u0629." });
+        return;
+      }
+    }
     updateUserPresence(id, true);
   }
   cloneDefaultUserConversations(user.id);
@@ -2516,28 +2577,6 @@ app.get("/api/crm/funnel", async (req, res) => {
   } catch (err) {
     console.error("Failed to generate funnel customers:", err);
     res.status(500).json({ error: err.message || "Failed to fetch funnel customers" });
-  }
-});
-app.get("/api/stats/events", (req, res) => {
-  try {
-    const db = readDb();
-    const usersArray = Object.values(db.users || {});
-    const allEvents = {};
-    usersArray.forEach((u) => {
-      if (u.source === "EXPOCORE" && u.tags) {
-        u.tags.forEach((eventName) => {
-          if (!allEvents[eventName]) {
-            allEvents[eventName] = { name: eventName, attendees: 0, messagesSent: 0 };
-          }
-          allEvents[eventName].attendees++;
-          const messagesSentToUser = (db.messages || []).filter((m) => m.conversationId && db.conversations.find((c) => c.id === m.conversationId && c.participantIds.includes(u.id))).length;
-          allEvents[eventName].messagesSent += messagesSentToUser;
-        });
-      }
-    });
-    res.json({ success: true, events: Object.values(allEvents) });
-  } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
   }
 });
 app.get("/api/crm/analytics-summary", (req, res) => {
@@ -3271,11 +3310,16 @@ app.get("/api/devices", (req, res) => {
     if (modified) {
       saveDevice(d);
     }
-    if (d.method === "qr" && hasSavedSession(d.id) && !activeSockets.has(d.id) && !sessionsInProgress.has(d.id)) {
-      console.log(`[Auto-Pair] Auto-starting session for paired QR device "${d.name}" (${d.id}) on devices request...`);
-      startWhatsAppSession(d.id).catch((err) => {
-        console.error(`[Auto-Pair] Failed to auto-start session for device ${d.id}:`, err);
-      });
+    if (d.method === "qr" && hasSavedSession(d.id) && !activeSockets.has(d.id) && !sessionsInProgress.has(d.id) && !activeReconnectTimeouts.has(d.id) && d.status !== "connecting" && d.status !== "linking") {
+      const now = Date.now();
+      const lastAttempt = autoPairCooldowns.get(d.id) || 0;
+      if (now - lastAttempt > 3e4) {
+        autoPairCooldowns.set(d.id, now);
+        console.log(`[Auto-Pair] Auto-starting session for paired QR device "${d.name}" (${d.id}) on devices request...`);
+        startWhatsAppSession(d.id).catch((err) => {
+          console.error(`[Auto-Pair] Failed to auto-start session for device ${d.id}:`, err);
+        });
+      }
     }
     return d;
   });
@@ -3288,6 +3332,10 @@ app.post("/api/devices", (req, res) => {
     return;
   }
   const tenantId = getTenantId(req);
+  const user = getUser(tenantId);
+  if (user?.subscriptionPlan === "starter" && method !== "qr") {
+    return res.status(403).json({ error: "\u0639\u0630\u0631\u0627\u064B\u060C \u0631\u0628\u0637 \u05D4\u0640 API \u0648\u0627\u0644\u0640 Gateways \u0645\u062A\u0648\u0641\u0631 \u0641\u0642\u0637 \u0641\u064A \u0628\u0627\u0642\u0629 \u0627\u0644\u0645\u062D\u062A\u0631\u0641\u064A\u0646 \u0648\u0627\u0644\u0634\u0631\u0643\u0627\u062A. \u064A\u0631\u062C\u0649 \u0627\u0644\u062A\u0631\u0642\u064A\u0629." });
+  }
   const id = `dev_${Math.random().toString(36).substring(2, 11)}`;
   const displayPhone = phoneNumber ? String(phoneNumber).trim() : "+201012345678";
   const isDirectConnection = method === "cloud_api" || method === "ultramsg" || method === "greenapi";
@@ -3909,7 +3957,16 @@ async function runCampaignSimulation(campaignId) {
     console.error("Error during campaign queue dispatch simulation:", error);
   }
 }
+var lastDeviceUpdateBroadcast = /* @__PURE__ */ new Map();
 function broadcast(payload) {
+  if (payload.type === "device:update" && payload.device?.id) {
+    const now = Date.now();
+    const lastTime = lastDeviceUpdateBroadcast.get(payload.device.id) || 0;
+    if (now - lastTime < 2e3) {
+      return;
+    }
+    lastDeviceUpdateBroadcast.set(payload.device.id, now);
+  }
   const messageStr = JSON.stringify(payload);
   console.log(`[WS Broadcast] Broadcasting payload type "${payload.type}" to active connection(s) with SaaS privacy rules`);
   activeConnections.forEach((ws, userId) => {
@@ -3961,7 +4018,7 @@ server.on("upgrade", (request, socket, head) => {
   }
 });
 wss.on("connection", (ws) => {
-  let authenticatedUserId = "";
+  let authenticatedUserId = null;
   ws.on("message", async (data) => {
     try {
       const event = JSON.parse(data);
@@ -3973,8 +4030,7 @@ wss.on("connection", (ws) => {
           break;
         }
         case "auth": {
-          authenticatedUserId = event.userId || "";
-          if (!authenticatedUserId) break;
+          authenticatedUserId = event.userId;
           const existingWs = activeConnections.get(authenticatedUserId);
           if (existingWs && existingWs !== ws) {
             console.log(`[WS] Cleaned up duplicate connection for user ${authenticatedUserId}`);
@@ -4505,6 +4561,24 @@ async function startServer() {
       }
       let responseText = "";
       let responseAudioBuffer = null;
+      const usageCheck = incrementUserAiUsage(ownerId);
+      if (usageCheck.limitReached) {
+        console.log(`[AI Quota Reached] User ${ownerId} reached AI limit (${usageCheck.user?.aiMessagesLimit}). Skipping Gemini call.`);
+        const quotaMsg = {
+          id: `msg_${Math.random().toString(36).substring(2, 11)}`,
+          conversationId: conv.id,
+          senderId: ownerId,
+          recipientId: contactId,
+          content: "\u0639\u0630\u0631\u0627\u064B\u060C \u0627\u0644\u0645\u0633\u0627\u0639\u062F \u0627\u0644\u0630\u0643\u064A \u063A\u064A\u0631 \u0645\u062A\u0627\u062D \u062D\u0627\u0644\u064A\u0627\u064B (\u062A\u0645 \u0627\u0633\u062A\u0647\u0644\u0627\u0643 \u0627\u0644\u0628\u0627\u0642\u0629). \u0633\u064A\u062A\u0645 \u062A\u062D\u0648\u064A\u0644\u0643 \u0642\u0631\u064A\u0628\u0627\u064B \u0644\u0623\u062D\u062F \u0645\u0648\u0638\u0641\u064A \u0627\u0644\u0645\u0628\u064A\u0639\u0627\u062A.",
+          type: "text",
+          status: "delivered",
+          timestamp: (/* @__PURE__ */ new Date()).toISOString()
+        };
+        saveMessage(quotaMsg);
+        broadcast({ type: "message:new", message: quotaMsg });
+        await sendBaileysMessage(deviceId, jid, quotaMsg.content);
+        return;
+      }
       if (ai) {
         try {
           const historyMsgs = getMessagesForConversation(conv.id);
@@ -4528,12 +4602,17 @@ async function startServer() {
             sentimentInstruction = `
 - CRITICAL SENTIMENT ADAPTATION: The customer is expressing frustration, annoyance, or reporting a complaint/issue. You MUST immediately start your response with a deeply sincere, warm, and highly professional apology on behalf of our team (e.g., '\u0646\u0639\u062A\u0630\u0631 \u0645\u0646 \u062D\u0636\u0631\u062A\u0643 \u0628\u0634\u062F\u0629 \u064A\u0627 \u0641\u0646\u062F\u0645 \u0639\u0646 \u0647\u0630\u0627 \u0627\u0644\u0625\u0632\u0639\u0627\u062C\u060C \u0648\u0646\u0647\u062A\u0645 \u062C\u062F\u0627\u064B \u0628\u062D\u0644 \u0645\u0634\u0643\u0644\u062A\u0643...' or 'Sincere apologies for any inconvenience, we are fully committed to resolving this...'). Avoid standard cheerful greetings or promotional pitches. Be calming, constructive, and direct.`;
           }
+          const trainingHubKnowledge = (device.knowledgeBaseSources || []).map((source) => `--- SOURCE: ${source.name} ---
+${source.content}`).join("\n\n");
+          const combinedKnowledge = [device.aiKnowledgeBase, trainingHubKnowledge].filter(Boolean).join("\n\n");
+          const finalKnowledgeBase = combinedKnowledge || "(No factual knowledge base provided. Answer general greetings politely, but if asked about business details like pricing, policies, or products, politely apologize and offer to transfer them to human support.)";
           const systemPrompt = `You are an elite, highly intelligent corporate AI customer support agent named "${device.aiAgentName || "WhatsApp Smart Agent"}", representing our premium brand on WhatsApp.
 Your absolute goal is to deliver impeccable, friendly, accurate, and prestigious support to our customers.
 
 Here are your elite operating parameters:
 
 1. PERSONALITY, TONE & DYNAMIC TIME CONTEXT:
+${device.aiAgentInstructions ? `- Strict Persona Rules: ${device.aiAgentInstructions}` : ""}
 - Keep your tone warm, welcoming, respectful, and highly prestigious.
 - Adapt your voice seamlessly to the requested style: ${device.aiVoiceTone || "professional"}.
 - Use local context dynamically:
@@ -4547,7 +4626,7 @@ ${sentimentInstruction}
 
 3. KNOWLEDGE BASE GROUNDING & STRICT FAITHFULNESS:
 - Use the following factual Knowledge Base as your sole source of truth:
-${device.aiKnowledgeBase || "(No knowledge base specified. Answer general greetings politely, but if asked about business details like pricing, booking, or orders, politely offer to transfer them to human support.)"}
+${finalKnowledgeBase}
 - STRICT ANTI-HALLUCINATION & ANTI-AI-SLOP RULES: If the answer is NOT explicitly covered in the Knowledge Base:
   * DO NOT make up or assume links, prices, numbers, or features.
   * Instead of saying "I don't know", transition smoothly into a highly professional Lead Capture flow!
@@ -4584,64 +4663,14 @@ Formulate your exceptionally smart and professional response now:`;
             modelName = "gemini-3.1-pro-preview";
           }
           console.log(`[AI Agent] Formulating response using model "${modelName}"...`);
-          const queryExhibitionTool = {
-            functionDeclarations: [{
-              name: "query_exhibition_system",
-              description: "Query the EXPOCORE system to get live details about a specific exhibition, including agenda, location, dates, and exhibitor companies.",
-              parameters: {
-                type: "OBJECT",
-                properties: {
-                  eventName: {
-                    type: "STRING",
-                    description: "The name of the exhibition to query (e.g. 'Tech Expo 2026'). Provide your best guess based on the user's input."
-                  }
-                },
-                required: ["eventName"]
-              }
-            }]
-          };
-          let response = await callGeminiWithRetry({
+          const response = await callGeminiWithRetry({
             model: modelName,
             contents: contentsPayload,
             config: {
               systemInstruction: systemPrompt,
-              temperature: device.aiTemperature !== void 0 ? Number(device.aiTemperature) : 0.8,
-              tools: [queryExhibitionTool]
+              temperature: device.aiTemperature !== void 0 ? Number(device.aiTemperature) : 0.8
             }
           });
-          let functionCall = response.candidates?.[0]?.content?.parts?.find((p) => p.functionCall)?.functionCall || response.functionCalls?.[0];
-          if (functionCall && functionCall.name === "query_exhibition_system") {
-            console.log(`[AI Agent] Tool call detected: query_exhibition_system`, functionCall.args);
-            const eventName = functionCall.args?.eventName || functionCall.args?.fields?.eventName?.stringValue || "Tech Expo";
-            let toolResult = "No info";
-            try {
-              const expoRes = await fetch(`http://localhost:3000/api/watbus/agent/query?eventName=${encodeURIComponent(eventName)}`, {
-                headers: { "api_key": process.env.WATBUS_API_KEY || "" }
-              });
-              const expoJson = await expoRes.json();
-              toolResult = expoJson.context || "Event not found.";
-            } catch (e) {
-              toolResult = "Error connecting to EXPOCORE.";
-            }
-            contentsPayload.push({
-              role: "model",
-              parts: [{ functionCall }]
-            });
-            contentsPayload.push({
-              role: "user",
-              parts: [{ functionResponse: { name: "query_exhibition_system", response: { result: toolResult } } }]
-            });
-            console.log(`[AI Agent] Submitting tool response and resuming...`);
-            response = await callGeminiWithRetry({
-              model: modelName,
-              contents: contentsPayload,
-              config: {
-                systemInstruction: systemPrompt,
-                temperature: device.aiTemperature !== void 0 ? Number(device.aiTemperature) : 0.8,
-                tools: [queryExhibitionTool]
-              }
-            });
-          }
           responseText = response?.text || "";
           console.log(`[AI Agent] Generated text response: "${responseText.substring(0, 100)}${responseText.length > 100 ? "..." : ""}"`);
           if (shouldReplyWithVoice && responseText) {
@@ -4945,148 +4974,38 @@ ${eventDetails.parking}. \u{1F4CD}`;
     }
     return res.json({ thoughts, reply });
   });
-  app.get("/api/expocore/settings", (req, res) => {
-    const db = readDb();
-    if (!db.expocoreSettings) {
-      db.expocoreSettings = {
-        welcomeMessageAr: `\u{1F3AB} *\u0645\u0631\u062D\u0628\u0627\u064B \u0628\u0643 \u064A\u0627 {{name}}!*
-\u0644\u0642\u062F \u062A\u0645 \u062A\u0633\u062C\u064A\u0644 \u062D\u0636\u0648\u0631\u0643 \u0628\u0646\u062C\u0627\u062D.
-
-\u062A\u062C\u062F \u062A\u0630\u0643\u0631\u062A\u0643 \u0648\u0631\u0645\u0632 \u0627\u0644\u062F\u062E\u0648\u0644 \u0627\u0644\u062E\u0627\u0635 \u0628\u0643 \u0647\u0646\u0627:
-\u{1F449} {{ticketUrl}}
-
-\u0623\u0646\u0627 \u0645\u0633\u0627\u0639\u062F\u0643 \u0627\u0644\u0630\u0643\u064A \u0639\u0628\u0631 \u0627\u0644\u0648\u0627\u062A\u0633\u0627\u0628\u060C \u0641\u064A \u062E\u062F\u0645\u062A\u0643 \u0644\u0644\u0631\u062F \u0639\u0644\u0649 \u0627\u0633\u062A\u0641\u0633\u0627\u0631\u0627\u062A\u0643 \u{1F91D}`,
-        welcomeMessageEn: `\u{1F3AB} *Hello {{name}}!*
-Your registration has been successfully confirmed.
-
-You can access your ticket and QR code here:
-\u{1F449} {{ticketUrl}}
-
-I am your WhatsApp Smart Agent, at your service! \u{1F91D}`,
-        isActive: true
-      };
-      writeDb(db);
-    }
-    return res.json(db.expocoreSettings);
-  });
-  app.post("/api/expocore/settings", (req, res) => {
-    const db = readDb();
-    db.expocoreSettings = {
-      ...db.expocoreSettings || {},
-      ...req.body
-    };
-    writeDb(db);
-    return res.json({ success: true, settings: db.expocoreSettings });
-  });
   app.post("/api/expocore/webhook", async (req, res) => {
     const apiKeyHeader = req.headers["api_key"] || req.headers["x-api-key"] || req.query.api_key;
-    let { name, phone, ticket, ticketUrl, customMessage, eventName } = req.body;
-    name = name || req.body.visitor_name || req.body.first_name || req.body.customer_name || req.body.full_name || req.body.visitorName;
-    phone = phone || req.body.visitor_phone || req.body.customer_phone || req.body.mobile || req.body.whatsapp || req.body.visitorPhone;
-    if (phone && typeof phone === "string") {
-      phone = phone.replace(/[\s\+\-\(\)]/g, "").trim();
-      if (phone.startsWith("010") || phone.startsWith("011") || phone.startsWith("012") || phone.startsWith("015")) {
-        phone = "2" + phone;
-      }
-    }
-    console.log(`[ExpoCore Webhook] Received registration check-in for event: ${eventName || "Unknown"}`, { name, phone, ticket, ticketUrl, apiKeyHeader });
+    const { name, phone, ticket, ticketUrl } = req.body;
+    console.log(`[ExpoCore Webhook] Received registration check-in:`, { name, phone, ticket, ticketUrl, apiKeyHeader });
     if (!name || !phone) {
       return res.status(400).json({
         success: false,
         error: "Missing required parameters: name and phone are mandatory."
       });
     }
-    const isArabic = /[\u0600-\u06FF]/.test(name) || phone.startsWith("+20") || phone.startsWith("20") || phone.startsWith("010") || phone.startsWith("011") || phone.startsWith("012") || phone.startsWith("015");
-    const qrUrl = ticketUrl || `https://expocore.io/t/${ticket || "9842"}-qr`;
-    const db = readDb();
-    if (db.expocoreSettings && db.expocoreSettings.isActive === false) {
-      return res.status(403).json({ success: false, error: "ExpoCore WhatsApp integration is currently paused in settings." });
-    }
-    let messageText = "";
-    if (customMessage && customMessage.trim() !== "") {
-      messageText = customMessage.replace(/{{name}}/g, name || "").replace(/{{ticketUrl}}/g, qrUrl || "");
-    } else {
-      const defaultAr = `\u{1F3AB} *\u0645\u0631\u062D\u0628\u0627\u064B \u0628\u0643 \u064A\u0627 {{name}}!*
-\u0644\u0642\u062F \u062A\u0645 \u062A\u0633\u062C\u064A\u0644 \u062D\u0636\u0648\u0631\u0643 \u0628\u0646\u062C\u0627\u062D \u0641\u064A \u0627\u0644\u0645\u0639\u0631\u0636.
-
-\u062A\u062C\u062F \u062A\u0630\u0643\u0631\u062A\u0643 \u0648\u0631\u0645\u0632 \u0627\u0644\u062F\u062E\u0648\u0644 \u0627\u0644\u0640 QR \u0627\u0644\u062E\u0627\u0635 \u0628\u0643 \u0647\u0646\u0627:
-\u{1F449} {{ticketUrl}}
-
-\u0646\u062D\u0646 \u0628\u0627\u0646\u062A\u0638\u0627\u0631\u0643! \u0648\u0633\u0623\u0643\u0648\u0646 \u0645\u0639\u0643 \u0643\u0640 \u0645\u0633\u0627\u0639\u062F \u0630\u0643\u064A \u0639\u0628\u0631 \u0627\u0644\u0648\u0627\u062A\u0633\u0627\u0628 \u0644\u0644\u0625\u062C\u0627\u0628\u0629 \u0639\u0644\u0649 \u062C\u0645\u064A\u0639 \u0627\u0633\u062A\u0641\u0633\u0627\u0631\u0627\u062A\u0643 \u062D\u0648\u0644 \u0627\u0644\u0645\u0639\u0631\u0636 \u0648\u0627\u0644\u0634\u0631\u0643\u0627\u062A \u0627\u0644\u0639\u0627\u0631\u0636\u0629 \u0641\u0648\u0631\u0627\u064B! \u{1F91D}`;
-      const defaultEn = `\u{1F3AB} *Hello {{name}}!*
-Your registration has been successfully confirmed.
-
-You can access your digital ticket and access QR code here:
-\u{1F449} {{ticketUrl}}
-
-We look forward to seeing you! I am your WhatsApp Smart Agent. If you have any questions, feel free to ask me! \u{1F91D}`;
-      const template = isArabic ? db.expocoreSettings?.welcomeMessageAr || defaultAr : db.expocoreSettings?.welcomeMessageEn || defaultEn;
-      messageText = template.replace(/{{name}}/g, name || "").replace(/{{ticketUrl}}/g, qrUrl || "");
-    }
-    const cleanPhone = phone.replace(/[\s\+\-\(\)]/g, "").trim();
-    const contactId = `contact_${cleanPhone}`;
-    if (!db.users[contactId]) {
-      db.users[contactId] = {
-        id: contactId,
-        username: name || `Contact ${cleanPhone}`,
-        role: "user",
-        avatarUrl: "",
-        statusText: "offline",
-        isOnline: false,
-        lastSeenAt: (/* @__PURE__ */ new Date()).toISOString(),
-        subscriptionStatus: "inactive",
-        totalTokensUsed: 0,
-        costInDollars: 0,
-        source: "EXPOCORE",
-        tags: eventName ? [eventName] : []
-      };
-    } else {
-      db.users[contactId].source = "EXPOCORE";
-      if (!db.users[contactId].tags) db.users[contactId].tags = [];
-      if (eventName && !db.users[contactId].tags.includes(eventName)) {
-        db.users[contactId].tags.push(eventName);
-      }
-    }
-    let conv = db.conversations.find((c) => c.participantIds.includes(contactId));
-    if (!conv) {
-      const convId = `conv_${Date.now()}_${Math.random().toString(36).substring(7)}`;
-      conv = {
-        id: convId,
-        participantIds: ["meta-ai", contactId],
-        createdAt: (/* @__PURE__ */ new Date()).toISOString(),
-        updatedAt: (/* @__PURE__ */ new Date()).toISOString()
-      };
-      db.conversations.push(conv);
-    }
-    if (!db.messages) db.messages = [];
-    const newMsg = {
-      id: `msg_${Date.now()}_${Math.random().toString(36).substring(7)}`,
-      conversationId: conv.id,
-      senderId: "meta-ai",
-      recipientId: contactId,
-      content: messageText,
-      type: "text",
-      timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-      status: "sent"
-    };
-    db.messages.push(newMsg);
-    writeDb(db);
     const allDevices = getAllDevices();
     const activeDevices = allDevices.filter((d) => d.status === "connected" || d.method === "qr" || d.method === "greenapi" || d.method === "cloud_api");
-    let device = null;
-    const reqDeviceId = req.body.deviceId;
-    if (reqDeviceId) {
-      device = activeDevices.find((d) => d.id === reqDeviceId) || allDevices.find((d) => d.id === reqDeviceId);
-    }
-    if (!device) {
-      device = activeDevices[0] || allDevices[0];
-    }
+    const device = activeDevices[0] || allDevices[0];
+    const isArabic = /[\u0600-\u06FF]/.test(name) || phone.startsWith("+20") || phone.startsWith("20") || phone.startsWith("010") || phone.startsWith("011") || phone.startsWith("012") || phone.startsWith("015");
+    const qrUrl = ticketUrl || `https://expocore.io/t/${ticket || "9842"}-qr`;
+    const messageText = isArabic ? `\u{1F3AB} *\u0645\u0631\u062D\u0628\u0627\u064B \u0628\u0643 \u064A\u0627 ${name}!* \u0644\u0642\u062F \u062A\u0645 \u062A\u0633\u062C\u064A\u0644 \u062D\u0636\u0648\u0631\u0643 \u0628\u0646\u062C\u0627\u062D \u0641\u064A \u0627\u0644\u0645\u0639\u0631\u0636.
+
+\u062A\u062C\u062F \u062A\u0630\u0643\u0631\u062A\u0643 \u0648\u0631\u0645\u0632 \u0627\u0644\u062F\u062E\u0648\u0644 \u0627\u0644\u0640 QR \u0627\u0644\u062E\u0627\u0635 \u0628\u0643 \u0647\u0646\u0627:
+\u{1F449} ${qrUrl}
+
+\u0646\u062D\u0646 \u0628\u0627\u0646\u062A\u0638\u0627\u0631\u0643! \u0648\u0633\u0623\u0643\u0648\u0646 \u0645\u0639\u0643 \u0643\u0640 \u0645\u0633\u0627\u0639\u062F \u0630\u0643\u064A \u0639\u0628\u0631 \u0627\u0644\u0648\u0627\u062A\u0633\u0627\u0628 \u0644\u0644\u0625\u062C\u0627\u0628\u0629 \u0639\u0644\u0649 \u062C\u0645\u064A\u0639 \u0627\u0633\u062A\u0641\u0633\u0627\u0631\u0627\u062A\u0643 \u062D\u0648\u0644 \u0627\u0644\u0645\u0639\u0631\u0636 \u0648\u0627\u0644\u0634\u0631\u0643\u0627\u062A \u0627\u0644\u0639\u0627\u0631\u0636\u0629 \u0641\u0648\u0631\u0627\u064B! \u{1F91D}` : `\u{1F3AB} *Hello ${name}!* Your registration has been successfully confirmed.
+
+You can access your digital ticket and access QR code here:
+\u{1F449} ${qrUrl}
+
+We look forward to seeing you! I am your WhatsApp Smart Agent. If you have any questions, feel free to ask me! \u{1F91D}`;
     if (!device) {
       console.warn(`[ExpoCore Webhook] No active WhatsApp gateway connected. Simulating success.`);
       return res.json({
         success: true,
         simulated: true,
-        message: "No active WhatsApp device connected, but webhook was successfully validated, simulated and saved to CRM.",
+        message: "No active WhatsApp device connected, but webhook was successfully validated and simulated.",
         payload: { name, phone, qrUrl, messageText }
       });
     }
@@ -5109,7 +5028,7 @@ We look forward to seeing you! I am your WhatsApp Smart Agent. If you have any q
     }
   });
   if (process.env.NODE_ENV !== "production") {
-    const vite = await (0, import_vite.createServer)({
+    const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa"
     });
@@ -5121,8 +5040,8 @@ We look forward to seeing you! I am your WhatsApp Smart Agent. If you have any q
       res.sendFile(import_path4.default.join(distPath, "index.html"));
     });
   }
-  server.listen(PORT, () => {
-    console.log(`WhatsApp Server listening on ${typeof PORT === "string" && isNaN(Number(PORT)) ? "socket" : "http://localhost:"}${PORT}`);
+  server.listen(PORT, "0.0.0.0", () => {
+    console.log(`WhatsApp Server listening on http://localhost:${PORT}`);
   });
 }
 startServer();
@@ -5130,3 +5049,4 @@ startServer();
  * @license
  * SPDX-License-Identifier: Apache-2.0
  */
+//# sourceMappingURL=server.cjs.map

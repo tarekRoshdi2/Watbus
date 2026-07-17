@@ -10,7 +10,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import path from 'path';
 import fs from 'fs';
 import dotenv from 'dotenv';
-// vite is imported dynamically in dev mode only (see startServer)
+import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI } from '@google/genai';
 
 // Load environment variables
@@ -1468,34 +1468,6 @@ app.get('/api/crm/funnel', async (req, res) => {
   } catch (err: any) {
     console.error('Failed to generate funnel customers:', err);
     res.status(500).json({ error: err.message || 'Failed to fetch funnel customers' });
-  }
-});
-
-// --- NEW: ExpoCore Events Statistics ---
-app.get('/api/stats/events', (req, res) => {
-  try {
-    const db = readDb();
-    const usersArray = Object.values(db.users || {}) as User[];
-    const allEvents: Record<string, { name: string; attendees: number; messagesSent: number }> = {};
-
-    usersArray.forEach(u => {
-      if (u.source === 'EXPOCORE' && u.tags) {
-        u.tags.forEach((eventName: string) => {
-          if (!allEvents[eventName]) {
-            allEvents[eventName] = { name: eventName, attendees: 0, messagesSent: 0 };
-          }
-          allEvents[eventName].attendees++;
-
-          // Count messages sent to this user
-          const messagesSentToUser = (db.messages || []).filter((m: any) => m.conversationId && db.conversations.find((c: any) => c.id === m.conversationId && c.participantIds.includes(u.id))).length;
-          allEvents[eventName].messagesSent += messagesSentToUser;
-        });
-      }
-    });
-
-    res.json({ success: true, events: Object.values(allEvents) });
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
   }
 });
 
@@ -3949,72 +3921,14 @@ Formulate your exceptionally smart and professional response now:`;
 
           console.log(`[AI Agent] Formulating response using model "${modelName}"...`);
           
-          const queryExhibitionTool = {
-            functionDeclarations: [{
-              name: "query_exhibition_system",
-              description: "Query the EXPOCORE system to get live details about a specific exhibition, including agenda, location, dates, and exhibitor companies.",
-              parameters: {
-                type: "OBJECT",
-                properties: {
-                  eventName: {
-                    type: "STRING",
-                    description: "The name of the exhibition to query (e.g. 'Tech Expo 2026'). Provide your best guess based on the user's input."
-                  }
-                },
-                required: ["eventName"]
-              }
-            }]
-          };
-
-          let response = await callGeminiWithRetry({
+          const response = await callGeminiWithRetry({
             model: modelName,
             contents: contentsPayload,
             config: {
               systemInstruction: systemPrompt,
               temperature: device.aiTemperature !== undefined ? Number(device.aiTemperature) : 0.8,
-              tools: [queryExhibitionTool]
             }
           });
-
-          // Check for function call
-          let functionCall = response.candidates?.[0]?.content?.parts?.find((p: any) => p.functionCall)?.functionCall || (response as any).functionCalls?.[0];
-          
-          if (functionCall && functionCall.name === 'query_exhibition_system') {
-             console.log(`[AI Agent] Tool call detected: query_exhibition_system`, functionCall.args);
-             const eventName = functionCall.args?.eventName || (functionCall.args as any)?.fields?.eventName?.stringValue || 'Tech Expo';
-             
-             let toolResult = 'No info';
-             try {
-               const expoRes = await fetch(`http://localhost:3000/api/watbus/agent/query?eventName=${encodeURIComponent(eventName)}`, {
-                 headers: { 'api_key': process.env.WATBUS_API_KEY || '' }
-               });
-               const expoJson = await expoRes.json();
-               toolResult = expoJson.context || 'Event not found.';
-             } catch (e) {
-               toolResult = 'Error connecting to EXPOCORE.';
-             }
-
-             // Append the function call and response to history and call Gemini again
-             contentsPayload.push({
-               role: 'model',
-               parts: [{ functionCall }]
-             });
-             contentsPayload.push({
-               role: 'user',
-               parts: [{ functionResponse: { name: 'query_exhibition_system', response: { result: toolResult } } }]
-             });
-
-             console.log(`[AI Agent] Submitting tool response and resuming...`);
-             response = await callGeminiWithRetry({
-                model: modelName,
-                contents: contentsPayload,
-                config: {
-                  systemInstruction: systemPrompt,
-                  temperature: device.aiTemperature !== undefined ? Number(device.aiTemperature) : 0.8,
-                  tools: [queryExhibitionTool]
-                }
-             });
-          }
           
           responseText = response?.text || '';
           console.log(`[AI Agent] Generated text response: "${responseText.substring(0, 100)}${responseText.length > 100 ? '...' : ''}"`);
@@ -4395,9 +4309,9 @@ ${eventDetails.parking}. 📍`;
   // This endpoint accepts webhook payload from ticket.expocore.net when a guest registers
   app.post('/api/expocore/webhook', async (req, res) => {
     const apiKeyHeader = req.headers['api_key'] || req.headers['x-api-key'] || req.query.api_key;
-    const { name, phone, ticket, ticketUrl, customMessage, eventName } = req.body;
+    const { name, phone, ticket, ticketUrl } = req.body;
 
-    console.log(`[ExpoCore Webhook] Received registration check-in for event: ${eventName || 'Unknown'}`, { name, phone, ticket, ticketUrl, apiKeyHeader });
+    console.log(`[ExpoCore Webhook] Received registration check-in:`, { name, phone, ticket, ticketUrl, apiKeyHeader });
 
     if (!name || !phone) {
       return res.status(400).json({ 
@@ -4406,78 +4320,25 @@ ${eventDetails.parking}. 📍`;
       });
     }
 
-    // Generate message
-    const isArabic = /[\u0600-\u06FF]/.test(name) || phone.startsWith('+20') || phone.startsWith('20') || phone.startsWith('010') || phone.startsWith('011') || phone.startsWith('012') || phone.startsWith('015');
-    const qrUrl = ticketUrl || `https://expocore.io/t/${ticket || '9842'}-qr`;
-
-    let messageText = '';
-    if (customMessage && customMessage.trim() !== '') {
-        messageText = customMessage.replace(/{{name}}/g, name || '').replace(/{{ticketUrl}}/g, qrUrl || '');
-    } else {
-        messageText = isArabic
-          ? `🎫 *مرحباً بك يا ${name}!* لقد تم تسجيل حضورك بنجاح في المعرض.\n\nتجد تذكرتك ورمز الدخول الـ QR الخاص بك هنا:\n👉 ${qrUrl}\n\nنحن بانتظارك! وسأكون معك كـ مساعد ذكي عبر الواتساب للإجابة على جميع استفساراتك حول المعرض والشركات العارضة فوراً! 🤝`
-          : `🎫 *Hello ${name}!* Your registration has been successfully confirmed.\n\nYou can access your digital ticket and access QR code here:\n👉 ${qrUrl}\n\nWe look forward to seeing you! I am your WhatsApp Smart Agent. If you have any questions, feel free to ask me! 🤝`;
-    }
-
-    // 1. Create/Update User in DB
-    const cleanPhone = phone.replace(/[\s\+\-\(\)]/g, '').trim();
-    const contactId = `contact_${cleanPhone}`;
-    if (!db.users[contactId]) {
-      db.users[contactId] = {
-        id: contactId,
-        username: name || `Contact ${cleanPhone}`,
-        role: 'user',
-        avatar: '',
-        status: 'offline',
-        source: 'EXPOCORE',
-        tags: eventName ? [eventName] : []
-      };
-    } else {
-      db.users[contactId].source = 'EXPOCORE';
-      if (!db.users[contactId].tags) db.users[contactId].tags = [];
-      if (eventName && !db.users[contactId].tags.includes(eventName)) {
-        db.users[contactId].tags.push(eventName);
-      }
-    }
-
-    // 2. Ensure Conversation exists
-    let conv = db.conversations.find(c => c.participantIds.includes(contactId));
-    if (!conv) {
-      const convId = `conv_${Date.now()}_${Math.random().toString(36).substring(7)}`;
-      conv = {
-        id: convId,
-        participantIds: ['meta-ai', contactId],
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        status: 'active'
-      };
-      db.conversations.push(conv);
-    }
-
-    // 3. Log Outgoing Message in DB
-    if (!db.messages) db.messages = [];
-    const newMsg = {
-        id: `msg_${Date.now()}_${Math.random().toString(36).substring(7)}`,
-        conversationId: conv.id,
-        senderId: 'meta-ai',
-        content: messageText,
-        timestamp: new Date().toISOString(),
-        status: 'sent'
-    };
-    db.messages.push(newMsg);
-    saveDb();
-
     // Find any connected WhatsApp gateway device to send the message
     const allDevices = getAllDevices();
     const activeDevices = allDevices.filter(d => d.status === 'connected' || d.method === 'qr' || d.method === 'greenapi' || d.method === 'cloud_api');
     const device = activeDevices[0] || allDevices[0]; // pick first available or fallback to first
+
+    // Generate message
+    const isArabic = /[\u0600-\u06FF]/.test(name) || phone.startsWith('+20') || phone.startsWith('20') || phone.startsWith('010') || phone.startsWith('011') || phone.startsWith('012') || phone.startsWith('015');
+    const qrUrl = ticketUrl || `https://expocore.io/t/${ticket || '9842'}-qr`;
+
+    const messageText = isArabic
+      ? `🎫 *مرحباً بك يا ${name}!* لقد تم تسجيل حضورك بنجاح في المعرض.\n\nتجد تذكرتك ورمز الدخول الـ QR الخاص بك هنا:\n👉 ${qrUrl}\n\nنحن بانتظارك! وسأكون معك كـ مساعد ذكي عبر الواتساب للإجابة على جميع استفساراتك حول المعرض والشركات العارضة فوراً! 🤝`
+      : `🎫 *Hello ${name}!* Your registration has been successfully confirmed.\n\nYou can access your digital ticket and access QR code here:\n👉 ${qrUrl}\n\nWe look forward to seeing you! I am your WhatsApp Smart Agent. If you have any questions, feel free to ask me! 🤝`;
 
     if (!device) {
       console.warn(`[ExpoCore Webhook] No active WhatsApp gateway connected. Simulating success.`);
       return res.json({
         success: true,
         simulated: true,
-        message: 'No active WhatsApp device connected, but webhook was successfully validated, simulated and saved to CRM.',
+        message: 'No active WhatsApp device connected, but webhook was successfully validated and simulated.',
         payload: { name, phone, qrUrl, messageText }
       });
     }
@@ -4502,14 +4363,13 @@ ${eventDetails.parking}. 📍`;
   });
 
   if (process.env.NODE_ENV !== 'production') {
-    const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
     });
     app.use(vite.middlewares);
   } else {
-    const distPath = path.join(__dirname);
+    const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
     app.get('*', (req, res) => {
       res.sendFile(path.join(distPath, 'index.html'));
