@@ -4946,7 +4946,15 @@ ${eventDetails.parking}. \u{1F4CD}`;
   });
   app.post("/api/expocore/webhook", async (req, res) => {
     const apiKeyHeader = req.headers["api_key"] || req.headers["x-api-key"] || req.query.api_key;
-    const { name, phone, ticket, ticketUrl, customMessage, eventName } = req.body;
+    let { name, phone, ticket, ticketUrl, customMessage, eventName } = req.body;
+    name = name || req.body.visitor_name || req.body.first_name || req.body.customer_name || req.body.full_name || req.body.visitorName;
+    phone = phone || req.body.visitor_phone || req.body.customer_phone || req.body.mobile || req.body.whatsapp || req.body.visitorPhone;
+    if (phone && typeof phone === "string") {
+      phone = phone.replace(/[\s\+\-\(\)]/g, "").trim();
+      if (phone.startsWith("010") || phone.startsWith("011") || phone.startsWith("012") || phone.startsWith("015")) {
+        phone = "2" + phone;
+      }
+    }
     console.log(`[ExpoCore Webhook] Received registration check-in for event: ${eventName || "Unknown"}`, { name, phone, ticket, ticketUrl, apiKeyHeader });
     if (!name || !phone) {
       return res.status(400).json({
