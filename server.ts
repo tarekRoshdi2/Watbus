@@ -518,7 +518,7 @@ app.post('/api/expocore/webhook', async (req, res) => {
 
 app.get('/api/expocore/status', (req, res) => {
   const devices = getAllDevices();
-  const connectedDevice = devices.find(d => d.status === 'connected');
+  const connectedDevice = devices.find(d => d.status === 'connected' || d.status === 'ready' || d.status === 'authenticated');
   if (connectedDevice) {
     res.json({ status: 'connected', deviceId: connectedDevice.id, deviceName: connectedDevice.name });
   } else {
