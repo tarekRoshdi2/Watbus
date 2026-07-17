@@ -162,7 +162,7 @@ export default function AdminPage({ currentUser, lang }: Props) {
     }
   };
 
-  const filteredUsers = data?.users.filter(u => {
+  const filteredUsers = data?.users?.filter(u => {
     const matchQuery = searchQuery.trim().toLowerCase();
     if (!matchQuery) return true;
     return (
@@ -231,10 +231,10 @@ export default function AdminPage({ currentUser, lang }: Props) {
         <div className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
               {[
-                  { label: lang === 'ar' ? 'إجمالي أصحاب الحسابات' : 'Total Customers', value: data?.users.length || 0, icon: Users, color: 'text-emerald-500', bg: 'bg-emerald-500/10' },
-                  { label: lang === 'ar' ? 'طلبات الديمو المحجوزة' : 'Demo Leads', value: data?.demoLeads.length || 0, icon: FileText, color: 'text-blue-500', bg: 'bg-blue-500/10' },
-                  { label: lang === 'ar' ? 'المستخدمون النشطون' : 'Active Paid Users', value: data?.users.filter(u => u.subscriptionStatus === 'active').length || 0, icon: CheckCircle2, color: 'text-indigo-500', bg: 'bg-indigo-500/10' },
-                  { label: lang === 'ar' ? 'فترات التجربة المجانية' : 'Free Trials Active', value: data?.users.filter(u => u.subscriptionStatus === 'trial').length || 0, icon: Clock, color: 'text-amber-500', bg: 'bg-amber-500/10' },
+                  { label: lang === 'ar' ? 'إجمالي أصحاب الحسابات' : 'Total Customers', value: data?.users?.length || 0, icon: Users, color: 'text-emerald-500', bg: 'bg-emerald-500/10' },
+                  { label: lang === 'ar' ? 'طلبات الديمو المحجوزة' : 'Demo Leads', value: data?.demoLeads?.length || 0, icon: FileText, color: 'text-blue-500', bg: 'bg-blue-500/10' },
+                  { label: lang === 'ar' ? 'المستخدمون النشطون' : 'Active Paid Users', value: data?.users?.filter(u => u.subscriptionStatus === 'active').length || 0, icon: CheckCircle2, color: 'text-indigo-500', bg: 'bg-indigo-500/10' },
+                  { label: lang === 'ar' ? 'فترات التجربة المجانية' : 'Free Trials Active', value: data?.users?.filter(u => u.subscriptionStatus === 'trial').length || 0, icon: Clock, color: 'text-amber-500', bg: 'bg-amber-500/10' },
               ].map((stat, i) => (
                   <div key={i} className="bg-white dark:bg-zinc-900 p-6 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-sm flex items-center gap-4 transition-all hover:scale-[1.01]">
                       <div className={`p-3.5 rounded-2xl ${stat.bg} ${stat.color}`}>

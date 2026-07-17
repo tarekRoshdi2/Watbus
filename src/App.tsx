@@ -142,6 +142,11 @@ export default function App() {
           if (res.ok) {
             console.log('User session successfully ensured on server');
             fetchConversationsAndStatuses();
+          } else if (res.status === 403) {
+            res.json().then(data => {
+              alert(data.error || 'لقد انتهت فترة صلاحية النسخة التجريبية (7 أيام). يرجى الترقية للاستمرار.');
+              handleLogout();
+            });
           }
         }).catch(err => {
           console.warn('Error ensuring user session on server:', err);
@@ -448,13 +453,13 @@ export default function App() {
     setCampaigns([]);
   };
 
-  const handleAddNewContact = async (username: string) => {
+  const handleAddNewContact = async (username: string, deviceId: string) => {
     if (!currentUser) return;
     try {
       const res = await fetch('/api/conversations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: currentUser.id, targetUsername: username })
+        body: JSON.stringify({ userId: currentUser.id, targetUsername: username, deviceId })
       });
       if (res.ok) {
         const data = await res.json();
@@ -836,7 +841,7 @@ export default function App() {
   // If user is not logged in, render the beautiful public portal sequence
   if (!currentUser) {
     if (authMode === 'landing') {
-      return <LandingPage onGetStarted={(mode) => setAuthMode(mode)} />;
+      return <LandingPage onGetStarted={(mode) => setAuthMode(mode)} lang={lang} onChangeLang={setLang} />;
     }
     if (authMode === 'demo') {
       return <DemoRegistration 
@@ -850,6 +855,33 @@ export default function App() {
         onLoginSuccess={handleLoginSuccess}
         onBackToLanding={() => setAuthMode('landing')}
       />
+    );
+  }
+
+  // If user is pending admin approval
+  if (currentUser.isActive === false && currentUser.role !== 'admin') {
+    return (
+      <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 flex items-center justify-center p-4">
+        <div className="bg-white dark:bg-zinc-900 p-8 rounded-3xl shadow-sm text-center max-w-md w-full border border-zinc-200 dark:border-zinc-800">
+          <div className="w-16 h-16 bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 rounded-full flex items-center justify-center mx-auto mb-6">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          </div>
+          <h2 className="text-xl font-bold mb-4 text-zinc-800 dark:text-white">في انتظار موافقة الإدارة</h2>
+          <p className="text-sm text-zinc-600 dark:text-zinc-400 mb-8 leading-relaxed">
+            مرحباً بك {currentUser.username}! حسابك قيد المراجعة حالياً من قبل الإدارة للتحقق من بيانات الدفع. سيتم تفعيل حسابك في أقرب وقت.
+          </p>
+          <button 
+            onClick={() => {
+              localStorage.removeItem('chatcore_user_id');
+              setCurrentUser(null);
+              setAuthMode('landing');
+            }} 
+            className="w-full bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-200 py-3 rounded-2xl font-bold transition-all"
+          >
+            تسجيل الخروج
+          </button>
+        </div>
+      </div>
     );
   }
 

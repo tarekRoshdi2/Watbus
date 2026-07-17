@@ -964,10 +964,26 @@ ALTER TABLE crm_backups DISABLE ROW LEVEL SECURITY;`}
                     className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 py-2.5 text-xs outline-none focus:border-[#00a884] focus:bg-white dark:focus:bg-zinc-950 font-bold rtl:text-right ltr:text-left"
                   >
                     <option value="qr">{lang === 'ar' ? 'ربط الرمز السريع (Baileys QR Scan)' : 'QR Code Scanner (Baileys Session)'}</option>
-                    <option value="cloud_api">Meta Cloud API (Official)</option>
-                    <option value="ultramsg">Ultramsg Gateway</option>
-                    <option value="greenapi">Green-API Gateway</option>
+                    {(!currentUser?.subscriptionPlan || currentUser?.subscriptionPlan === 'starter') ? (
+                      <>
+                        <option value="locked_cloud_api" disabled>🔒 Meta Cloud API (Pro/Enterprise)</option>
+                        <option value="locked_ultramsg" disabled>🔒 Ultramsg Gateway (Pro/Enterprise)</option>
+                        <option value="locked_greenapi" disabled>🔒 Green-API Gateway (Pro/Enterprise)</option>
+                      </>
+                    ) : (
+                      <>
+                        <option value="cloud_api">Meta Cloud API (Official)</option>
+                        <option value="ultramsg">Ultramsg Gateway</option>
+                        <option value="greenapi">Green-API Gateway</option>
+                      </>
+                    )}
                   </select>
+                  {(!currentUser?.subscriptionPlan || currentUser?.subscriptionPlan === 'starter') && newMethod !== 'qr' && (
+                    <div className="mt-2 text-[10px] text-amber-600 bg-amber-50 dark:bg-amber-950/30 p-2 rounded-lg flex items-center gap-1.5 border border-amber-200/50 dark:border-amber-900/50">
+                      <Lock className="w-3 h-3" />
+                      <span>{lang === 'ar' ? 'هذه الميزة متوفرة في باقة المحترفين والشركات. قم بالترقية الآن!' : 'This feature is available in Pro and Enterprise plans. Upgrade now!'}</span>
+                    </div>
+                  )}
                 </div>
 
                 {/* Optional Cloud API & gate settings */}
@@ -1221,24 +1237,23 @@ ALTER TABLE crm_backups DISABLE ROW LEVEL SECURITY;`}
                   </div>
                 </div>
 
-                {/* Knowledge Base & FAQs Textarea */}
-                <div className="rtl:text-right ltr:text-left">
-                  <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-wider mb-1.5 flex items-center justify-end gap-1">
-                    <span className="text-[9px] font-bold bg-emerald-500/10 text-emerald-600 px-1.5 py-0.5 rounded">
-                      {lang === 'ar' ? 'موصى به' : 'Recommended'}
-                    </span>
-                    <span>{t.knowledgeBaseLabel}</span>
-                  </label>
-                  <textarea
-                    rows={5}
-                    placeholder={t.knowledgeBasePlaceholder}
-                    value={agentKnowledgeBase}
-                    onChange={(e) => setAgentKnowledgeBase(e.target.value)}
-                    className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 py-3 text-xs outline-none focus:border-amber-500 rtl:text-right ltr:text-left leading-relaxed"
-                  />
-                  <span className="text-[9px] text-zinc-400 mt-1 block">
-                    {t.knowledgeBaseSub}
-                  </span>
+                {/* Knowledge Base & FAQs Textarea Removed (Now centralized in AiKnowledgeBase.tsx) */}
+                <div className="rtl:text-right ltr:text-left bg-emerald-50 dark:bg-emerald-950/20 p-4 rounded-xl border border-emerald-100 dark:border-emerald-900/50">
+                  <div className="flex items-start gap-3">
+                    <div className="mt-1">
+                      <Sparkles className="w-5 h-5 text-emerald-500" />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-xs text-emerald-800 dark:text-emerald-400 mb-1">
+                        {lang === 'ar' ? 'تم نقل مركز المعرفة' : 'Knowledge Base Moved'}
+                      </h4>
+                      <p className="text-[10px] text-emerald-600 dark:text-emerald-500 mb-3 leading-relaxed">
+                        {lang === 'ar' 
+                          ? 'لضمان أقصى احترافية ودقة، يرجى التوجه إلى "مركز التدريب המخصص" من القائمة الجانبية لإضافة ملفاتك الخاصة، روابط المواقع، ونصوص الأسعار بدلاً من كتابتها هنا.' 
+                          : 'For maximum accuracy, please visit the "Custom Training Center" from the sidebar to upload files, scrape websites, and add pricing data instead of typing it here.'}
+                      </p>
+                    </div>
+                  </div>
                 </div>
 
                 <button

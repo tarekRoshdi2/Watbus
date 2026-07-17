@@ -16,7 +16,7 @@ interface SidebarProps {
   latestMessages: Record<string, { content: string; timestamp: string; senderId: string; status: string }>;
   statuses: any[];
   onSelectConversation: (convId: string) => void;
-  onAddNewContact: (username: string) => void;
+  onAddNewContact: (username: string, deviceId: string) => void;
   devices: DeviceLink[];
   lang: 'ar' | 'en';
 }
@@ -84,7 +84,20 @@ export default function Sidebar({
       setAddError(t.youCantAddYourself);
       return;
     }
-    onAddNewContact(newContactName.trim());
+    let deviceToUse = selectedDeviceId;
+    if (deviceToUse === 'all') {
+      if (devices.length === 1) {
+        deviceToUse = devices[0].id;
+      } else if (devices.length === 0) {
+        setAddError(lang === 'ar' ? 'لا يوجد أجهزة متصلة لبدء المحادثة.' : 'No devices connected to start a chat.');
+        return;
+      } else {
+        setAddError(lang === 'ar' ? 'يرجى تحديد خط واتساب من القائمة بالأعلى لبدء محادثة جديدة.' : 'Please select a specific WhatsApp line from the top menu to start a new chat.');
+        return;
+      }
+    }
+
+    onAddNewContact(newContactName.trim(), deviceToUse);
     setNewContactName('');
     setShowAddContact(false);
   };
@@ -226,6 +239,7 @@ export default function Sidebar({
           const lastMsg = latestMessages[c.id];
           const hasStatus = contactHasStatus(c.recipient.id);
           const hasUnviewedStatus = contactHasUnviewedStatus(c.recipient.id);
+          const deviceAssigned = devices.find(d => d.id === c.deviceId);
 
           return (
             <div
@@ -277,6 +291,15 @@ export default function Sidebar({
                     </span>
                   </div>
                 </div>
+
+                {deviceAssigned && selectedDeviceId === 'all' && (
+                  <div className="flex items-center gap-1 mb-0.5">
+                    <Smartphone className="w-2.5 h-2.5 text-zinc-400" />
+                    <span className="text-[10px] text-zinc-500 font-medium truncate">
+                      {deviceAssigned.name || deviceAssigned.phoneNumber || deviceAssigned.id}
+                    </span>
+                  </div>
+                )}
 
                 <div className="flex items-center justify-between">
                   {/* Unread badge or checkmark status */}

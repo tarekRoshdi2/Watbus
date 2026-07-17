@@ -33,6 +33,8 @@ export default function AuthView({ onLoginSuccess, onBackToLanding, initialMode 
   const [step, setStep] = useState<'info' | 'otp'>('info');
   const [selectedAvatar, setSelectedAvatar] = useState<string>(PRESET_AVATARS[0]);
   const [customAvatar, setCustomAvatar] = useState<string>('');
+  const [requestedPlan, setRequestedPlan] = useState<'starter' | 'pro' | 'enterprise'>('starter');
+  const [paymentProofUrl, setPaymentProofUrl] = useState<string>('');
   const [error, setError] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(false);
 
@@ -48,13 +50,24 @@ export default function AuthView({ onLoginSuccess, onBackToLanding, initialMode 
     }
   };
 
+  const handlePaymentProofFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setPaymentProofUrl(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
 
     if (mode === 'register' && step === 'info') {
-      if (!username.trim() || !phone.trim()) {
-        setError('الرجاء إدخال الاسم ورقم الواتساب');
+      if (!username.trim() || !phone.trim() || !paymentProofUrl) {
+        setError('الرجاء إدخال الاسم ورقم الواتساب ورفع إثبات الدفع');
         return;
       }
       setIsLoading(true);
@@ -62,7 +75,12 @@ export default function AuthView({ onLoginSuccess, onBackToLanding, initialMode 
         const response = await fetch('/api/auth/send-otp', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ username: username.trim(), phone: phone.trim() })
+          body: JSON.stringify({ 
+            username: username.trim(), 
+            phone: phone.trim(),
+            requestedPlan,
+            paymentProofUrl
+          })
         });
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || 'Failed to send OTP');
@@ -146,6 +164,10 @@ export default function AuthView({ onLoginSuccess, onBackToLanding, initialMode 
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 flex flex-col justify-center items-center p-4 relative overflow-hidden">
       {/* Decorative WhatsApp theme strip */}
       <div className="absolute top-0 left-0 right-0 h-64 bg-gradient-to-b from-[#00a884] to-[#005e4d] shadow-md" />
+      
+      {/* Ambient Animated Blobs */}
+      <div className="absolute top-[20%] left-[20%] w-[500px] h-[500px] bg-[#00a884]/20 rounded-full mix-blend-multiply filter blur-[80px] opacity-70 animate-float pointer-events-none" />
+      <div className="absolute bottom-[20%] right-[20%] w-[400px] h-[400px] bg-emerald-500/20 rounded-full mix-blend-multiply filter blur-[80px] opacity-70 animate-float pointer-events-none" style={{ animationDelay: '2s' }} />
 
       {/* Back button to public Landing Page */}
       <button
@@ -157,18 +179,20 @@ export default function AuthView({ onLoginSuccess, onBackToLanding, initialMode 
       </button>
 
       <motion.div
-        initial={{ opacity: 0, y: 30 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5 }}
-        className="w-full max-w-lg bg-white dark:bg-zinc-900 rounded-3xl shadow-2xl p-8 z-10 border border-zinc-100 dark:border-zinc-800/80 relative text-right mt-16 sm:mt-0"
+        initial={{ opacity: 0, y: 30, scale: 0.95 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
+        className="w-full max-w-lg glass-panel rounded-[2.5rem] shadow-[0_20px_60px_-15px_rgba(0,0,0,0.1)] dark:shadow-[0_20px_60px_-15px_rgba(0,0,0,0.5)] p-8 sm:p-10 z-10 relative text-right mt-16 sm:mt-0 overflow-hidden"
       >
+        {/* Subtle inner glow for premium feel */}
+        <div className="absolute inset-0 bg-gradient-to-br from-white/40 to-transparent dark:from-white/5 dark:to-transparent pointer-events-none rounded-[2.5rem]" />
         {/* Absolute Logo branding */}
         <div className="text-center mb-6">
           <div className="flex items-center justify-center gap-2.5 mb-2">
             <svg className="w-10 h-10 text-[#00a884]" viewBox="0 0 24 24" fill="currentColor">
               <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946C.003 5.323 5.322 0 11.82 0c3.148.001 6.107 1.228 8.332 3.457s3.453 5.186 3.451 8.336c-.004 6.502-5.323 11.825-11.822 11.825-1.996-.001-3.957-.512-5.7-1.481L0 24zm6.59-4.846c1.785 1.06 3.551 1.623 5.18 1.624 5.378 0 9.754-4.373 9.757-9.753.002-2.599-1.011-5.043-2.853-6.887C16.83 2.293 14.39 1.28 11.82 1.28c-5.378 0-9.752 4.373-9.755 9.754-.001 1.83.515 3.593 1.493 5.148l-1.012 3.693 3.799-1.014z" />
             </svg>
-            <h1 className="text-xl font-black text-zinc-800 dark:text-white">WABA CRM Gateway</h1>
+            <h1 className="text-xl font-black text-zinc-800 dark:text-white">ChatCore Gateway</h1>
           </div>
           <p className="text-xs text-zinc-400 dark:text-zinc-500 font-semibold uppercase tracking-wider">
             {mode === 'register' ? 'إنشاء حساب أعمال جديد' : 'الدخول إلى لوحة التحكم'}
@@ -294,6 +318,41 @@ export default function AuthView({ onLoginSuccess, onBackToLanding, initialMode 
                       onChange={(e) => setPassword(e.target.value)}
                       className="w-full bg-zinc-50 dark:bg-zinc-950 text-zinc-800 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-800 rounded-2xl px-4 py-3 text-xs outline-none focus:border-[#00a884] focus:bg-white dark:focus:bg-zinc-950 transition-all text-right"
                     />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-wider mb-2">
+                      اختر الباقة | Select Plan
+                    </label>
+                    <select
+                      value={requestedPlan}
+                      onChange={(e: any) => setRequestedPlan(e.target.value)}
+                      className="w-full bg-zinc-50 dark:bg-zinc-950 text-zinc-800 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-800 rounded-2xl px-4 py-3 text-xs outline-none focus:border-[#00a884] focus:bg-white dark:focus:bg-zinc-950 transition-all text-right cursor-pointer appearance-none"
+                      style={{ backgroundImage: 'url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%23131313%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E")', backgroundRepeat: 'no-repeat', backgroundPosition: 'left 1rem top 50%', backgroundSize: '0.65rem auto' }}
+                    >
+                      <option value="starter">الباقة الأساسية (Starter) - 1000 EGP</option>
+                      <option value="pro">الباقة الاحترافية (Pro) - 2000 EGP</option>
+                      <option value="enterprise">باقة الشركات (Enterprise) - 4000 EGP</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-wider mb-2">
+                      إثبات الدفع | Payment Proof
+                    </label>
+                    <div className="relative">
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handlePaymentProofFile}
+                        className="w-full bg-zinc-50 dark:bg-zinc-950 text-zinc-800 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-800 rounded-2xl px-4 py-2.5 text-xs outline-none focus:border-[#00a884] focus:bg-white dark:focus:bg-zinc-950 transition-all text-right file:mr-4 file:py-1 file:px-3 file:rounded-full file:border-0 file:text-[10px] file:font-bold file:bg-emerald-50 dark:file:bg-emerald-900/20 file:text-emerald-700 dark:file:text-emerald-400 hover:file:bg-emerald-100 cursor-pointer"
+                      />
+                      {paymentProofUrl && (
+                        <div className="mt-3 flex justify-center">
+                          <img src={paymentProofUrl} alt="Payment Proof" className="w-16 h-16 object-cover rounded-xl border border-zinc-200 dark:border-zinc-800" />
+                        </div>
+                      )}
+                    </div>
                   </div>
                   {/* Preset Avatar Selector */}
                   <div>

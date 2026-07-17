@@ -135,17 +135,35 @@ export default function DashboardStats({ currentUser, devices, campaigns, onRefr
           </div>
         </div>
 
-        {/* System latency and SLA */}
+        {/* AI Quota Usage (SaaS Metric) */}
         <div className="bg-white dark:bg-zinc-900 border border-zinc-200/50 dark:border-zinc-800/80 p-5 rounded-3xl shadow-xs rtl:text-right ltr:text-left flex items-center gap-4">
-          <div className="w-12 h-12 rounded-2xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-500">
+          <div className="w-12 h-12 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-500">
             <TrendingUp className="w-6 h-6" />
           </div>
           <div className="flex-1 min-w-0">
             <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">
-              {lang === 'ar' ? 'استقرار الخدمة' : 'SLA Health'}
+              {lang === 'ar' ? 'استهلاك الذكاء الاصطناعي' : 'AI Quota Usage'}
             </span>
             <div className="flex items-baseline gap-1.5 mt-1 rtl:justify-end ltr:justify-start">
-              <span className="text-2xl font-black text-zinc-800 dark:text-white font-mono">99.98%</span>
+              <span className={`text-2xl font-black ${
+                (currentUser?.aiMessagesUsed || 0) >= (currentUser?.aiMessagesLimit || 2000) 
+                  ? 'text-rose-500' 
+                  : 'text-zinc-800 dark:text-white'
+              }`}>
+                {(currentUser?.aiMessagesUsed || 0).toLocaleString()}
+              </span>
+              <span className="text-xs text-zinc-400 font-bold">/ {(currentUser?.aiMessagesLimit || 2000).toLocaleString()}</span>
+            </div>
+            {/* Progress bar */}
+            <div className="w-full bg-zinc-100 dark:bg-zinc-800 rounded-full h-1.5 mt-2 overflow-hidden">
+              <div 
+                className={`h-1.5 rounded-full ${
+                  ((currentUser?.aiMessagesUsed || 0) / (currentUser?.aiMessagesLimit || 2000)) > 0.9 
+                    ? 'bg-rose-500' 
+                    : 'bg-indigo-500'
+                }`} 
+                style={{ width: `${Math.min(((currentUser?.aiMessagesUsed || 0) / (currentUser?.aiMessagesLimit || 2000)) * 100, 100)}%` }}
+              ></div>
             </div>
           </div>
         </div>

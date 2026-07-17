@@ -43,6 +43,8 @@ const META_AI_USER: User = {
   subscriptionStatus: 'active',
   totalTokensUsed: 0,
   costInDollars: 0,
+  aiMessagesUsed: 0,
+  aiMessagesLimit: 5000,
 };
 
 const ADMIN_USER: User = {
@@ -58,6 +60,8 @@ const ADMIN_USER: User = {
   subscriptionStatus: 'active',
   totalTokensUsed: 0,
   costInDollars: 0,
+  aiMessagesUsed: 0,
+  aiMessagesLimit: 50000,
 };
 
 function getInitialDb(): DbSchema {
@@ -167,9 +171,41 @@ export function getAllUsers(): User[] {
 
 export function saveUser(user: User): User {
   const db = readDb();
+  // Provide defaults for SaaS if missing
+  if (!user.subscriptionPlan) user.subscriptionPlan = 'starter';
+  if (user.aiMessagesUsed === undefined) user.aiMessagesUsed = 0;
+  if (user.aiMessagesLimit === undefined) {
+    if (user.subscriptionPlan === 'starter') user.aiMessagesLimit = 2500;
+    else if (user.subscriptionPlan === 'pro') user.aiMessagesLimit = 7000;
+    else if (user.subscriptionPlan === 'enterprise') user.aiMessagesLimit = 20000;
+  }
+  
   db.users[user.id] = user;
   writeDb(db);
   return user;
+}
+
+export function deleteUser(userId: string): void {
+  const db = readDb();
+  if (db.users[userId]) {
+    delete db.users[userId];
+    writeDb(db);
+  }
+}
+
+export function incrementUserAiUsage(userId: string): { limitReached: boolean; user?: User } {
+  const db = readDb();
+  const user = db.users[userId];
+  if (!user) return { limitReached: true };
+
+  if (user.aiMessagesUsed >= (user.aiMessagesLimit || 2000)) {
+    return { limitReached: true, user };
+  }
+
+  user.aiMessagesUsed += 1;
+  db.users[userId] = user;
+  writeDb(db);
+  return { limitReached: false, user };
 }
 
 export function updateUserPresence(userId: string, isOnline: boolean): User | undefined {

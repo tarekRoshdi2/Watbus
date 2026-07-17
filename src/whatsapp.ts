@@ -197,6 +197,8 @@ function getOrCreateContactUser(jid: string, pushName?: string) {
     subscriptionStatus: 'inactive',
     totalTokensUsed: 0,
     costInDollars: 0,
+    aiMessagesUsed: 0,
+    aiMessagesLimit: 0,
     role: 'user'
   };
   saveUser(newContact);
@@ -330,6 +332,8 @@ function syncIncomingBaileysMessage(sock: any, jid: string, pushName: string | u
       subscriptionStatus: 'active',
       totalTokensUsed: 0,
       costInDollars: 0,
+      aiMessagesUsed: 0,
+      aiMessagesLimit: 5000,
       role: 'user'
     };
     saveUser(defaultUser);
@@ -553,6 +557,12 @@ export async function startWhatsAppSession(deviceId: string) {
 
     sock.ev.on('connection.update', async (update: any) => {
       const { connection, lastDisconnect, qr } = update;
+
+      // Skip intermediate Baileys handshake updates that have no actionable state change
+      // These fire repeatedly during TLS negotiation and produce noisy device:update floods
+      if (!connection && !qr) {
+        return;
+      }
 
       const devices = getAllDevices();
       const device = devices.find((d) => d.id === deviceId);

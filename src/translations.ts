@@ -162,7 +162,7 @@ export const translations: Record<'ar' | 'en', SystemTranslations> = {
 
     welcomeTitle: 'بوابة ChatCore للمحادثات والخدمة الموحدة',
     welcomeSub: 'اختر أي محادثة أو خط اتصال من الجانب لبدء الرد على العملاء، أو استخدم فلاتر البوابات لمشاهدة المحادثات الخاصة بكل رقم هاتف مستقل على حدة!',
-    endpointActive: 'نقطة اتصال WABA آمنة ونشطة',
+    endpointActive: 'نقطة اتصال ChatCore آمنة ونشطة',
 
     typingIndicator: 'يكتب الآن...',
     online: 'متصل الآن',
@@ -277,7 +277,7 @@ export const translations: Record<'ar' | 'en', SystemTranslations> = {
 
     welcomeTitle: 'ChatCore Unified Chats & Support Portal',
     welcomeSub: 'Select a conversation or a WhatsApp line from the left to start responding, or use filters to isolate chats per device!',
-    endpointActive: 'Secure WABA Endpoint Active',
+    endpointActive: 'Secure ChatCore Endpoint Active',
 
     typingIndicator: 'Typing...',
     online: 'Online',

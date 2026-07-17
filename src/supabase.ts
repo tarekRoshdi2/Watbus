@@ -99,7 +99,8 @@ export async function backupSessionToSupabase(deviceId: string): Promise<boolean
         
         // We only sync files (Baileys stores credentials & prekeys in flat JSON files)
         if (stat.isFile()) {
-          const fileContent = fs.readFileSync(filePath, 'utf-8');
+          // Sanitize null bytes (\u0000) because PostgreSQL text/jsonb fields strictly reject them (Error 22P05)
+          const fileContent = fs.readFileSync(filePath, 'utf-8').replace(/\0/g, '');
           const id = `${deviceId}/${fileName}`;
           upsertData.push({
             id,

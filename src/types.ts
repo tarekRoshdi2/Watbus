@@ -14,11 +14,18 @@ export interface User {
   isOnline: boolean;
   lastSeenAt: string;
   subscriptionStatus: 'active' | 'inactive' | 'trial';
+  subscriptionPlan?: 'starter' | 'pro' | 'enterprise';
   totalTokensUsed: number;
   costInDollars: number;
-  trialExpiresAt?: string; // Add this
-  usageLimit?: number;     // Add this
-  phoneNumber?: string;    // Add this (e.g., Primary WhatsApp Number)
+  aiMessagesUsed: number;   // Number of AI messages sent this month
+  aiMessagesLimit: number;  // Maximum AI messages allowed by their plan
+  trialExpiresAt?: string;
+  usageLimit?: number;
+  phoneNumber?: string;
+  isActive?: boolean;
+  requestedPlan?: 'starter' | 'pro' | 'enterprise';
+  paymentProofUrl?: string;
+  quickReplies?: string[];
 }
 
 export interface Conversation {
@@ -53,6 +60,7 @@ export interface Message {
   mediaUrl?: string; // Base64 or local URL
   status: MessageStatus;
   timestamp: string;
+  isInternalNote?: boolean;
 }
 
 export interface StatusStory {

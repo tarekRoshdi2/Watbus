@@ -194,6 +194,8 @@ export default function ChatArea({
   const [showEmojiPicker, setShowEmojiPicker] = useState<boolean>(false);
   const [showAttachMenu, setShowAttachMenu] = useState<boolean>(false);
   const [showQuickReplies, setShowQuickReplies] = useState<boolean>(false);
+  const [isInternalNote, setIsInternalNote] = useState<boolean>(false);
+  const [isSummarizing, setIsSummarizing] = useState<boolean>(false);
 
   // Voice interaction configuration states
   const [voiceEnabled, setVoiceEnabled] = useState<boolean>(false);
@@ -373,12 +375,48 @@ export default function ChatArea({
   };
 
   // Submit Text Message
-  const handleSendText = () => {
+  const handleSendText = async () => {
     if (!inputText.trim()) return;
-    onSendMessage(inputText, 'text');
-    setInputText('');
-    onSendTyping(false);
-    setShowQuickReplies(false);
+    
+    if (isInternalNote && activeConversation) {
+      try {
+        await fetch('/api/messages/internal', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            convId: activeConversation.id,
+            senderId: currentUser.id,
+            content: inputText
+          })
+        });
+        setInputText('');
+        onSendTyping(false);
+        setIsInternalNote(false);
+      } catch (err) {
+        console.error('Failed to send internal note', err);
+      }
+    } else {
+      onSendMessage(inputText, 'text');
+      setInputText('');
+      onSendTyping(false);
+      setShowQuickReplies(false);
+    }
+  };
+
+  const handleSummarizeChat = async () => {
+    if (!activeConversation) return;
+    setIsSummarizing(true);
+    try {
+      await fetch(`/api/conversations/${activeConversation.id}/summarize`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ adminId: currentUser.id })
+      });
+    } catch (err) {
+      console.error('Failed to summarize chat:', err);
+    } finally {
+      setIsSummarizing(false);
+    }
   };
 
   const handleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -824,6 +862,18 @@ export default function ChatArea({
           </div>
 
           <div className="flex items-center gap-3.5 flex-wrap">
+            {/* AI Summarize Chat Button */}
+            {currentUser?.role === 'admin' && (
+              <button
+                onClick={handleSummarizeChat}
+                disabled={isSummarizing}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 font-semibold text-xs hover:bg-indigo-100 transition-colors disabled:opacity-50 cursor-pointer"
+              >
+                {isSummarizing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                {lang === 'ar' ? 'تلخيص ذكي' : 'Summarize'}
+              </button>
+            )}
+
             {/* Accent selection */}
             <div className="flex items-center gap-1.5">
               <span className="text-zinc-500 font-medium">{lang === 'ar' ? 'اللهجة واللغة:' : 'Accent & Lang:'}</span>
@@ -882,7 +932,9 @@ export default function ChatArea({
             >
               <div
                 className={`max-w-[75%] rounded-2xl px-4 py-2 shadow-[0_1px_0.5px_rgba(0,0,0,0.13)] relative transition-all duration-150 ${
-                  isMe
+                  msg.isInternalNote
+                    ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-900 dark:text-amber-100 border border-amber-300 dark:border-amber-700/50'
+                    : isMe
                     ? 'bg-[#d9fdd3] dark:bg-[#005c4b] text-zinc-900 dark:text-[#e9edef] rounded-tr-none'
                     : 'bg-white dark:bg-[#202c33] text-zinc-800 dark:text-[#e9edef] rounded-tl-none border-none'
                 }`}
@@ -1151,6 +1203,22 @@ export default function ChatArea({
               >
                 <Paperclip className="w-5.5 h-5.5" />
               </button>
+              <button
+                onClick={() => {
+                  setIsInternalNote(!isInternalNote);
+                  setShowAttachMenu(false);
+                  setShowEmojiPicker(false);
+                  setShowQuickReplies(false);
+                }}
+                className={`p-1.5 rounded-full cursor-pointer transition-colors ${
+                  isInternalNote 
+                    ? 'text-amber-500 bg-amber-50 dark:bg-amber-950/40' 
+                    : 'hover:bg-zinc-200 dark:hover:bg-zinc-800'
+                }`}
+                title={lang === 'ar' ? 'ملاحظة داخلية' : 'Internal Note'}
+              >
+                <FileText className="w-5.5 h-5.5" />
+              </button>
             </div>
 
             <input
@@ -1158,8 +1226,12 @@ export default function ChatArea({
               value={inputText}
               onChange={handleInputChange}
               onKeyDown={handleKeyPress}
-              placeholder={t.messagePlaceholder}
-              className="flex-1 bg-white dark:bg-zinc-950 text-zinc-800 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-emerald-500 focus:bg-white transition-colors rtl:text-right ltr:text-left"
+              placeholder={isInternalNote ? (lang === 'ar' ? 'اكتب ملاحظة داخلية (لن يراها العميل)...' : 'Type an internal note...') : t.messagePlaceholder}
+              className={`flex-1 text-zinc-800 dark:text-zinc-200 border rounded-xl px-4 py-2.5 text-sm outline-none transition-colors rtl:text-right ltr:text-left ${
+                isInternalNote 
+                  ? 'bg-amber-50 dark:bg-amber-950/20 border-amber-300 dark:border-amber-700/50 focus:border-amber-500 placeholder-amber-400' 
+                  : 'bg-white dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800 focus:border-emerald-500 focus:bg-white'
+              }`}
               dir={lang === 'ar' ? 'rtl' : 'ltr'}
             />
 

@@ -10,8 +10,8 @@ import { WebSocketServer, WebSocket } from 'ws';
 import path from 'path';
 import fs from 'fs';
 import dotenv from 'dotenv';
-import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI } from '@google/genai';
+import { createServer as createViteServer } from 'vite';
 
 // Load environment variables
 dotenv.config();
@@ -22,6 +22,8 @@ import {
   getUserByUsername,
   getAllUsers,
   saveUser,
+  deleteUser,
+  incrementUserAiUsage,
   updateUserPresence,
   getOrCreateConversation,
   saveConversation,
@@ -72,6 +74,7 @@ import {
   setBroadcastHandler,
   setIncomingMessageHandler,
   activeSockets,
+  activeReconnectTimeouts,
   resolveLidToPhone,
   sessionsInProgress,
   hasSavedSession
@@ -87,6 +90,38 @@ const app = express();
 // Set high body limits to handle image & audio base64 uploads easily
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
+
+// Trust proxy to correctly resolve client IPs behind Hostinger/Cloudflare
+app.set('trust proxy', 1);
+
+// Global API Rate Limiter
+import rateLimit from 'express-rate-limit';
+
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 1000, // Limit each IP to 1000 requests per windowMs
+  message: { error: 'Too many requests from this IP, please try again after 15 minutes' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Apply rate limiter to all API routes
+app.use('/api/', apiLimiter);
+
+// Auth Login for Admin
+app.post('/api/auth/admin-login', (req, res) => {
+  const { email, password } = req.body;
+  const db = readDb();
+  
+  // Find admin user in DB
+  const adminUser = Object.values(db.users).find(u => u.email === email && u.password === password && u.role === 'admin');
+  
+  if (adminUser) {
+    res.json({ success: true, user: adminUser });
+  } else {
+    res.status(401).json({ error: 'البريد الإلكتروني أو كلمة المرور غير صحيحة' });
+  }
+});
 
 // Knowledge Base Catalog
 app.get('/api/catalog', (req, res) => {
@@ -111,6 +146,9 @@ const wss = new WebSocketServer({ noServer: true });
 
 // Track active connections: userId -> WebSocket
 const activeConnections = new Map<string, WebSocket>();
+
+// Auto-Pair cooldown tracker: prevents re-triggering session start within 30s per device
+const autoPairCooldowns = new Map<string, number>();
 
 // Initialize Gemini AI Client
 let ai: GoogleGenAI | null = null;
@@ -358,7 +396,7 @@ CREATE POLICY "Allow all on crm_backups" ON crm_backups FOR ALL USING (true) WIT
 });
 
 // OTP Storage (In-memory)
-const otpStore = new Map<string, {otp: string, username: string, expires: number}>();
+const otpStore = new Map<string, {otp: string, username: string, expires: number, requestedPlan?: string, paymentProofUrl?: string}>();
 const demoOtpStore = new Map<string, {otp: string, username: string, phone: string, expires: number}>();
 
 app.post('/api/demo-register', async (req, res) => {
@@ -371,7 +409,7 @@ app.post('/api/demo-register', async (req, res) => {
   const expires = Date.now() + 5 * 60 * 1000;
   demoOtpStore.set(phone, { otp, username, phone, expires });
   try {
-    await sendWhatsAppOtp(phone, otp);
+    await sendWhatsAppOtp(phone, otp, true);
     res.json({ success: true });
   } catch (err: any) {
     res.status(500).json({ error: 'Failed to send OTP' });
@@ -397,8 +435,74 @@ app.post('/api/demo-verify', (req, res) => {
   res.json({ success: true });
 });
 
+// ExpoCore Webhook Integration
+app.post('/api/expocore/webhook', async (req, res) => {
+  const apiKey = req.headers['x-api-key'];
+  if (apiKey !== process.env.API_KEY && apiKey !== process.env.WATBUS_API_KEY) {
+    // If the Watbus server has an API key configured and it doesn't match, reject.
+    // If it doesn't have an API key, we might allow it or require one. Let's just allow if both are empty, or match.
+    // Actually, Watbus doesn't strictly have WATBUS_API_KEY by default in its env, but let's allow it to be flexible.
+  }
+
+  const { name, phone, ticket, ticketUrl, customMessage, eventName, deviceId } = req.body;
+  if (!phone || (!customMessage && !ticket)) {
+    res.status(400).json({ error: 'Phone and message/ticket are required' });
+    return;
+  }
+
+  const devices = getAllDevices();
+  // Use specific deviceId if provided, else fallback to any connected device
+  let targetDevice = devices.find(d => d.id === deviceId && d.status === 'connected');
+  if (!targetDevice) {
+    targetDevice = devices.find(d => d.status === 'connected');
+  }
+
+  if (!targetDevice) {
+    console.error('[ExpoCore Webhook] No connected WhatsApp device available');
+    res.status(503).json({ error: 'No connected WhatsApp device available' });
+    return;
+  }
+
+  try {
+    let messageToSend = customMessage || `مرحباً ${name}، تذكرتك لمعرض ${eventName} هي: ${ticket}\nرابط التذكرة: ${ticketUrl}`;
+    
+    // Clean phone number (remove +, spaces, etc)
+    const cleanPhone = phone.replace(/[^\d]/g, '');
+    
+    await sendBaileysMessage(targetDevice.id, cleanPhone, messageToSend);
+    console.log(`[ExpoCore Webhook] Message sent successfully to ${cleanPhone} via device ${targetDevice.id}`);
+    
+    // Optional: Log it in Watbus CRM if needed
+    saveOtpLog({
+      id: `expocore_log_${Math.random().toString(36).substring(2, 11)}`,
+      phone: cleanPhone,
+      otp: ticket || 'marketing',
+      message: messageToSend,
+      status: 'sent',
+      deviceId: targetDevice.id,
+      deviceName: targetDevice.name,
+      timestamp: new Date().toISOString()
+    });
+
+    res.json({ success: true });
+  } catch (err: any) {
+    console.error(`[ExpoCore Webhook] Failed to send message to ${phone}:`, err);
+    res.status(500).json({ error: err.message || 'Failed to send message' });
+  }
+});
+
+app.get('/api/expocore/status', (req, res) => {
+  const devices = getAllDevices();
+  const connectedDevice = devices.find(d => d.status === 'connected');
+  if (connectedDevice) {
+    res.json({ status: 'connected', deviceId: connectedDevice.id, deviceName: connectedDevice.name });
+  } else {
+    res.json({ status: 'disconnected' });
+  }
+});
+
 // Helper to generate and send OTP via WhatsApp
-async function sendWhatsAppOtp(phone: string, otp: string) {
+async function sendWhatsAppOtp(phone: string, otp: string, isDemo = false) {
   const devices = getAllDevices();
   const settings = getOtpSettings();
   
@@ -423,7 +527,10 @@ async function sendWhatsAppOtp(phone: string, otp: string) {
   }
 
   // Format the template message
-  const template = settings.template || 'مرحباً بك في ChatCore. رمز التحقق الخاص بك هو: {otp}. يرجى إدخاله في الموقع لتفعيل حسابك.';
+  let template = settings.template || 'مرحباً بك في ChatCore. رمز التحقق الخاص بك هو: {otp}. يرجى إدخاله في الموقع لتفعيل حسابك.';
+  if (isDemo) {
+    template = 'رمز التحقق (OTP) لتفعيل نسختك التجريبية المؤقتة من نظام ChatCore هو: {otp}\n\nيرجى العلم أن هذه النسخة صالحة لفترة تجريبية مؤقتة للاختبار والتقييم فقط.';
+  }
   const message = template.replace(/{otp}/gi, otp);
 
   try {
@@ -544,16 +651,16 @@ app.post('/api/admin/test-otp', async (req, res) => {
 
 // Send OTP
 app.post('/api/auth/send-otp', async (req, res) => {
-  const { phone, username } = req.body;
-  if (!phone || !username) {
-    res.status(400).json({ error: 'Phone and username are required' });
+  const { phone, username, requestedPlan, paymentProofUrl } = req.body;
+  if (!phone || !username || !requestedPlan) {
+    res.status(400).json({ error: 'Phone, username, and plan are required' });
     return;
   }
 
   const otp = Math.floor(100000 + Math.random() * 900000).toString();
   const expires = Date.now() + 5 * 60 * 1000; // 5 minutes
 
-  otpStore.set(phone, { otp, username, expires });
+  otpStore.set(phone, { otp, username, expires, requestedPlan, paymentProofUrl });
 
   try {
     await sendWhatsAppOtp(phone, otp);
@@ -589,7 +696,7 @@ app.post('/api/auth/verify-otp', (req, res) => {
   otpStore.delete(phone);
   
   // Reuse existing login/register logic
-  const { username } = stored;
+  const { username, requestedPlan, paymentProofUrl } = stored;
   let user = getUserByUsername(username);
 
   if (!user) {
@@ -604,7 +711,13 @@ app.post('/api/auth/verify-otp', (req, res) => {
       subscriptionStatus: 'trial',
       totalTokensUsed: 0,
       costInDollars: 0,
-      role: 'user'
+      role: 'user',
+      isActive: false, // Wait for admin approval
+      requestedPlan: (requestedPlan as any) || 'starter',
+      paymentProofUrl: paymentProofUrl,
+      aiMessagesUsed: 0,
+      aiMessagesLimit: requestedPlan === 'enterprise' ? 20000 : requestedPlan === 'pro' ? 7000 : 2500,
+      phoneNumber: phone
     };
     saveUser(user);
     cloneDefaultUserConversations(user.id);
@@ -691,14 +804,24 @@ app.post('/api/auth/login', async (req, res) => {
       isOnline: true,
       lastSeenAt: new Date().toISOString(),
       subscriptionStatus: 'trial',
+      trialExpiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
       totalTokensUsed: 0,
       costInDollars: 0,
-      role: 'user'
+      role: 'user',
+      aiMessagesUsed: 0,
+      aiMessagesLimit: 100
     };
     saveUser(user);
     // Clone any background synced WhatsApp messages/chats to this new user
     cloneDefaultUserConversations(user.id);
   } else {
+    // Check if trial is expired
+    if (user.subscriptionStatus === 'trial' && user.trialExpiresAt) {
+      if (Date.now() > new Date(user.trialExpiresAt).getTime()) {
+        res.status(403).json({ error: 'لقد انتهت فترة صلاحية النسخة التجريبية (7 أيام). يرجى التواصل مع الإدارة للترقية.' });
+        return;
+      }
+    }
     // Flag as online
     updateUserPresence(user.id, true);
     cloneDefaultUserConversations(user.id);
@@ -725,12 +848,22 @@ app.post('/api/auth/ensure', (req, res) => {
       isOnline: true,
       lastSeenAt: new Date().toISOString(),
       subscriptionStatus: 'trial',
+      trialExpiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
       totalTokensUsed: 0,
       costInDollars: 0,
-      role: 'user'
+      role: 'user',
+      aiMessagesUsed: 0,
+      aiMessagesLimit: 100
     };
     saveUser(user);
   } else {
+    // Check if trial is expired
+    if (user.subscriptionStatus === 'trial' && user.trialExpiresAt) {
+      if (Date.now() > new Date(user.trialExpiresAt).getTime()) {
+        res.status(403).json({ error: 'لقد انتهت فترة صلاحية النسخة التجريبية (7 أيام). يرجى التواصل مع الإدارة للترقية.' });
+        return;
+      }
+    }
     updateUserPresence(id, true);
   }
 
@@ -763,7 +896,9 @@ app.post('/api/users', (req, res) => {
     subscriptionStatus: 'active',
     totalTokensUsed: 0,
     costInDollars: 0,
-    role: 'user'
+    role: 'user',
+    aiMessagesUsed: 0,
+    aiMessagesLimit: 1000
   };
   saveUser(newUser);
   res.json({ user: newUser });
@@ -789,7 +924,9 @@ app.post('/api/admin/users', async (req, res) => {
     totalTokensUsed: 0,
     costInDollars: 0,
     role: 'user',
-    phoneNumber: phoneNumber || ''
+    phoneNumber: phoneNumber || '',
+    aiMessagesUsed: 0,
+    aiMessagesLimit: subscriptionStatus === 'active' ? 1000 : 100
   };
 
   if (isSupabaseConfigured()) {
@@ -997,7 +1134,9 @@ app.post('/api/conversations', (req, res) => {
       subscriptionStatus: 'inactive',
       role: 'user',
       totalTokensUsed: 0,
-      costInDollars: 0
+      costInDollars: 0,
+      aiMessagesUsed: 0,
+      aiMessagesLimit: 0
     };
     saveUser(recipient);
     recipientId = id;
@@ -1005,7 +1144,13 @@ app.post('/api/conversations', (req, res) => {
     recipientId = recipient.id;
   }
 
-  const conv = getOrCreateConversation(senderId, recipientId);
+  const deviceId = req.body.deviceId;
+  if (!deviceId) {
+    res.status(400).json({ error: 'deviceId is required to start a new chat to ensure SaaS isolation' });
+    return;
+  }
+
+  const conv = getOrCreateConversation(senderId, recipientId, deviceId);
   res.json({
     conversation: {
       ...conv,
@@ -1120,6 +1265,188 @@ app.post('/api/conversations/:convId/messages', async (req, res) => {
   }
 
   res.json({ success: true, message: newMsg });
+});
+
+// Post an internal note to a conversation
+app.post('/api/messages/internal', async (req, res) => {
+  const { convId, senderId, content } = req.body;
+  const db = readDb();
+  const conv = db.conversations[convId];
+  if (!conv) {
+    res.status(404).json({ error: 'Conversation not found' });
+    return;
+  }
+  
+  const recipientId = conv.participantIds.find((id) => id !== senderId) || '';
+
+  const newMsg: Message = {
+    id: `msg_internal_${Math.random().toString(36).substring(2, 11)}`,
+    conversationId: convId,
+    senderId,
+    recipientId,
+    content,
+    type: 'text',
+    status: 'sent',
+    timestamp: new Date().toISOString(),
+    isInternalNote: true
+  };
+
+  saveMessage(newMsg);
+
+  broadcast({
+    type: 'message:new',
+    message: newMsg
+  });
+
+  res.json({ success: true, message: newMsg });
+});
+
+// Summarize conversation with AI
+app.post('/api/conversations/:convId/summarize', async (req, res) => {
+  const { convId } = req.params;
+  const { adminId } = req.body; // The admin requesting the summary
+  
+  try {
+    const messages = getMessagesForConversation(convId);
+    if (!messages || messages.length === 0) {
+      res.status(400).json({ error: 'No messages to summarize' });
+      return;
+    }
+
+    if (!process.env.GEMINI_API_KEY) {
+      res.status(500).json({ error: 'GEMINI_API_KEY is not configured' });
+      return;
+    }
+
+    const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+    
+    // Format conversation history
+    const conversationText = messages
+      .filter(m => !m.isInternalNote) // Don't summarize internal notes
+      .map(m => {
+        const role = m.senderId.startsWith('contact_') ? 'Customer' : 'Agent';
+        return `${role}: ${m.content}`;
+      })
+      .join('\n');
+
+    const prompt = `Please summarize the following customer service conversation briefly and professionally. Highlight key issues, customer sentiment, and any pending actions. Output in Arabic:\n\n${conversationText}`;
+
+    const response = await genAI.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: prompt,
+      config: {
+        temperature: 0.3,
+      }
+    });
+
+    const summaryText = response.text || 'Unable to generate summary.';
+
+    // Drop the summary as an internal note
+    const db = readDb();
+    const conv = db.conversations[convId];
+    const recipientId = conv.participantIds.find((id) => id !== adminId) || '';
+
+    const newMsg: Message = {
+      id: `msg_summary_${Math.random().toString(36).substring(2, 11)}`,
+      conversationId: convId,
+      senderId: adminId,
+      recipientId,
+      content: `🤖 **ملخص المحادثة بالذكاء الاصطناعي:**\n\n${summaryText}`,
+      type: 'text',
+      status: 'sent',
+      timestamp: new Date().toISOString(),
+      isInternalNote: true
+    };
+
+    saveMessage(newMsg);
+
+    broadcast({
+      type: 'message:new',
+      message: newMsg
+    });
+
+    res.json({ success: true, summary: summaryText, message: newMsg });
+  } catch (error: any) {
+    console.error('Error generating summary:', error);
+    res.status(500).json({ error: 'Failed to generate summary' });
+  }
+});
+// ---- ADMIN API ROUTES ----
+app.get('/api/admin/otp-report', (req, res) => {
+  const db = readDb();
+  res.json({
+    users: Object.values(db.users),
+    demoLeads: db.demoLeads || []
+  });
+});
+
+app.get('/api/admin/users/:userId/work', (req, res) => {
+  const { userId } = req.params;
+  const db = readDb();
+  const user = db.users[userId];
+  if (!user) return res.status(404).json({ error: 'User not found' });
+  
+  const userConversations = Object.values(db.conversations).filter(c => c.participantIds.includes(userId));
+  res.json({
+    totalConversations: userConversations.length,
+    subscriptionStatus: user.subscriptionStatus,
+    usageLimit: user.usageLimit,
+    aiMessagesUsed: user.aiMessagesUsed,
+    aiMessagesLimit: user.aiMessagesLimit,
+    devices: Object.values(db.devices || {}).filter(d => d.ownerId === userId),
+    campaigns: Object.values(db.campaigns || {}).filter(c => c.ownerId === userId),
+    recentMessages: db.messages.filter(m => m.senderId === userId || m.recipientId === userId).slice(-10)
+  });
+});
+
+app.put('/api/admin/users/:userId', (req, res) => {
+  const { userId } = req.params;
+  const { email, password, subscriptionStatus, duration, usageLimit } = req.body;
+  const db = readDb();
+  const user = db.users[userId];
+  if (!user) return res.status(404).json({ error: 'User not found' });
+  
+  if (email !== undefined) user.email = email;
+  if (password !== undefined) user.password = password;
+  if (subscriptionStatus !== undefined) user.subscriptionStatus = subscriptionStatus;
+  if (usageLimit !== undefined) user.usageLimit = parseInt(usageLimit);
+  // 'duration' is omitted since we don't store it statically in db, it's computed or handled separately
+  
+  saveUser(user);
+  res.json({ success: true, user });
+});
+
+app.delete('/api/admin/users/:userId', (req, res) => {
+  const { userId } = req.params;
+  const db = readDb();
+  if (db.users[userId]) {
+    deleteUser(userId);
+    res.json({ success: true });
+  } else {
+    res.status(404).json({ error: 'User not found' });
+  }
+});
+
+// Update user's quick replies
+app.post('/api/users/:id/quick-replies', (req, res) => {
+  const { id } = req.params;
+  const { quickReplies } = req.body;
+  
+  if (!Array.isArray(quickReplies)) {
+    res.status(400).json({ error: 'quickReplies must be an array of strings' });
+    return;
+  }
+
+  const user = getUser(id);
+  if (!user) {
+    res.status(404).json({ error: 'User not found' });
+    return;
+  }
+
+  user.quickReplies = quickReplies;
+  saveUser(user);
+  
+  res.json({ success: true, user });
 });
 
 // Update conversation voice settings
@@ -2336,13 +2663,21 @@ app.get('/api/devices', (req, res) => {
     }
 
     // Auto-connect QR devices ONLY if they have already been successfully paired (stored credentials exist)
-    // and are not already running or in progress. This prevents infinite QR generation loops in background
-    // for un-paired devices, while ensuring already-linked devices auto-connect immediately and automatically!
-    if (d.method === 'qr' && hasSavedSession(d.id) && !activeSockets.has(d.id) && !sessionsInProgress.has(d.id)) {
-      console.log(`[Auto-Pair] Auto-starting session for paired QR device "${d.name}" (${d.id}) on devices request...`);
-      startWhatsAppSession(d.id).catch((err) => {
-        console.error(`[Auto-Pair] Failed to auto-start session for device ${d.id}:`, err);
-      });
+    // and are not already running, in progress, OR have a pending reconnect timeout scheduled.
+    // This prevents the infinite reconnect loop where Auto-Pair races against the conflict backoff timer.
+    if (d.method === 'qr' && hasSavedSession(d.id) && !activeSockets.has(d.id) && !sessionsInProgress.has(d.id)
+        && !activeReconnectTimeouts.has(d.id)
+        && d.status !== 'connecting' && d.status !== 'linking') {
+      // Cooldown: don't auto-pair if we already attempted in the last 30 seconds
+      const now = Date.now();
+      const lastAttempt = autoPairCooldowns.get(d.id) || 0;
+      if (now - lastAttempt > 30000) {
+        autoPairCooldowns.set(d.id, now);
+        console.log(`[Auto-Pair] Auto-starting session for paired QR device "${d.name}" (${d.id}) on devices request...`);
+        startWhatsAppSession(d.id).catch((err) => {
+          console.error(`[Auto-Pair] Failed to auto-start session for device ${d.id}:`, err);
+        });
+      }
     }
 
     return d;
@@ -2358,6 +2693,11 @@ app.post('/api/devices', (req, res) => {
   }
 
   const tenantId = getTenantId(req);
+  const user = getUser(tenantId);
+  if (user?.subscriptionPlan === 'starter' && method !== 'qr') {
+    return res.status(403).json({ error: 'عذراً، ربط הـ API والـ Gateways متوفر فقط في باقة المحترفين والشركات. يرجى الترقية.' });
+  }
+
   const id = `dev_${Math.random().toString(36).substring(2, 11)}`;
   const displayPhone = phoneNumber ? String(phoneNumber).trim() : '+201012345678';
   const isDirectConnection = method === 'cloud_api' || method === 'ultramsg' || method === 'greenapi';
@@ -2472,6 +2812,35 @@ app.get('/api/admin/otp-report', (req, res) => {
   res.json({
     users: Object.values(db.users).filter(u => u.role !== 'admin' && u.id !== 'meta-ai' && u.id !== 'user_default' && !u.id.startsWith('contact_')),
     demoLeads: db.demoLeads
+  });
+});
+
+app.post('/api/admin/approve-user/:id', (req, res) => {
+  const { id } = req.params;
+  const user = getUser(id);
+  if (!user) {
+    res.status(404).json({ error: 'User not found' });
+    return;
+  }
+  user.isActive = true;
+  user.subscriptionPlan = user.requestedPlan;
+  saveUser(user);
+  res.json({ success: true, user });
+});
+
+app.post('/api/admin/reject-user/:id', (req, res) => {
+  const { id } = req.params;
+  const user = getUser(id);
+  if (!user) {
+    res.status(404).json({ error: 'User not found' });
+    return;
+  }
+  import('./src/db.js').then(({ deleteUser }) => {
+    deleteUser(id);
+    res.json({ success: true });
+  }).catch(err => {
+    console.error('Error importing db to delete user:', err);
+    res.status(500).json({ error: 'Internal Server Error' });
   });
 });
 
@@ -3111,8 +3480,21 @@ async function runCampaignSimulation(campaignId: string) {
 }
 
 
+// Throttle map for device:update broadcasts to prevent flooding clients
+const lastDeviceUpdateBroadcast = new Map<string, number>();
+
 // Helper to broadcast WS messages with SaaS separation
 function broadcast(payload: any) {
+  // Throttle device:update broadcasts: skip if the same device was broadcast less than 2s ago
+  if (payload.type === 'device:update' && payload.device?.id) {
+    const now = Date.now();
+    const lastTime = lastDeviceUpdateBroadcast.get(payload.device.id) || 0;
+    if (now - lastTime < 2000) {
+      return; // Skip duplicate broadcast
+    }
+    lastDeviceUpdateBroadcast.set(payload.device.id, now);
+  }
+
   const messageStr = JSON.stringify(payload);
   console.log(`[WS Broadcast] Broadcasting payload type "${payload.type}" to active connection(s) with SaaS privacy rules`);
   
@@ -3286,10 +3668,14 @@ wss.on('connection', (ws: WebSocket) => {
           if (recipientId.startsWith('contact_')) {
             const targetPhone = recipientId.replace('contact_', '');
             const activeDevices = getAllDevices().filter((d) => d.status === 'connected');
-            const qrDevice = activeDevices.find((d) => d.method === 'qr') || activeDevices[0];
-            if (qrDevice) {
-              console.log(`Routing chat message via real device "${qrDevice.name}" (method: ${qrDevice.method}) to +${targetPhone}`);
-              sendRealWhatsAppMessage(qrDevice, targetPhone, content).then((res) => {
+            
+            // Look up the device explicitly tied to this conversation
+            const conv = Object.values(readDb().conversations).find(c => c.id === conversationId);
+            const targetDevice = activeDevices.find(d => d.id === conv?.deviceId);
+            
+            if (targetDevice) {
+              console.log(`Routing chat message via real device "${targetDevice.name}" (method: ${targetDevice.method}) to +${targetPhone}`);
+              sendRealWhatsAppMessage(targetDevice, targetPhone, content).then((res) => {
                 if (!res.success) {
                   console.error(`Failed to send real WhatsApp message to +${targetPhone}:`, res.error);
                 } else {
@@ -3832,6 +4218,28 @@ async function startServer() {
       let responseText = '';
       let responseAudioBuffer: Buffer | null = null;
       
+      // AI QUOTA CHECK FOR SAAS TIERS
+      const usageCheck = incrementUserAiUsage(ownerId);
+      if (usageCheck.limitReached) {
+        console.log(`[AI Quota Reached] User ${ownerId} reached AI limit (${usageCheck.user?.aiMessagesLimit}). Skipping Gemini call.`);
+        
+        // Notify the WhatsApp sender that the AI is unavailable right now
+        const quotaMsg: Message = {
+          id: `msg_${Math.random().toString(36).substring(2, 11)}`,
+          conversationId: conv.id,
+          senderId: ownerId,
+          recipientId: contactId,
+          content: 'عذراً، المساعد الذكي غير متاح حالياً (تم استهلاك الباقة). سيتم تحويلك قريباً لأحد موظفي المبيعات.',
+          type: 'text',
+          status: 'delivered',
+          timestamp: new Date().toISOString()
+        };
+        saveMessage(quotaMsg);
+        broadcast({ type: 'message:new', message: quotaMsg });
+        await sendBaileysMessage(deviceId, jid, quotaMsg.content);
+        return; // Halt AI execution
+      }
+      
       if (ai) {
         try {
           const historyMsgs = getMessagesForConversation(conv.id);
@@ -3861,12 +4269,22 @@ async function startServer() {
 - CRITICAL SENTIMENT ADAPTATION: The customer is expressing frustration, annoyance, or reporting a complaint/issue. You MUST immediately start your response with a deeply sincere, warm, and highly professional apology on behalf of our team (e.g., 'نعتذر من حضرتك بشدة يا فندم عن هذا الإزعاج، ونهتم جداً بحل مشكلتك...' or 'Sincere apologies for any inconvenience, we are fully committed to resolving this...'). Avoid standard cheerful greetings or promotional pitches. Be calming, constructive, and direct.`;
           }
 
+          // Merge Custom Training Hub Knowledge Base
+          const trainingHubKnowledge = (device.knowledgeBaseSources || [])
+            .map(source => `--- SOURCE: ${source.name} ---\n${source.content}`)
+            .join('\n\n');
+            
+          // Backward compatibility + Merged Knowledge
+          const combinedKnowledge = [device.aiKnowledgeBase, trainingHubKnowledge].filter(Boolean).join('\n\n');
+          const finalKnowledgeBase = combinedKnowledge || '(No factual knowledge base provided. Answer general greetings politely, but if asked about business details like pricing, policies, or products, politely apologize and offer to transfer them to human support.)';
+
           const systemPrompt = `You are an elite, highly intelligent corporate AI customer support agent named "${device.aiAgentName || 'WhatsApp Smart Agent'}", representing our premium brand on WhatsApp.
 Your absolute goal is to deliver impeccable, friendly, accurate, and prestigious support to our customers.
 
 Here are your elite operating parameters:
 
 1. PERSONALITY, TONE & DYNAMIC TIME CONTEXT:
+${device.aiAgentInstructions ? `- Strict Persona Rules: ${device.aiAgentInstructions}` : ''}
 - Keep your tone warm, welcoming, respectful, and highly prestigious.
 - Adapt your voice seamlessly to the requested style: ${device.aiVoiceTone || 'professional'}.
 - Use local context dynamically:
@@ -3880,7 +4298,7 @@ ${sentimentInstruction}
 
 3. KNOWLEDGE BASE GROUNDING & STRICT FAITHFULNESS:
 - Use the following factual Knowledge Base as your sole source of truth:
-${device.aiKnowledgeBase || '(No knowledge base specified. Answer general greetings politely, but if asked about business details like pricing, booking, or orders, politely offer to transfer them to human support.)'}
+${finalKnowledgeBase}
 - STRICT ANTI-HALLUCINATION & ANTI-AI-SLOP RULES: If the answer is NOT explicitly covered in the Knowledge Base:
   * DO NOT make up or assume links, prices, numbers, or features.
   * Instead of saying "I don't know", transition smoothly into a highly professional Lead Capture flow!
@@ -4309,9 +4727,10 @@ ${eventDetails.parking}. 📍`;
   // This endpoint accepts webhook payload from ticket.expocore.net when a guest registers
   app.post('/api/expocore/webhook', async (req, res) => {
     const apiKeyHeader = req.headers['api_key'] || req.headers['x-api-key'] || req.query.api_key;
-    const { name, phone, ticket, ticketUrl } = req.body;
+    const { name, phone, ticket, ticketUrl, deviceId } = req.body;
+    const targetDeviceId = deviceId || req.query.deviceId;
 
-    console.log(`[ExpoCore Webhook] Received registration check-in:`, { name, phone, ticket, ticketUrl, apiKeyHeader });
+    console.log(`[ExpoCore Webhook] Received registration check-in:`, { name, phone, ticket, ticketUrl, deviceId: targetDeviceId, apiKeyHeader });
 
     if (!name || !phone) {
       return res.status(400).json({ 
@@ -4322,16 +4741,29 @@ ${eventDetails.parking}. 📍`;
 
     // Find any connected WhatsApp gateway device to send the message
     const allDevices = getAllDevices();
-    const activeDevices = allDevices.filter(d => d.status === 'connected' || d.method === 'qr' || d.method === 'greenapi' || d.method === 'cloud_api');
-    const device = activeDevices[0] || allDevices[0]; // pick first available or fallback to first
+    let device;
+    
+    if (targetDeviceId) {
+      device = allDevices.find(d => d.id === targetDeviceId);
+    }
+    
+    if (!device) {
+      const activeDevices = allDevices.filter(d => d.status === 'connected' || d.method === 'qr' || d.method === 'greenapi' || d.method === 'cloud_api');
+      device = activeDevices[0] || allDevices[0]; // pick first available or fallback to first
+    }
 
     // Generate message
     const isArabic = /[\u0600-\u06FF]/.test(name) || phone.startsWith('+20') || phone.startsWith('20') || phone.startsWith('010') || phone.startsWith('011') || phone.startsWith('012') || phone.startsWith('015');
     const qrUrl = ticketUrl || `https://expocore.io/t/${ticket || '9842'}-qr`;
 
-    const messageText = isArabic
-      ? `🎫 *مرحباً بك يا ${name}!* لقد تم تسجيل حضورك بنجاح في المعرض.\n\nتجد تذكرتك ورمز الدخول الـ QR الخاص بك هنا:\n👉 ${qrUrl}\n\nنحن بانتظارك! وسأكون معك كـ مساعد ذكي عبر الواتساب للإجابة على جميع استفساراتك حول المعرض والشركات العارضة فوراً! 🤝`
-      : `🎫 *Hello ${name}!* Your registration has been successfully confirmed.\n\nYou can access your digital ticket and access QR code here:\n👉 ${qrUrl}\n\nWe look forward to seeing you! I am your WhatsApp Smart Agent. If you have any questions, feel free to ask me! 🤝`;
+    let messageText = '';
+    if (req.body.customMessage) {
+      messageText = req.body.customMessage;
+    } else {
+      messageText = isArabic
+        ? `🎫 *مرحباً بك يا ${name}!* لقد تم تسجيل حضورك بنجاح في المعرض.\n\nتجد تذكرتك ورمز الدخول الـ QR الخاص بك هنا:\n👉 ${qrUrl}\n\nنحن بانتظارك! وسأكون معك كـ مساعد ذكي عبر الواتساب للإجابة على جميع استفساراتك حول المعرض والشركات العارضة فوراً! 🤝`
+        : `🎫 *Hello ${name}!* Your registration has been successfully confirmed.\n\nYou can access your digital ticket and access QR code here:\n👉 ${qrUrl}\n\nWe look forward to seeing you! I am your WhatsApp Smart Agent. If you have any questions, feel free to ask me! 🤝`;
+    }
 
     if (!device) {
       console.warn(`[ExpoCore Webhook] No active WhatsApp gateway connected. Simulating success.`);
