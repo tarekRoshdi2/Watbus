@@ -4,6 +4,13 @@ var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __getProtoOf = Object.getPrototypeOf;
 var __hasOwnProp = Object.prototype.hasOwnProperty;
+var __esm = (fn, res) => function __init() {
+  return fn && (res = (0, fn[__getOwnPropNames(fn)[0]])(fn = 0)), res;
+};
+var __export = (target, all) => {
+  for (var name in all)
+    __defProp(target, name, { get: all[name], enumerable: true });
+};
 var __copyProps = (to, from, except, desc) => {
   if (from && typeof from === "object" || typeof from === "function") {
     for (let key of __getOwnPropNames(from))
@@ -21,26 +28,7 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
   mod
 ));
 
-// server.ts
-var import_crypto = require("crypto");
-var import_express = __toESM(require("express"), 1);
-var import_http = __toESM(require("http"), 1);
-var import_ws = require("ws");
-var import_path4 = __toESM(require("path"), 1);
-var import_fs4 = __toESM(require("fs"), 1);
-var import_dotenv = __toESM(require("dotenv"), 1);
-var import_vite = require("vite");
-var import_genai = require("@google/genai");
-
-// src/db.ts
-var import_fs2 = __toESM(require("fs"), 1);
-var import_path2 = __toESM(require("path"), 1);
-
 // src/supabase.ts
-var import_fs = __toESM(require("fs"), 1);
-var import_path = __toESM(require("path"), 1);
-var import_supabase_js = require("@supabase/supabase-js");
-var supabaseClient = null;
 function getSupabaseClient() {
   if (supabaseClient) {
     return supabaseClient;
@@ -103,7 +91,7 @@ async function backupSessionToSupabase(deviceId) {
       try {
         const stat = import_fs.default.statSync(filePath);
         if (stat.isFile()) {
-          const fileContent = import_fs.default.readFileSync(filePath, "utf-8");
+          const fileContent = import_fs.default.readFileSync(filePath, "utf-8").replace(/\0/g, "");
           const id = `${deviceId}/${fileName}`;
           upsertData.push({
             id,
@@ -314,36 +302,55 @@ async function updateUser(user) {
   }
   return { success: true };
 }
+var import_fs, import_path, import_supabase_js, supabaseClient;
+var init_supabase = __esm({
+  "src/supabase.ts"() {
+    import_fs = __toESM(require("fs"), 1);
+    import_path = __toESM(require("path"), 1);
+    import_supabase_js = require("@supabase/supabase-js");
+    supabaseClient = null;
+  }
+});
 
 // src/db.ts
-var DB_FILE = import_path2.default.join(process.cwd(), "db-store.json");
-var META_AI_USER = {
-  id: "meta-ai",
-  username: "Meta AI",
-  role: "user",
-  avatarUrl: "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=150&q=80",
-  // Beautiful futuristic gradient
-  statusText: "with Gemini AI. Type anything to start talking!",
-  isOnline: true,
-  lastSeenAt: (/* @__PURE__ */ new Date()).toISOString(),
-  subscriptionStatus: "active",
-  totalTokensUsed: 0,
-  costInDollars: 0
-};
-var ADMIN_USER = {
-  id: "admin-tarek",
-  username: "Tarek Roshdi",
-  email: "tarekroshdi@gmail.com",
-  password: "Tarek@2026",
-  role: "admin",
-  avatarUrl: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=150&q=80",
-  statusText: "System Administrator",
-  isOnline: true,
-  lastSeenAt: (/* @__PURE__ */ new Date()).toISOString(),
-  subscriptionStatus: "active",
-  totalTokensUsed: 0,
-  costInDollars: 0
-};
+var db_exports = {};
+__export(db_exports, {
+  addStatusViewer: () => addStatusViewer,
+  cloneDefaultUserConversations: () => cloneDefaultUserConversations,
+  deleteCampaign: () => deleteCampaign,
+  deleteDevice: () => deleteDevice,
+  deleteUser: () => deleteUser,
+  getActiveStatuses: () => getActiveStatuses,
+  getAllCampaigns: () => getAllCampaigns,
+  getAllDevices: () => getAllDevices,
+  getAllUsers: () => getAllUsers,
+  getConversationsForUser: () => getConversationsForUser,
+  getMessagesForConversation: () => getMessagesForConversation,
+  getOrCreateConversation: () => getOrCreateConversation,
+  getOtpLogs: () => getOtpLogs,
+  getOtpSettings: () => getOtpSettings,
+  getUser: () => getUser,
+  getUserByUsername: () => getUserByUsername2,
+  incrementUserAiUsage: () => incrementUserAiUsage,
+  markConversationAsRead: () => markConversationAsRead,
+  mergeDuplicateConversations: () => mergeDuplicateConversations,
+  mergeLidContactsAndConversations: () => mergeLidContactsAndConversations,
+  readDb: () => readDb,
+  resetDbCache: () => resetDbCache,
+  saveCampaign: () => saveCampaign,
+  saveConversation: () => saveConversation,
+  saveDevice: () => saveDevice,
+  saveMessage: () => saveMessage,
+  saveOtpLog: () => saveOtpLog,
+  saveOtpSettings: () => saveOtpSettings,
+  saveStatus: () => saveStatus,
+  saveUser: () => saveUser,
+  updateConversationAiPaused: () => updateConversationAiPaused,
+  updateConversationLabel: () => updateConversationLabel,
+  updateMessageStatus: () => updateMessageStatus,
+  updateUserPresence: () => updateUserPresence,
+  writeDb: () => writeDb
+});
 function getInitialDb() {
   return {
     users: {
@@ -363,7 +370,6 @@ function getInitialDb() {
     }
   };
 }
-var cachedDb = null;
 function resetDbCache() {
   cachedDb = null;
 }
@@ -437,9 +443,35 @@ function getAllUsers() {
 }
 function saveUser(user) {
   const db = readDb();
+  if (!user.subscriptionPlan) user.subscriptionPlan = "starter";
+  if (user.aiMessagesUsed === void 0) user.aiMessagesUsed = 0;
+  if (user.aiMessagesLimit === void 0) {
+    if (user.subscriptionPlan === "starter") user.aiMessagesLimit = 2500;
+    else if (user.subscriptionPlan === "pro") user.aiMessagesLimit = 7e3;
+    else if (user.subscriptionPlan === "enterprise") user.aiMessagesLimit = 2e4;
+  }
   db.users[user.id] = user;
   writeDb(db);
   return user;
+}
+function deleteUser(userId) {
+  const db = readDb();
+  if (db.users[userId]) {
+    delete db.users[userId];
+    writeDb(db);
+  }
+}
+function incrementUserAiUsage(userId) {
+  const db = readDb();
+  const user = db.users[userId];
+  if (!user) return { limitReached: true };
+  if (user.aiMessagesUsed >= (user.aiMessagesLimit || 2e3)) {
+    return { limitReached: true, user };
+  }
+  user.aiMessagesUsed += 1;
+  db.users[userId] = user;
+  writeDb(db);
+  return { limitReached: false, user };
 }
 function updateUserPresence(userId, isOnline) {
   const db = readDb();
@@ -515,6 +547,20 @@ function updateMessageStatus(messageId, status) {
     return msg;
   }
   return void 0;
+}
+function markConversationAsRead(convId, userId) {
+  const db = readDb();
+  const updatedIds = [];
+  db.messages.forEach((m) => {
+    if (m.conversationId === convId && m.recipientId === userId && m.status !== "read") {
+      m.status = "read";
+      updatedIds.push(m.id);
+    }
+  });
+  if (updatedIds.length > 0) {
+    writeDb(db);
+  }
+  return updatedIds;
 }
 function getActiveStatuses() {
   const db = readDb();
@@ -794,12 +840,68 @@ function saveOtpSettings(settings) {
   db.otpSettings = settings;
   writeDb(db);
 }
+var import_fs2, import_path2, DB_FILE, META_AI_USER, ADMIN_USER, cachedDb;
+var init_db = __esm({
+  "src/db.ts"() {
+    import_fs2 = __toESM(require("fs"), 1);
+    import_path2 = __toESM(require("path"), 1);
+    init_supabase();
+    DB_FILE = import_path2.default.join(process.cwd(), "db-store.json");
+    META_AI_USER = {
+      id: "meta-ai",
+      username: "Meta AI",
+      role: "user",
+      avatarUrl: "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=150&q=80",
+      // Beautiful futuristic gradient
+      statusText: "with Gemini AI. Type anything to start talking!",
+      isOnline: true,
+      lastSeenAt: (/* @__PURE__ */ new Date()).toISOString(),
+      subscriptionStatus: "active",
+      totalTokensUsed: 0,
+      costInDollars: 0,
+      aiMessagesUsed: 0,
+      aiMessagesLimit: 5e3
+    };
+    ADMIN_USER = {
+      id: "admin-tarek",
+      username: "Tarek Roshdi",
+      email: "tarekroshdi@gmail.com",
+      password: "Tarek@2026",
+      role: "admin",
+      avatarUrl: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=150&q=80",
+      statusText: "System Administrator",
+      isOnline: true,
+      lastSeenAt: (/* @__PURE__ */ new Date()).toISOString(),
+      subscriptionStatus: "active",
+      totalTokensUsed: 0,
+      costInDollars: 0,
+      aiMessagesUsed: 0,
+      aiMessagesLimit: 5e4
+    };
+    cachedDb = null;
+  }
+});
+
+// server.ts
+var import_crypto = require("crypto");
+var import_express = __toESM(require("express"), 1);
+var import_http = __toESM(require("http"), 1);
+var import_ws = require("ws");
+var import_path4 = __toESM(require("path"), 1);
+var import_fs4 = __toESM(require("fs"), 1);
+var import_dotenv = __toESM(require("dotenv"), 1);
+var import_genai = require("@google/genai");
+var import_vite = require("vite");
+init_db();
+init_supabase();
 
 // src/whatsapp.ts
 var import_baileys = __toESM(require("@whiskeysockets/baileys"), 1);
 var import_pino = __toESM(require("pino"), 1);
 var import_path3 = __toESM(require("path"), 1);
 var import_fs3 = __toESM(require("fs"), 1);
+init_db();
+init_supabase();
 var activeSockets = /* @__PURE__ */ new Map();
 var activeReconnectTimeouts = /* @__PURE__ */ new Map();
 var conflictCounters = /* @__PURE__ */ new Map();
@@ -925,6 +1027,8 @@ function getOrCreateContactUser(jid, pushName) {
     subscriptionStatus: "inactive",
     totalTokensUsed: 0,
     costInDollars: 0,
+    aiMessagesUsed: 0,
+    aiMessagesLimit: 0,
     role: "user"
   };
   saveUser(newContact);
@@ -1029,6 +1133,8 @@ function syncIncomingBaileysMessage(sock, jid, pushName, messageContent, fromMe,
       subscriptionStatus: "active",
       totalTokensUsed: 0,
       costInDollars: 0,
+      aiMessagesUsed: 0,
+      aiMessagesLimit: 5e3,
       role: "user"
     };
     saveUser(defaultUser);
@@ -1440,11 +1546,33 @@ function stopWhatsAppSession(deviceId) {
 
 // server.ts
 var import_baileys2 = require("@whiskeysockets/baileys");
+var import_express_rate_limit = __toESM(require("express-rate-limit"), 1);
 import_dotenv.default.config();
 var PORT = Number(process.env.PORT) || 3e3;
 var app = (0, import_express.default)();
 app.use(import_express.default.json({ limit: "50mb" }));
 app.use(import_express.default.urlencoded({ limit: "50mb", extended: true }));
+app.set("trust proxy", 1);
+var apiLimiter = (0, import_express_rate_limit.default)({
+  windowMs: 15 * 60 * 1e3,
+  // 15 minutes
+  max: 1e3,
+  // Limit each IP to 1000 requests per windowMs
+  message: { error: "Too many requests from this IP, please try again after 15 minutes" },
+  standardHeaders: true,
+  legacyHeaders: false
+});
+app.use("/api/", apiLimiter);
+app.post("/api/auth/admin-login", (req, res) => {
+  const { email, password } = req.body;
+  const db = readDb();
+  const adminUser = Object.values(db.users).find((u) => u.email === email && u.password === password && u.role === "admin");
+  if (adminUser) {
+    res.json({ success: true, user: adminUser });
+  } else {
+    res.status(401).json({ error: "\u0627\u0644\u0628\u0631\u064A\u062F \u0627\u0644\u0625\u0644\u0643\u062A\u0631\u0648\u0646\u064A \u0623\u0648 \u0643\u0644\u0645\u0629 \u0627\u0644\u0645\u0631\u0648\u0631 \u063A\u064A\u0631 \u0635\u062D\u064A\u062D\u0629" });
+  }
+});
 app.get("/api/catalog", (req, res) => {
   const db = readDb();
   res.json({ catalog: db.catalog || [] });
@@ -1689,6 +1817,56 @@ app.post("/api/demo-verify", (req, res) => {
   writeDb(db);
   res.json({ success: true });
 });
+app.post("/api/expocore/webhook", async (req, res) => {
+  const apiKey = req.headers["x-api-key"];
+  if (apiKey !== process.env.API_KEY && apiKey !== process.env.WATBUS_API_KEY) {
+  }
+  const { name, phone, ticket, ticketUrl, customMessage, eventName, deviceId } = req.body;
+  if (!phone || !customMessage && !ticket) {
+    res.status(400).json({ error: "Phone and message/ticket are required" });
+    return;
+  }
+  const devices = getAllDevices();
+  let targetDevice = devices.find((d) => d.id === deviceId && d.status === "connected");
+  if (!targetDevice) {
+    targetDevice = devices.find((d) => d.status === "connected");
+  }
+  if (!targetDevice) {
+    console.error("[ExpoCore Webhook] No connected WhatsApp device available");
+    res.status(503).json({ error: "No connected WhatsApp device available" });
+    return;
+  }
+  try {
+    let messageToSend = customMessage || `\u0645\u0631\u062D\u0628\u0627\u064B ${name}\u060C \u062A\u0630\u0643\u0631\u062A\u0643 \u0644\u0645\u0639\u0631\u0636 ${eventName} \u0647\u064A: ${ticket}
+\u0631\u0627\u0628\u0637 \u0627\u0644\u062A\u0630\u0643\u0631\u0629: ${ticketUrl}`;
+    const cleanPhone = phone.replace(/[^\d]/g, "");
+    await sendBaileysMessage(targetDevice.id, cleanPhone, messageToSend);
+    console.log(`[ExpoCore Webhook] Message sent successfully to ${cleanPhone} via device ${targetDevice.id}`);
+    saveOtpLog({
+      id: `expocore_log_${Math.random().toString(36).substring(2, 11)}`,
+      phone: cleanPhone,
+      otp: ticket || "marketing",
+      message: messageToSend,
+      status: "sent",
+      deviceId: targetDevice.id,
+      deviceName: targetDevice.name,
+      timestamp: (/* @__PURE__ */ new Date()).toISOString()
+    });
+    res.json({ success: true });
+  } catch (err) {
+    console.error(`[ExpoCore Webhook] Failed to send message to ${phone}:`, err);
+    res.status(500).json({ error: err.message || "Failed to send message" });
+  }
+});
+app.get("/api/expocore/status", (req, res) => {
+  const devices = getAllDevices();
+  const connectedDevice = devices.find((d) => d.status === "connected");
+  if (connectedDevice) {
+    res.json({ status: "connected", deviceId: connectedDevice.id, deviceName: connectedDevice.name });
+  } else {
+    res.json({ status: "disconnected" });
+  }
+});
 async function sendWhatsAppOtp(phone, otp, isDemo = false) {
   const devices = getAllDevices();
   const settings = getOtpSettings();
@@ -1815,14 +1993,14 @@ app.post("/api/admin/test-otp", async (req, res) => {
   }
 });
 app.post("/api/auth/send-otp", async (req, res) => {
-  const { phone, username } = req.body;
-  if (!phone || !username) {
-    res.status(400).json({ error: "Phone and username are required" });
+  const { phone, username, requestedPlan, paymentProofUrl } = req.body;
+  if (!phone || !username || !requestedPlan) {
+    res.status(400).json({ error: "Phone, username, and plan are required" });
     return;
   }
   const otp = Math.floor(1e5 + Math.random() * 9e5).toString();
   const expires = Date.now() + 5 * 60 * 1e3;
-  otpStore.set(phone, { otp, username, expires });
+  otpStore.set(phone, { otp, username, expires, requestedPlan, paymentProofUrl });
   try {
     await sendWhatsAppOtp(phone, otp);
     res.json({ success: true });
@@ -1848,7 +2026,7 @@ app.post("/api/auth/verify-otp", (req, res) => {
     return;
   }
   otpStore.delete(phone);
-  const { username } = stored;
+  const { username, requestedPlan, paymentProofUrl } = stored;
   let user = getUserByUsername2(username);
   if (!user) {
     const id = `user_${Math.random().toString(36).substring(2, 11)}`;
@@ -1862,7 +2040,14 @@ app.post("/api/auth/verify-otp", (req, res) => {
       subscriptionStatus: "trial",
       totalTokensUsed: 0,
       costInDollars: 0,
-      role: "user"
+      role: "user",
+      isActive: false,
+      // Wait for admin approval
+      requestedPlan: requestedPlan || "starter",
+      paymentProofUrl,
+      aiMessagesUsed: 0,
+      aiMessagesLimit: requestedPlan === "enterprise" ? 2e4 : requestedPlan === "pro" ? 7e3 : 2500,
+      phoneNumber: phone
     };
     saveUser(user);
     cloneDefaultUserConversations(user.id);
@@ -1937,7 +2122,9 @@ app.post("/api/auth/login", async (req, res) => {
       trialExpiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1e3).toISOString(),
       totalTokensUsed: 0,
       costInDollars: 0,
-      role: "user"
+      role: "user",
+      aiMessagesUsed: 0,
+      aiMessagesLimit: 100
     };
     saveUser(user);
     cloneDefaultUserConversations(user.id);
@@ -1972,7 +2159,9 @@ app.post("/api/auth/ensure", (req, res) => {
       trialExpiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1e3).toISOString(),
       totalTokensUsed: 0,
       costInDollars: 0,
-      role: "user"
+      role: "user",
+      aiMessagesUsed: 0,
+      aiMessagesLimit: 100
     };
     saveUser(user);
   } else {
@@ -2007,7 +2196,9 @@ app.post("/api/users", (req, res) => {
     subscriptionStatus: "active",
     totalTokensUsed: 0,
     costInDollars: 0,
-    role: "user"
+    role: "user",
+    aiMessagesUsed: 0,
+    aiMessagesLimit: 1e3
   };
   saveUser(newUser);
   res.json({ user: newUser });
@@ -2030,7 +2221,9 @@ app.post("/api/admin/users", async (req, res) => {
     totalTokensUsed: 0,
     costInDollars: 0,
     role: "user",
-    phoneNumber: phoneNumber || ""
+    phoneNumber: phoneNumber || "",
+    aiMessagesUsed: 0,
+    aiMessagesLimit: subscriptionStatus === "active" ? 1e3 : 100
   };
   if (isSupabaseConfigured()) {
     const existingUser = await getUserByUsername(username);
@@ -2197,14 +2390,21 @@ app.post("/api/conversations", (req, res) => {
       subscriptionStatus: "inactive",
       role: "user",
       totalTokensUsed: 0,
-      costInDollars: 0
+      costInDollars: 0,
+      aiMessagesUsed: 0,
+      aiMessagesLimit: 0
     };
     saveUser(recipient);
     recipientId = id;
   } else {
     recipientId = recipient.id;
   }
-  const conv = getOrCreateConversation(senderId, recipientId);
+  const deviceId = req.body.deviceId;
+  if (!deviceId) {
+    res.status(400).json({ error: "deviceId is required to start a new chat to ensure SaaS isolation" });
+    return;
+  }
+  const conv = getOrCreateConversation(senderId, recipientId, deviceId);
   res.json({
     conversation: {
       ...conv,
@@ -2301,6 +2501,152 @@ app.post("/api/conversations/:convId/messages", async (req, res) => {
     }
   }
   res.json({ success: true, message: newMsg });
+});
+app.post("/api/messages/internal", async (req, res) => {
+  const { convId, senderId, content } = req.body;
+  const db = readDb();
+  const conv = db.conversations[convId];
+  if (!conv) {
+    res.status(404).json({ error: "Conversation not found" });
+    return;
+  }
+  const recipientId = conv.participantIds.find((id) => id !== senderId) || "";
+  const newMsg = {
+    id: `msg_internal_${Math.random().toString(36).substring(2, 11)}`,
+    conversationId: convId,
+    senderId,
+    recipientId,
+    content,
+    type: "text",
+    status: "sent",
+    timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+    isInternalNote: true
+  };
+  saveMessage(newMsg);
+  broadcast({
+    type: "message:new",
+    message: newMsg
+  });
+  res.json({ success: true, message: newMsg });
+});
+app.post("/api/conversations/:convId/summarize", async (req, res) => {
+  const { convId } = req.params;
+  const { adminId } = req.body;
+  try {
+    const messages = getMessagesForConversation(convId);
+    if (!messages || messages.length === 0) {
+      res.status(400).json({ error: "No messages to summarize" });
+      return;
+    }
+    if (!process.env.GEMINI_API_KEY) {
+      res.status(500).json({ error: "GEMINI_API_KEY is not configured" });
+      return;
+    }
+    const genAI = new import_genai.GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+    const conversationText = messages.filter((m) => !m.isInternalNote).map((m) => {
+      const role = m.senderId.startsWith("contact_") ? "Customer" : "Agent";
+      return `${role}: ${m.content}`;
+    }).join("\n");
+    const prompt = `Please summarize the following customer service conversation briefly and professionally. Highlight key issues, customer sentiment, and any pending actions. Output in Arabic:
+
+${conversationText}`;
+    const response = await genAI.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: prompt,
+      config: {
+        temperature: 0.3
+      }
+    });
+    const summaryText = response.text || "Unable to generate summary.";
+    const db = readDb();
+    const conv = db.conversations[convId];
+    const recipientId = conv.participantIds.find((id) => id !== adminId) || "";
+    const newMsg = {
+      id: `msg_summary_${Math.random().toString(36).substring(2, 11)}`,
+      conversationId: convId,
+      senderId: adminId,
+      recipientId,
+      content: `\u{1F916} **\u0645\u0644\u062E\u0635 \u0627\u0644\u0645\u062D\u0627\u062F\u062B\u0629 \u0628\u0627\u0644\u0630\u0643\u0627\u0621 \u0627\u0644\u0627\u0635\u0637\u0646\u0627\u0639\u064A:**
+
+${summaryText}`,
+      type: "text",
+      status: "sent",
+      timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+      isInternalNote: true
+    };
+    saveMessage(newMsg);
+    broadcast({
+      type: "message:new",
+      message: newMsg
+    });
+    res.json({ success: true, summary: summaryText, message: newMsg });
+  } catch (error) {
+    console.error("Error generating summary:", error);
+    res.status(500).json({ error: "Failed to generate summary" });
+  }
+});
+app.get("/api/admin/otp-report", (req, res) => {
+  const db = readDb();
+  res.json({
+    users: Object.values(db.users),
+    demoLeads: db.demoLeads || []
+  });
+});
+app.get("/api/admin/users/:userId/work", (req, res) => {
+  const { userId } = req.params;
+  const db = readDb();
+  const user = db.users[userId];
+  if (!user) return res.status(404).json({ error: "User not found" });
+  const userConversations = Object.values(db.conversations).filter((c) => c.participantIds.includes(userId));
+  res.json({
+    totalConversations: userConversations.length,
+    subscriptionStatus: user.subscriptionStatus,
+    usageLimit: user.usageLimit,
+    aiMessagesUsed: user.aiMessagesUsed,
+    aiMessagesLimit: user.aiMessagesLimit,
+    devices: Object.values(db.devices || {}).filter((d) => d.ownerId === userId),
+    campaigns: Object.values(db.campaigns || {}).filter((c) => c.ownerId === userId),
+    recentMessages: db.messages.filter((m) => m.senderId === userId || m.recipientId === userId).slice(-10)
+  });
+});
+app.put("/api/admin/users/:userId", (req, res) => {
+  const { userId } = req.params;
+  const { email, password, subscriptionStatus, duration, usageLimit } = req.body;
+  const db = readDb();
+  const user = db.users[userId];
+  if (!user) return res.status(404).json({ error: "User not found" });
+  if (email !== void 0) user.email = email;
+  if (password !== void 0) user.password = password;
+  if (subscriptionStatus !== void 0) user.subscriptionStatus = subscriptionStatus;
+  if (usageLimit !== void 0) user.usageLimit = parseInt(usageLimit);
+  saveUser(user);
+  res.json({ success: true, user });
+});
+app.delete("/api/admin/users/:userId", (req, res) => {
+  const { userId } = req.params;
+  const db = readDb();
+  if (db.users[userId]) {
+    deleteUser(userId);
+    res.json({ success: true });
+  } else {
+    res.status(404).json({ error: "User not found" });
+  }
+});
+app.post("/api/users/:id/quick-replies", (req, res) => {
+  const { id } = req.params;
+  const { quickReplies } = req.body;
+  if (!Array.isArray(quickReplies)) {
+    res.status(400).json({ error: "quickReplies must be an array of strings" });
+    return;
+  }
+  const user = getUser(id);
+  if (!user) {
+    res.status(404).json({ error: "User not found" });
+    return;
+  }
+  user.quickReplies = quickReplies;
+  saveUser(user);
+  res.json({ success: true, user });
 });
 app.post("/api/conversations/:convId/voice-settings", (req, res) => {
   const { convId } = req.params;
@@ -3292,6 +3638,10 @@ app.post("/api/devices", (req, res) => {
     return;
   }
   const tenantId = getTenantId(req);
+  const user = getUser(tenantId);
+  if (user?.subscriptionPlan === "starter" && method !== "qr") {
+    return res.status(403).json({ error: "\u0639\u0630\u0631\u0627\u064B\u060C \u0631\u0628\u0637 \u05D4\u0640 API \u0648\u0627\u0644\u0640 Gateways \u0645\u062A\u0648\u0641\u0631 \u0641\u0642\u0637 \u0641\u064A \u0628\u0627\u0642\u0629 \u0627\u0644\u0645\u062D\u062A\u0631\u0641\u064A\u0646 \u0648\u0627\u0644\u0634\u0631\u0643\u0627\u062A. \u064A\u0631\u062C\u0649 \u0627\u0644\u062A\u0631\u0642\u064A\u0629." });
+  }
   const id = `dev_${Math.random().toString(36).substring(2, 11)}`;
   const displayPhone = phoneNumber ? String(phoneNumber).trim() : "+201012345678";
   const isDirectConnection = method === "cloud_api" || method === "ultramsg" || method === "greenapi";
@@ -3392,6 +3742,33 @@ app.get("/api/admin/otp-report", (req, res) => {
   res.json({
     users: Object.values(db.users).filter((u) => u.role !== "admin" && u.id !== "meta-ai" && u.id !== "user_default" && !u.id.startsWith("contact_")),
     demoLeads: db.demoLeads
+  });
+});
+app.post("/api/admin/approve-user/:id", (req, res) => {
+  const { id } = req.params;
+  const user = getUser(id);
+  if (!user) {
+    res.status(404).json({ error: "User not found" });
+    return;
+  }
+  user.isActive = true;
+  user.subscriptionPlan = user.requestedPlan;
+  saveUser(user);
+  res.json({ success: true, user });
+});
+app.post("/api/admin/reject-user/:id", (req, res) => {
+  const { id } = req.params;
+  const user = getUser(id);
+  if (!user) {
+    res.status(404).json({ error: "User not found" });
+    return;
+  }
+  Promise.resolve().then(() => (init_db(), db_exports)).then(({ deleteUser: deleteUser2 }) => {
+    deleteUser2(id);
+    res.json({ success: true });
+  }).catch((err) => {
+    console.error("Error importing db to delete user:", err);
+    res.status(500).json({ error: "Internal Server Error" });
   });
 });
 app.delete("/api/devices/:id", (req, res) => {
@@ -4059,10 +4436,11 @@ wss.on("connection", (ws) => {
           if (recipientId.startsWith("contact_")) {
             const targetPhone = recipientId.replace("contact_", "");
             const activeDevices = getAllDevices().filter((d) => d.status === "connected");
-            const qrDevice = activeDevices.find((d) => d.method === "qr") || activeDevices[0];
-            if (qrDevice) {
-              console.log(`Routing chat message via real device "${qrDevice.name}" (method: ${qrDevice.method}) to +${targetPhone}`);
-              sendRealWhatsAppMessage(qrDevice, targetPhone, content).then((res) => {
+            const conv = Object.values(readDb().conversations).find((c) => c.id === conversationId);
+            const targetDevice = activeDevices.find((d) => d.id === conv?.deviceId);
+            if (targetDevice) {
+              console.log(`Routing chat message via real device "${targetDevice.name}" (method: ${targetDevice.method}) to +${targetPhone}`);
+              sendRealWhatsAppMessage(targetDevice, targetPhone, content).then((res) => {
                 if (!res.success) {
                   console.error(`Failed to send real WhatsApp message to +${targetPhone}:`, res.error);
                 } else {
@@ -4517,6 +4895,24 @@ async function startServer() {
       }
       let responseText = "";
       let responseAudioBuffer = null;
+      const usageCheck = incrementUserAiUsage(ownerId);
+      if (usageCheck.limitReached) {
+        console.log(`[AI Quota Reached] User ${ownerId} reached AI limit (${usageCheck.user?.aiMessagesLimit}). Skipping Gemini call.`);
+        const quotaMsg = {
+          id: `msg_${Math.random().toString(36).substring(2, 11)}`,
+          conversationId: conv.id,
+          senderId: ownerId,
+          recipientId: contactId,
+          content: "\u0639\u0630\u0631\u0627\u064B\u060C \u0627\u0644\u0645\u0633\u0627\u0639\u062F \u0627\u0644\u0630\u0643\u064A \u063A\u064A\u0631 \u0645\u062A\u0627\u062D \u062D\u0627\u0644\u064A\u0627\u064B (\u062A\u0645 \u0627\u0633\u062A\u0647\u0644\u0627\u0643 \u0627\u0644\u0628\u0627\u0642\u0629). \u0633\u064A\u062A\u0645 \u062A\u062D\u0648\u064A\u0644\u0643 \u0642\u0631\u064A\u0628\u0627\u064B \u0644\u0623\u062D\u062F \u0645\u0648\u0638\u0641\u064A \u0627\u0644\u0645\u0628\u064A\u0639\u0627\u062A.",
+          type: "text",
+          status: "delivered",
+          timestamp: (/* @__PURE__ */ new Date()).toISOString()
+        };
+        saveMessage(quotaMsg);
+        broadcast({ type: "message:new", message: quotaMsg });
+        await sendBaileysMessage(deviceId, jid, quotaMsg.content);
+        return;
+      }
       if (ai) {
         try {
           const historyMsgs = getMessagesForConversation(conv.id);
@@ -4540,12 +4936,17 @@ async function startServer() {
             sentimentInstruction = `
 - CRITICAL SENTIMENT ADAPTATION: The customer is expressing frustration, annoyance, or reporting a complaint/issue. You MUST immediately start your response with a deeply sincere, warm, and highly professional apology on behalf of our team (e.g., '\u0646\u0639\u062A\u0630\u0631 \u0645\u0646 \u062D\u0636\u0631\u062A\u0643 \u0628\u0634\u062F\u0629 \u064A\u0627 \u0641\u0646\u062F\u0645 \u0639\u0646 \u0647\u0630\u0627 \u0627\u0644\u0625\u0632\u0639\u0627\u062C\u060C \u0648\u0646\u0647\u062A\u0645 \u062C\u062F\u0627\u064B \u0628\u062D\u0644 \u0645\u0634\u0643\u0644\u062A\u0643...' or 'Sincere apologies for any inconvenience, we are fully committed to resolving this...'). Avoid standard cheerful greetings or promotional pitches. Be calming, constructive, and direct.`;
           }
+          const trainingHubKnowledge = (device.knowledgeBaseSources || []).map((source) => `--- SOURCE: ${source.name} ---
+${source.content}`).join("\n\n");
+          const combinedKnowledge = [device.aiKnowledgeBase, trainingHubKnowledge].filter(Boolean).join("\n\n");
+          const finalKnowledgeBase = combinedKnowledge || "(No factual knowledge base provided. Answer general greetings politely, but if asked about business details like pricing, policies, or products, politely apologize and offer to transfer them to human support.)";
           const systemPrompt = `You are an elite, highly intelligent corporate AI customer support agent named "${device.aiAgentName || "WhatsApp Smart Agent"}", representing our premium brand on WhatsApp.
 Your absolute goal is to deliver impeccable, friendly, accurate, and prestigious support to our customers.
 
 Here are your elite operating parameters:
 
 1. PERSONALITY, TONE & DYNAMIC TIME CONTEXT:
+${device.aiAgentInstructions ? `- Strict Persona Rules: ${device.aiAgentInstructions}` : ""}
 - Keep your tone warm, welcoming, respectful, and highly prestigious.
 - Adapt your voice seamlessly to the requested style: ${device.aiVoiceTone || "professional"}.
 - Use local context dynamically:
@@ -4559,7 +4960,7 @@ ${sentimentInstruction}
 
 3. KNOWLEDGE BASE GROUNDING & STRICT FAITHFULNESS:
 - Use the following factual Knowledge Base as your sole source of truth:
-${device.aiKnowledgeBase || "(No knowledge base specified. Answer general greetings politely, but if asked about business details like pricing, booking, or orders, politely offer to transfer them to human support.)"}
+${finalKnowledgeBase}
 - STRICT ANTI-HALLUCINATION & ANTI-AI-SLOP RULES: If the answer is NOT explicitly covered in the Knowledge Base:
   * DO NOT make up or assume links, prices, numbers, or features.
   * Instead of saying "I don't know", transition smoothly into a highly professional Lead Capture flow!
@@ -4909,8 +5310,9 @@ ${eventDetails.parking}. \u{1F4CD}`;
   });
   app.post("/api/expocore/webhook", async (req, res) => {
     const apiKeyHeader = req.headers["api_key"] || req.headers["x-api-key"] || req.query.api_key;
-    const { name, phone, ticket, ticketUrl } = req.body;
-    console.log(`[ExpoCore Webhook] Received registration check-in:`, { name, phone, ticket, ticketUrl, apiKeyHeader });
+    const { name, phone, ticket, ticketUrl, deviceId } = req.body;
+    const targetDeviceId = deviceId || req.query.deviceId;
+    console.log(`[ExpoCore Webhook] Received registration check-in:`, { name, phone, ticket, ticketUrl, deviceId: targetDeviceId, apiKeyHeader });
     if (!name || !phone) {
       return res.status(400).json({
         success: false,
@@ -4918,11 +5320,21 @@ ${eventDetails.parking}. \u{1F4CD}`;
       });
     }
     const allDevices = getAllDevices();
-    const activeDevices = allDevices.filter((d) => d.status === "connected" || d.method === "qr" || d.method === "greenapi" || d.method === "cloud_api");
-    const device = activeDevices[0] || allDevices[0];
+    let device;
+    if (targetDeviceId) {
+      device = allDevices.find((d) => d.id === targetDeviceId);
+    }
+    if (!device) {
+      const activeDevices = allDevices.filter((d) => d.status === "connected" || d.method === "qr" || d.method === "greenapi" || d.method === "cloud_api");
+      device = activeDevices[0] || allDevices[0];
+    }
     const isArabic = /[\u0600-\u06FF]/.test(name) || phone.startsWith("+20") || phone.startsWith("20") || phone.startsWith("010") || phone.startsWith("011") || phone.startsWith("012") || phone.startsWith("015");
     const qrUrl = ticketUrl || `https://expocore.io/t/${ticket || "9842"}-qr`;
-    const messageText = isArabic ? `\u{1F3AB} *\u0645\u0631\u062D\u0628\u0627\u064B \u0628\u0643 \u064A\u0627 ${name}!* \u0644\u0642\u062F \u062A\u0645 \u062A\u0633\u062C\u064A\u0644 \u062D\u0636\u0648\u0631\u0643 \u0628\u0646\u062C\u0627\u062D \u0641\u064A \u0627\u0644\u0645\u0639\u0631\u0636.
+    let messageText = "";
+    if (req.body.customMessage) {
+      messageText = req.body.customMessage;
+    } else {
+      messageText = isArabic ? `\u{1F3AB} *\u0645\u0631\u062D\u0628\u0627\u064B \u0628\u0643 \u064A\u0627 ${name}!* \u0644\u0642\u062F \u062A\u0645 \u062A\u0633\u062C\u064A\u0644 \u062D\u0636\u0648\u0631\u0643 \u0628\u0646\u062C\u0627\u062D \u0641\u064A \u0627\u0644\u0645\u0639\u0631\u0636.
 
 \u062A\u062C\u062F \u062A\u0630\u0643\u0631\u062A\u0643 \u0648\u0631\u0645\u0632 \u0627\u0644\u062F\u062E\u0648\u0644 \u0627\u0644\u0640 QR \u0627\u0644\u062E\u0627\u0635 \u0628\u0643 \u0647\u0646\u0627:
 \u{1F449} ${qrUrl}
@@ -4933,6 +5345,7 @@ You can access your digital ticket and access QR code here:
 \u{1F449} ${qrUrl}
 
 We look forward to seeing you! I am your WhatsApp Smart Agent. If you have any questions, feel free to ask me! \u{1F91D}`;
+    }
     if (!device) {
       console.warn(`[ExpoCore Webhook] No active WhatsApp gateway connected. Simulating success.`);
       return res.json({
