@@ -279,9 +279,10 @@ export function saveMessage(message: Message): Message {
   const db = readDb();
   db.messages.push(message);
   
-  // Update conversation timeline
+  // Update conversation timeline & reset cached AI analysis to ensure fresh real-time insights
   if (db.conversations[message.conversationId]) {
     db.conversations[message.conversationId].updatedAt = new Date().toISOString();
+    delete (db.conversations[message.conversationId] as any).aiAnalysis;
   }
   
   writeDb(db);
@@ -403,6 +404,24 @@ export function deleteCampaign(campaignId: string): void {
   if (db.campaigns && db.campaigns[campaignId]) {
     delete db.campaigns[campaignId];
     writeDb(db);
+  }
+}
+
+export function deleteConversation(conversationId: string): void {
+  const db = readDb();
+  if (db.conversations && db.conversations[conversationId]) {
+    delete db.conversations[conversationId];
+    
+    // Purge all messages associated with this conversation to guarantee data confidentiality
+    if (db.messages) {
+      for (const msgId of Object.keys(db.messages)) {
+        if (db.messages[msgId].conversationId === conversationId) {
+          delete db.messages[msgId];
+        }
+      }
+    }
+    writeDb(db);
+    console.log(`[DB] Deleted conversation ${conversationId} and purged all associated messages.`);
   }
 }
 

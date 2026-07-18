@@ -82,6 +82,7 @@ import {
   getAllCampaigns,
   saveCampaign,
   deleteCampaign,
+  deleteConversation,
   cloneDefaultUserConversations,
   updateConversationLabel,
   updateConversationAiPaused,
@@ -117,12 +118,13 @@ import {
   activeReconnectTimeouts,
   resolveLidToPhone,
   sessionsInProgress,
-  hasSavedSession
+  hasSavedSession,
+  parseSpintax
 } from './src/whatsapp.js';
 
 import { downloadMediaMessage } from '@whiskeysockets/baileys';
 
-import { User, Conversation, Message, StatusStory, WsEvent, DeviceLink, Campaign } from './src/types.js';
+import { User, Conversation, Message, StatusStory, WsEvent, DeviceLink, Campaign, FlowStage } from './src/types.js';
 
 const PORT = Number(process.env.PORT) || 3000;
 const app = express();
@@ -496,9 +498,9 @@ app.post('/api/expocore/webhook', async (req, res) => {
     // Actually, Watbus doesn't strictly have WATBUS_API_KEY by default in its env, but let's allow it to be flexible.
   }
 
-  const { name, phone, ticket, ticketUrl, customMessage, eventName, deviceId } = req.body;
-  if (!phone || (!customMessage && !ticket)) {
-    res.status(400).json({ error: 'Phone and message/ticket are required' });
+  const { name, phone, ticket, ticketUrl, customMessage, eventName, deviceId, pdfBase64, pdfFilename } = req.body;
+  if (!phone || (!customMessage && !ticket && !pdfBase64)) {
+    res.status(400).json({ error: 'Phone and message/ticket/pdf are required' });
     return;
   }
 
@@ -537,8 +539,17 @@ app.post('/api/expocore/webhook', async (req, res) => {
     
     // Clean phone number (remove +, spaces, etc)
     const cleanPhone = phone.replace(/[^\d]/g, '');
+
+    let pdfBuffer: Buffer | undefined;
+    if (pdfBase64) {
+      try {
+        pdfBuffer = Buffer.from(pdfBase64, 'base64');
+      } catch (err: any) {
+        console.error('[ExpoCore Webhook] Failed to decode base64 PDF:', err.message);
+      }
+    }
     
-    const result = await sendBaileysMessage(targetDevice.id, cleanPhone, messageToSend);
+    const result = await sendBaileysMessage(targetDevice.id, cleanPhone, messageToSend, undefined, pdfBuffer, pdfFilename);
     if (!result.success) {
       console.error(`[ExpoCore Webhook] sendBaileysMessage failed for device ${targetDevice.id}:`, result.error);
       res.status(500).json({ error: result.error || 'WhatsApp socket failed to send the message' });
@@ -1246,6 +1257,35 @@ app.get('/api/users/:userId/conversations', (req, res) => {
   res.json({ conversations: enriched });
 });
 
+// Delete a conversation and purge its message history (for privacy/confidentiality)
+app.delete('/api/conversations/:id', (req, res) => {
+  const { id } = req.params;
+  const tenantId = getTenantId(req);
+
+  const db = readDb();
+  const conv = db.conversations?.[id];
+  
+  if (!conv) {
+    res.status(404).json({ error: 'Conversation not found' });
+    return;
+  }
+
+  // Multi-tenancy isolation check:
+  if (tenantId && !conv.participantIds.includes(tenantId)) {
+    res.status(403).json({ error: 'Unauthorized access to delete this conversation' });
+    return;
+  }
+
+  deleteConversation(id);
+
+  broadcast({
+    type: 'conversation:delete',
+    conversationId: id
+  });
+
+  res.json({ success: true, message: 'Conversation deleted successfully and all messages purged' });
+});
+
 // Start or retrieve conversation
 app.post('/api/conversations', (req, res) => {
   const senderId = req.body.senderId || req.body.userId;
@@ -1665,32 +1705,74 @@ function getAvatarColorForId(id: string): string {
   return colors[sum % colors.length];
 }
 
-function analyzeMessagesLocal(messages: Message[], label?: string) {
-  let stage: 'awareness' | 'consideration' | 'intent' | 'action' | 'loyalty' = 'awareness';
+const DEFAULT_FLOW_STAGES: FlowStage[] = [
+  { id: 'awareness', name: 'وعي عام', nameEn: 'Awareness', color: '#6366f1', keywords: ['تفاصيل', 'باقة', 'ممكن', 'شرح', 'فيديو', 'برنامج', 'توضيح'] },
+  { id: 'consideration', name: 'اهتمام ومقارنة', nameEn: 'Consideration', color: '#3b82f6', keywords: ['تفاصيل', 'باقة', 'ممكن', 'شرح', 'فيديو', 'برنامج', 'توضيح'] },
+  { id: 'intent', name: 'نية جادة', nameEn: 'Intent', color: '#a855f7', keywords: ['رقم الحساب', 'بكم الاشتراك', 'سعر الباقة', 'رابط الدفع', 'طريقة الدفع', 'خصم'] },
+  { id: 'action', name: 'تفعيل واشتراك', nameEn: 'Action', color: '#10b981', keywords: ['تم التحويل', 'حولت', 'ايصال', 'إيصال', 'التحويل البنكي', 'فودافون كاش', 'اشترك السنوي'] },
+  { id: 'loyalty', name: 'ولاء وتوصية', nameEn: 'Loyalty', color: '#ec4899', keywords: ['شكرا', 'تسلم', 'ممتاز جدا', 'روعة', 'أشكرك', 'رائع'] }
+];
+
+function analyzeMessagesLocal(messages: Message[], label?: string, flowStages?: FlowStage[]) {
+  const activeStages = flowStages && flowStages.length > 0 ? flowStages : DEFAULT_FLOW_STAGES;
+  let stage = activeStages[0]?.id || 'awareness';
   let sentiment: 'positive' | 'neutral' | 'negative' | 'excited' = 'neutral';
   let temp: 'hot' | 'warm' | 'cold' = 'cold';
   let dealValue = 0;
+
+  // Filter messages sent by the customer (incoming)
+  const customerMessages = messages.filter(m => m.senderId && m.senderId.startsWith('contact_'));
+  const lastCustomerMsg = customerMessages[customerMessages.length - 1]?.content || '';
 
   // Combine all texts
   const fullText = messages.map(m => m.content || '').join(' ').toLowerCase();
 
   // 1. Stage Classification
-  if (label === 'Converted' || label === 'Paid' || label === 'Success' || 
-      /تم التحويل|حولت|ايصال|إيصال|التحويل البنكي|فودافون كاش|اشترك السنوي/g.test(fullText)) {
-    stage = 'action';
+  let matchedStageByLabel = false;
+  if (label) {
+    const lLower = label.toLowerCase();
+    const matched = activeStages.find(s => s.id.toLowerCase() === lLower || s.name.toLowerCase() === lLower || s.nameEn.toLowerCase() === lLower);
+    if (matched) {
+      stage = matched.id;
+      matchedStageByLabel = true;
+    }
+  }
+
+  if (!matchedStageByLabel && activeStages.length > 0) {
+    let maxMatches = -1;
+    let bestStageId = activeStages[0].id;
+    activeStages.forEach(st => {
+      let matches = 0;
+      if (st.keywords && Array.isArray(st.keywords)) {
+        st.keywords.forEach(kw => {
+          if (kw && fullText.includes(kw.toLowerCase())) {
+            matches++;
+          }
+        });
+      }
+      if (matches > maxMatches) {
+        maxMatches = matches;
+        bestStageId = st.id;
+      }
+    });
+    if (maxMatches > 0) {
+      stage = bestStageId;
+    }
+  }
+
+  // Set deal value based on stage
+  if (stage === 'action' || stage.toLowerCase().includes('دفع') || stage.toLowerCase().includes('شراء') || stage.toLowerCase().includes('success') || stage.toLowerCase().includes('paid')) {
     dealValue = fullText.includes('سنة') || fullText.includes('السنوي') ? 299 : 79;
-  } else if (label === 'VIP' || label === 'Intent' || 
-             /رقم الحساب|بكم الاشتراك|سعر الباقة|رابط الدفع|طريقة الدفع|خصم/g.test(fullText)) {
-    stage = 'intent';
+    temp = 'hot';
+  } else if (stage === 'intent' || stage.toLowerCase().includes('نية') || stage.toLowerCase().includes('مهتم')) {
     dealValue = 79;
-  } else if (label === 'Lead' || label === 'Pending' || 
-             /تفاصيل|باقة|ممكن|شرح|فيديو|برنامج|توضيح/g.test(fullText)) {
-    stage = 'consideration';
-    dealValue = 0;
-  } else if (label === 'Loyalty' || label === 'Partner' || 
-             /شكرا|تسلم|ممتاز جدا|روعة|أشكرك|رائع/g.test(fullText)) {
-    stage = 'loyalty';
+    temp = 'warm';
+  } else if (stage === 'loyalty' || stage.toLowerCase().includes('ولاء') || stage.toLowerCase().includes('شكر')) {
     dealValue = 150;
+    temp = 'hot';
+  } else {
+    dealValue = 0;
+    temp = 'cold';
   }
 
   // 2. Sentiment Classification
@@ -1702,77 +1784,66 @@ function analyzeMessagesLocal(messages: Message[], label?: string) {
     sentiment = 'negative';
   }
 
-  // 3. Temp Classification
-  if (stage === 'action' || stage === 'loyalty') {
-    temp = 'hot';
-  } else if (stage === 'intent' || stage === 'consideration') {
-    temp = 'warm';
+  // 3. Dynamic intent extraction
+  let intent = 'بدء التعارف والاستفسار';
+  let intentEn = 'Initial inquiry and greeting';
+  const matchedStageObj = activeStages.find(s => s.id === stage) || activeStages[0];
+  if (lastCustomerMsg) {
+    const cleanMsg = lastCustomerMsg.replace(/\n/g, ' ').trim();
+    const snippet = cleanMsg.length > 40 ? cleanMsg.substring(0, 37) + '...' : cleanMsg;
+    intent = `الاستفسار عن: "${snippet}"`;
+    intentEn = `Inquiring about: "${snippet}"`;
+  } else {
+    if (matchedStageObj) {
+      intent = `مرحلة: ${matchedStageObj.name}`;
+      intentEn = `Stage: ${matchedStageObj.nameEn}`;
+    }
   }
 
-  // 4. Draft local reports
-  const summary = stage === 'action'
-    ? 'تم تأكيد الدفع والتحويل بنجاح، العميل متفاعل وإيجابي.'
-    : stage === 'intent'
-    ? 'العميل يستفسر عن معلومات التحويل البنكي ورابط الدفع ولديه نية جادة.'
-    : stage === 'consideration'
-    ? 'العميل يستفسر عن التفاصيل وميزات البوت ويقارن بين الباقات.'
-    : 'العميل تواصل معنا لبدء الاستفسار العام والتعرف على الخدمة.';
+  // 4. Dynamic Key Needs based on content
+  const keyNeeds: string[] = [];
+  const keyNeedsEn: string[] = [];
 
-  const summaryEn = stage === 'action'
-    ? 'Payment successfully verified. Client is highly cooperative and satisfied.'
-    : stage === 'intent'
-    ? 'Client is requesting checkout link and account numbers. High intent.'
-    : stage === 'consideration'
-    ? 'Client is exploring features and comparing packages. Warm lead.'
-    : 'Client initiated introductory greetings and initial inquiries.';
+  if (matchedStageObj) {
+    keyNeeds.push(`الاستقرار في مرحلة: ${matchedStageObj.name}`);
+    keyNeedsEn.push(`Progressing in: ${matchedStageObj.nameEn}`);
+  }
 
-  const recommendedAction = stage === 'action'
-    ? 'أرسل له دليل التشغيل السريع وكود تفعيل الميزات الاحترافية فوراً.'
-    : stage === 'intent'
-    ? 'أرسل له تفاصيل الحسابات البنكية أو كود خصم لسرعة إتمام الصفقة.'
-    : stage === 'consideration'
-    ? 'أرسل له فيديو شرح البوت التلقائي مع تفاصيل الباقات.'
-    : 'أرسل له رسالة ترحيبية تشرح فيها الخدمات والأسعار المتوفرة.';
+  if (fullText.includes('سعر') || fullText.includes('بكم') || fullText.includes('اشتراك')) {
+    keyNeeds.push('معرفة أسعار الباقات والعروض');
+    keyNeedsEn.push('Pricing options and package offers');
+  }
+  if (fullText.includes('شرح') || fullText.includes('كيف') || fullText.includes('برنامج')) {
+    keyNeeds.push('شرح تفصيلي لكيفية عمل النظام');
+    keyNeedsEn.push('Detailed platform walkthrough');
+  }
 
-  const recommendedActionEn = stage === 'action'
-    ? 'Send the onboarding guides and activate their account keys immediately.'
-    : stage === 'intent'
-    ? 'Send direct payment links or dynamic coupon codes to speed up purchase.'
-    : stage === 'consideration'
-    ? 'Send short demonstration videos and PDF guides.'
-    : 'Send a welcoming broadcast detailing standard plans.';
+  if (keyNeeds.length === 0) {
+    keyNeeds.push('استكشاف خدمات المنصة والتعرف عليها');
+    keyNeedsEn.push('General platform exploration');
+  }
 
-  const keyNeeds = stage === 'action'
-    ? ['تفعيل الحساب السريع', 'الحصول على الفاتورة']
-    : stage === 'intent'
-    ? ['بوابة دفع آمنة', 'تفعيل كود الخصم']
-    : stage === 'consideration'
-    ? ['ميزات الرد التلقائي', 'التكامل المباشر']
-    : ['التعرف على خدمات المنصة'];
+  let recommendedAction = 'تواصل مع العميل لتقديم المساعدة والإجابة على استفساراته.';
+  let recommendedActionEn = 'Follow up to assist and answer questions.';
+  let draftReply = 'أهلاً بك! كيف يمكنني مساعدتك اليوم؟';
+  let draftReplyEn = 'Hello! How can I help you today?';
 
-  const keyNeedsEn = stage === 'action'
-    ? ['Fast setup activation', 'Invoicing support']
-    : stage === 'intent'
-    ? ['Secure checkouts', 'Coupon validation']
-    : stage === 'consideration'
-    ? ['Self-reply capabilities', 'API Integration']
-    : ['General consultation'];
-
-  const draftReply = stage === 'action'
-    ? 'تم استلام الدفع وتفعيل حسابك بنجاح! إليك دليل الإعداد السريع للربط التلقائي.'
-    : stage === 'intent'
-    ? 'أهلاً بك! يمكنك الدفع مباشرة عبر الرابط التالي أو التحويل للحساب البنكي المرفق لتفعيل الباقة فوراً.'
-    : stage === 'consideration'
-    ? 'أهلاً بك! يسعدني إرسال فيديو توضيحي (مدة دقيقتين) يشرح لك كيفية ربط وتفعيل الردود الذكية.'
-    : 'أهلاً بك! كيف يمكنني مساعدتك اليوم في ChatCore؟';
-
-  const draftReplyEn = stage === 'action'
-    ? 'Payment received! Your account is active. Here is our setup tutorial.'
-    : stage === 'intent'
-    ? 'Hello! You can complete checkout via the attached link or bank details to start instantly.'
-    : stage === 'consideration'
-    ? 'Welcome! Let me send you a 2-minute video showing how to set up self-reply filters.'
-    : 'Hello! How can we assist you today at ChatCore?';
+  if (stage === 'action' || stage.toLowerCase().includes('دفع') || stage.toLowerCase().includes('شراء')) {
+    recommendedAction = 'تأكيد تفعيل الاشتراك وإرسال بيانات الدخول ومتابعة إرضاء العميل.';
+    recommendedActionEn = 'Confirm subscription activation, send credentials, and ensure customer satisfaction.';
+    draftReply = 'تم تفعيل اشتراكك بنجاح! يسعدنا انضمامك إلينا، وسيقوم ممثلنا بإرسال التفاصيل الآن.';
+    draftReplyEn = 'Your subscription is active! We are glad to have you. Our representative will send details shortly.';
+  } else if (stage === 'intent' || stage.toLowerCase().includes('نية')) {
+    recommendedAction = 'أرسل تفاصيل الحسابات البنكية أو روابط الدفع فوراً لإغلاق الصفقة.';
+    recommendedActionEn = 'Send checkout links and bank details immediately to close the sale.';
+    draftReply = 'أهلاً بك! يمكنك إتمام الاشتراك عبر رابط الدفع التالي أو التحويل للحسابات البنكية المرفقة.';
+    draftReplyEn = 'Hello! You can complete your subscription via this payment link or the attached bank accounts.';
+  } else if (stage === 'consideration' || stage.toLowerCase().includes('اهتمام') || stage.toLowerCase().includes('دراسة')) {
+    recommendedAction = 'أرسل للعميل فيديو توضيحي وصور توضح مميزات البوت.';
+    recommendedActionEn = 'Send a feature demo video and screenshots to show chatbot value.';
+    draftReply = 'يسعدني شرح النظام لك! إليك هذا الفيديو التوضيحي السريع الذي يشرح مميزات ChatCore.';
+    draftReplyEn = 'Happy to explain the system! Here is a quick video demonstrating ChatCore features.';
+  }
 
   return {
     stage,
@@ -1780,11 +1851,11 @@ function analyzeMessagesLocal(messages: Message[], label?: string) {
     temp,
     dealValue,
     aiAnalysis: {
-      intent: stage === 'action' ? 'إتمام الدفع والاشتراك السنوي' : stage === 'intent' ? 'طلب تفاصيل الدفع' : stage === 'consideration' ? 'الاستفسار عن الميزات' : 'بدء التعارف',
-      intentEn: stage === 'action' ? 'Complete subscription' : stage === 'intent' ? 'Checkout inquiries' : stage === 'consideration' ? 'Feature exploration' : 'Initial greeting',
+      intent,
+      intentEn,
       confidence: 95,
-      summary,
-      summaryEn,
+      summary: sentiment === 'negative' ? 'العميل يواجه مشكلة أو يبدو مستاءً ويحتاج لمتابعة ودعم.' : `العميل في مرحلة ${matchedStageObj?.name || stage}.`,
+      summaryEn: sentiment === 'negative' ? 'Client is facing issues and needs support.' : `Client is in ${matchedStageObj?.nameEn || stage} stage.`,
       keyNeeds,
       keyNeedsEn,
       recommendedAction,
@@ -1795,6 +1866,7 @@ function analyzeMessagesLocal(messages: Message[], label?: string) {
   };
 }
 
+// REST API for real CRM Funnel Customers and Analytics
 // REST API for real CRM Funnel Customers and Analytics
 app.get('/api/crm/funnel', async (req, res) => {
   try {
@@ -1808,36 +1880,52 @@ app.get('/api/crm/funnel', async (req, res) => {
 
     let filteredConvs = Object.values(db.conversations);
 
-    // 1. Filter by tenantId (only conversations belonging to user's devices)
     if (tenantId) {
       filteredConvs = filteredConvs.filter(c => c.deviceId && userDeviceIds.has(c.deviceId));
     }
 
-    // 2. Filter by deviceId query parameter if specified and not 'all'
     const queryDeviceId = req.query.deviceId as string;
     if (queryDeviceId && queryDeviceId !== 'all') {
       filteredConvs = filteredConvs.filter(c => c.deviceId === queryDeviceId);
     }
 
-    // Filter contacts that start with contact_ and have an active conversation on the filtered devices
+    // Determine active stages to return
+    let activeStages = DEFAULT_FLOW_STAGES;
+    if (queryDeviceId && queryDeviceId !== 'all') {
+      const dev = userDevices.find(d => d.id === queryDeviceId);
+      if (dev && dev.flowStagesEnabled && dev.flowStages && dev.flowStages.length > 0) {
+        activeStages = dev.flowStages;
+      }
+    } else if (userDevices.length > 0) {
+      const firstDevWithStages = userDevices.find(d => d.flowStagesEnabled && d.flowStages && d.flowStages.length > 0);
+      if (firstDevWithStages && firstDevWithStages.flowStages) {
+        activeStages = firstDevWithStages.flowStages;
+      }
+    }
+
     const contacts = Object.values(users).filter((u) => {
       if (!u.id.startsWith('contact_')) return false;
       return filteredConvs.some((c) => c.participantIds.includes(u.id));
     });
 
-    // Map each contact to their funnel details
     const funnelCustomers = await Promise.all(contacts.map(async (contact) => {
-      // Find conversation for this contact
       const conv = filteredConvs.find((c) => c.participantIds.includes(contact.id));
+      
+      // Determine stages for this conversation's device
+      const convDevice = conv ? userDevices.find(d => d.id === conv.deviceId) : undefined;
+      const convFlowStages = convDevice && convDevice.flowStagesEnabled && convDevice.flowStages && convDevice.flowStages.length > 0
+        ? convDevice.flowStages
+        : undefined;
+
       if (!conv) {
-        // Return default entry if no conversation exists yet
+        const defaultStage = convFlowStages && convFlowStages[0] ? convFlowStages[0].id : 'awareness';
         return {
           id: contact.id,
           name: contact.username || 'WhatsApp User',
           nameEn: contact.username || 'WhatsApp User',
           phoneNumber: '+' + contact.id.replace('contact_', ''),
           avatarColor: getAvatarColorForId(contact.id),
-          stage: 'awareness',
+          stage: defaultStage,
           lastMessageTime: '00:00',
           unread: false,
           sentiment: 'neutral',
@@ -1860,13 +1948,9 @@ app.get('/api/crm/funnel', async (req, res) => {
         };
       }
 
-      // Get messages for this conversation
       const convMessages = messages.filter((m) => m.conversationId === conv.id);
-      
-      // Sort messages by timestamp
       convMessages.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
 
-      // Format chat history for the funnel UI
       const chatHistory = convMessages.map((m) => {
         let sender: 'customer' | 'bot' | 'agent' = 'customer';
         if (m.senderId === 'meta-ai') {
@@ -1875,7 +1959,6 @@ app.get('/api/crm/funnel', async (req, res) => {
           sender = 'agent';
         }
         
-        // Extract hour/minute for timestamp display
         let formattedTime = '00:00';
         try {
           const date = new Date(m.timestamp);
@@ -1889,12 +1972,9 @@ app.get('/api/crm/funnel', async (req, res) => {
         };
       });
 
-      // Analyze messages using rule-based fallback
-      const analysis = analyzeMessagesLocal(convMessages, conv.label);
-      
+      const analysis = analyzeMessagesLocal(convMessages, conv.label, convFlowStages);
       let finalAiAnalysis = { ...analysis.aiAnalysis };
 
-      // Get last message time
       let lastMsgTime = '00:00';
       if (convMessages.length > 0) {
         try {
@@ -1903,7 +1983,6 @@ app.get('/api/crm/funnel', async (req, res) => {
         } catch (_) {}
       }
 
-      // If the conversation already has a cached aiAnalysis, use it! Otherwise, fall back to rule-based.
       if ((conv as any).aiAnalysis) {
         finalAiAnalysis = (conv as any).aiAnalysis;
       }
@@ -1920,18 +1999,16 @@ app.get('/api/crm/funnel', async (req, res) => {
         sentiment: analysis.sentiment,
         temp: analysis.temp,
         dealValue: analysis.dealValue,
+        deviceId: conv.deviceId,
         chatHistory,
         aiAnalysis: finalAiAnalysis
       };
     }));
 
-    // Filter out contacts that have empty chatHistory unless they are known contacts
     const filteredCustomers = funnelCustomers.filter(c => c.chatHistory.length > 0 || (c.name && c.name !== 'WhatsApp User' && !c.name.startsWith('+')));
-    
-    // Sort so most active is first
     filteredCustomers.sort((a, b) => b.chatHistory.length - a.chatHistory.length);
 
-    res.json({ customers: filteredCustomers });
+    res.json({ customers: filteredCustomers, stages: activeStages });
   } catch (err: any) {
     console.error('Failed to generate funnel customers:', err);
     res.status(500).json({ error: err.message || 'Failed to fetch funnel customers' });
@@ -2445,31 +2522,40 @@ app.post('/api/crm/analyze-customer', async (req, res) => {
     const conversations = Object.values(db.conversations);
     const messages = db.messages;
 
-    // Find conversation
     const conv = conversations.find((c) => c.participantIds.includes(customerId));
     if (!conv) {
       return res.status(404).json({ error: 'Conversation not found for customer' });
     }
 
-    // Get messages
+    const userDevices = getAllDevices();
+    const convDevice = userDevices.find(d => d.id === conv.deviceId);
+    const convFlowStages = convDevice && convDevice.flowStagesEnabled && convDevice.flowStages && convDevice.flowStages.length > 0
+      ? convDevice.flowStages
+      : DEFAULT_FLOW_STAGES;
+
     const convMessages = messages.filter((m) => m.conversationId === conv.id);
     convMessages.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
 
-    // Fallback rule-based analysis
-    const fallbackAnalysis = analyzeMessagesLocal(convMessages, conv.label).aiAnalysis;
+    const fallbackAnalysis = analyzeMessagesLocal(convMessages, conv.label, convFlowStages).aiAnalysis;
     let finalAiAnalysis = { ...fallbackAnalysis };
 
     if (ai) {
       try {
         if (convMessages.length > 0) {
           const chatContext = convMessages.slice(-12).map(m => `${m.senderId.startsWith('contact_') ? 'Customer' : 'Agent'}: ${m.content}`).join('\n');
+          const stagesDescription = convFlowStages.map(s => `- ID: "${s.id}", Name: "${s.name}" (English: "${s.nameEn}"), Keywords: [${s.keywords.join(', ')}], Description: "${s.description || ''}"`).join('\n');
           
           const prompt = `You are an expert Arabic CRM Analyst. Analyze this chat history and return a clean JSON object containing accurate insights.
+          The company has a custom customer journey flow with the following stages:
+          ${stagesDescription}
+
+          Please classify the customer's current state into ONE of the stage IDs listed above.
           The response MUST be in raw JSON matching this TypeScript type:
           {
             "intent": "The primary intent in Arabic (max 10 words)",
             "intentEn": "The primary intent in English (max 10 words)",
-            "confidence": 95, // number (0-100)
+            "stage": "ONE of the stage IDs listed above that fits the customer's state best",
+            "confidence": 95,
             "summary": "A concise summary of their situation and sentiment in Arabic (1-2 sentences)",
             "summaryEn": "A concise summary of their situation and sentiment in English (1-2 sentences)",
             "keyNeeds": ["Need 1 in Arabic", "Need 2 in Arabic"],
@@ -2509,16 +2595,18 @@ app.post('/api/crm/analyze-customer', async (req, res) => {
                 draftReply: parsed.draftReply,
                 draftReplyEn: parsed.draftReplyEn || parsed.draftReply
               };
+
+              if (parsed.stage && convFlowStages.some(s => s.id === parsed.stage)) {
+                conv.label = parsed.stage;
+              }
             }
           }
         }
       } catch (geminiErr) {
         console.error('Failed to run on-demand Gemini analysis, falling back to local analysis:', geminiErr);
-        // Fallback to local rule-based analysis is already set in finalAiAnalysis
       }
     }
 
-    // Save back to local DB cache
     db.conversations[conv.id] = {
       ...conv,
       aiAnalysis: finalAiAnalysis
@@ -2826,7 +2914,7 @@ app.get('/api/devices', (req, res) => {
 });
 
 app.post('/api/devices', (req, res) => {
-  const { name, method, phoneNumber, cloudApiKey, phoneId, businessId, instanceId, token, apiEndpoint, gatewayType } = req.body;
+  const { name, method, phoneNumber, cloudApiKey, phoneId, businessId, instanceId, token, apiEndpoint, gatewayType, syncHistory } = req.body;
   if (!name || !method) {
     res.status(400).json({ error: 'Device Name and Link Method are required' });
     return;
@@ -2860,7 +2948,8 @@ app.post('/api/devices', (req, res) => {
     qrCodeUrl: undefined, // Will be populated dynamically by the real Baileys session
     linkedAt: isDirectConnection ? new Date().toISOString() : undefined,
     apiKey: 'waba_sec_' + id.substring(4) + '_' + Math.random().toString(36).substring(2, 10),
-    webhookUrl: 'https://your-api.com/whatsapp/webhook'
+    webhookUrl: 'https://your-api.com/whatsapp/webhook',
+    syncHistory: syncHistory === true || syncHistory === 'true' || syncHistory === undefined
   };
 
   saveDevice(device);
@@ -3056,15 +3145,13 @@ app.delete('/api/devices/:id', (req, res) => {
 // Update device AI Agent configuration
 app.post('/api/devices/:id/agent', (req, res) => {
   const { id } = req.params;
-  const { aiAgentEnabled, aiAgentName, aiAgentInstructions, aiModel, aiTemperature, aiKnowledgeBase, aiStopKeyword, aiVoiceEnabled, aiVoiceTone } = req.body;
+  const { aiAgentEnabled, aiAgentName, aiAgentInstructions, aiModel, aiTemperature, aiKnowledgeBase, aiStopKeyword, aiVoiceEnabled, aiVoiceTone, flowStages, flowStagesEnabled } = req.body;
   const tenantId = getTenantId(req);
   
   console.log(`[DEBUG - /api/devices/:id/agent] Updating AI settings for device id: "${id}". tenantId: "${tenantId}"`);
   console.log(`[DEBUG - /api/devices/:id/agent] Incoming body:`, JSON.stringify(req.body, null, 2));
 
   const allDevices = getAllDevices();
-  console.log(`[DEBUG - /api/devices/:id/agent] All registered devices in DB:`, JSON.stringify(allDevices, null, 2));
-
   const dbDevice = allDevices.find((d) => d.id === id);
   if (!dbDevice) {
     console.error(`[DEBUG - /api/devices/:id/agent] ERROR: Device with id "${id}" not found in database!`);
@@ -3072,18 +3159,12 @@ app.post('/api/devices/:id/agent', (req, res) => {
     return;
   }
 
-  // Soft/Permissive check for multi-tenancy:
-  // If the device does not have an ownerId set, we will automatically claim it for this tenantId!
   if (tenantId && !dbDevice.ownerId) {
-    console.log(`[DEBUG - /api/devices/:id/agent] Device "${id}" had no owner. Claiming it for tenantId: "${tenantId}".`);
     dbDevice.ownerId = tenantId;
   } else if (tenantId && dbDevice.ownerId && dbDevice.ownerId !== tenantId) {
-    console.error(`[DEBUG - /api/devices/:id/agent] ERROR: Unauthorized access! Device owner: "${dbDevice.ownerId}" but requester tenantId is: "${tenantId}"`);
     res.status(403).json({ error: 'Unauthorized access to this device.' });
     return;
   }
-  
-  console.log(`[DEBUG - /api/devices/:id/agent] Updating device properties. Before:`, JSON.stringify(dbDevice, null, 2));
   
   dbDevice.aiAgentEnabled = !!aiAgentEnabled;
   dbDevice.aiAgentName = aiAgentName || '';
@@ -3094,8 +3175,13 @@ app.post('/api/devices/:id/agent', (req, res) => {
   dbDevice.aiStopKeyword = aiStopKeyword || '';
   dbDevice.aiVoiceEnabled = !!aiVoiceEnabled;
   dbDevice.aiVoiceTone = aiVoiceTone || 'professional';
+  if (flowStages) {
+    dbDevice.flowStages = flowStages;
+  }
+  if (flowStagesEnabled !== undefined) {
+    dbDevice.flowStagesEnabled = !!flowStagesEnabled;
+  }
   
-  console.log(`[DEBUG - /api/devices/:id/agent] Saving device properties. After:`, JSON.stringify(dbDevice, null, 2));
   saveDevice(dbDevice);
   
   broadcast({
@@ -3243,7 +3329,7 @@ app.delete('/api/devices/:id/knowledge/:sourceId', (req, res) => {
 // Update device configurations (Control and Edit)
 app.post('/api/devices/:id/update', (req, res) => {
   const { id } = req.params;
-  const { name, phoneNumber, method, instanceId, token, apiEndpoint, cloudApiKey, phoneId, businessId, apiKey, webhookUrl } = req.body;
+  const { name, phoneNumber, method, instanceId, token, apiEndpoint, cloudApiKey, phoneId, businessId, apiKey, webhookUrl, proxyUrl, maxDailyLimit, dailySentCount, syncHistory } = req.body;
   const tenantId = getTenantId(req);
 
   const dbDevice = getAllDevices().find((d) => d.id === id);
@@ -3271,6 +3357,15 @@ app.post('/api/devices/:id/update', (req, res) => {
   if (businessId !== undefined) dbDevice.businessId = businessId;
   if (apiKey !== undefined) dbDevice.apiKey = apiKey;
   if (webhookUrl !== undefined) dbDevice.webhookUrl = webhookUrl;
+  if (proxyUrl !== undefined) dbDevice.proxyUrl = proxyUrl;
+  if (syncHistory !== undefined) dbDevice.syncHistory = syncHistory === true || syncHistory === 'true';
+  
+  if (maxDailyLimit !== undefined) {
+    dbDevice.maxDailyLimit = maxDailyLimit === '' || maxDailyLimit === null ? undefined : Number(maxDailyLimit);
+  }
+  if (dailySentCount !== undefined) {
+    dbDevice.dailySentCount = dailySentCount === '' || dailySentCount === null ? undefined : Number(dailySentCount);
+  }
 
   saveDevice(dbDevice);
 
@@ -3500,7 +3595,127 @@ app.post('/api/campaigns/:id/run', (req, res) => {
 });
 
 // Helper to send real WhatsApp messages using configured APIs
-async function sendRealWhatsAppMessage(device: DeviceLink, to: string, text: string): Promise<{ success: boolean; error?: string }> {
+function isQuietHours(): boolean {
+  const hour = new Date().getHours();
+  // Quiet hours: 10 PM (22:00) to 8 AM (08:00)
+  return hour >= 22 || hour < 8;
+}
+
+// Helper to send real WhatsApp messages using configured APIs
+interface QueueItem {
+  id: string;
+  device: DeviceLink;
+  to: string;
+  text: string;
+  isBulk: boolean;
+  resolve: (value: { success: boolean; error?: string }) => void;
+  reject: (reason: any) => void;
+}
+
+class OutgoingMessageQueue {
+  private queue: QueueItem[] = [];
+  private processing = false;
+
+  async enqueue(device: DeviceLink, to: string, text: string, isBulk: boolean): Promise<{ success: boolean; error?: string }> {
+    return new Promise((resolve, reject) => {
+      this.queue.push({
+        id: Math.random().toString(36).substring(7),
+        device,
+        to,
+        text,
+        isBulk,
+        resolve,
+        reject
+      });
+      this.process();
+    });
+  }
+
+  private async process() {
+    if (this.processing) return;
+    if (this.queue.length === 0) return;
+
+    this.processing = true;
+    const item = this.queue.shift();
+    if (item) {
+      // 1. Smart Sleep hours checking for bulk campaign messages
+      while (item.isBulk && isQuietHours()) {
+        console.log(`[Queue] Smart Sleep active (Quiet Hours 10PM - 8AM). Pausing bulk message dispatch for 5 minutes...`);
+        // Wait 5 minutes before checking again
+        await new Promise((resolve) => setTimeout(resolve, 5 * 60 * 1000));
+      }
+
+      // 2. Fetch the latest state of this device from DB to read/update sent quota counts
+      const currentDevices = getAllDevices();
+      const dbDevice = currentDevices.find(d => d.id === item.device.id) || item.device;
+
+      // Check for daily sent count limit resets
+      const todayStr = new Date().toISOString().split('T')[0];
+      if (dbDevice.lastSentResetDate !== todayStr) {
+        dbDevice.dailySentCount = 0;
+        dbDevice.lastSentResetDate = todayStr;
+        saveDevice(dbDevice);
+      }
+
+      // 3. Enforce daily limit (with dynamic warm-up) for campaign/bulk messages
+      if (item.isBulk) {
+        let maxLimit = dbDevice.maxDailyLimit;
+        if (maxLimit === undefined || maxLimit === null) {
+          if (dbDevice.linkedAt) {
+            const daysConnected = Math.floor((Date.now() - new Date(dbDevice.linkedAt).getTime()) / (24 * 60 * 60 * 1000)) || 0;
+            maxLimit = Math.min(250, 20 + daysConnected * 15);
+          } else {
+            maxLimit = 20; // Cold start limit
+          }
+        }
+        const currentSent = dbDevice.dailySentCount !== undefined ? dbDevice.dailySentCount : 0;
+        if (currentSent >= maxLimit) {
+          console.warn(`[Queue] Daily message limit reached for device ${dbDevice.name} (${currentSent}/${maxLimit}). Blocking bulk message dispatch.`);
+          item.resolve({ success: false, error: `Daily message sending limit reached for this device (${currentSent}/${maxLimit})` });
+          this.processing = false;
+          this.process();
+          return;
+        }
+      }
+
+      try {
+        console.log(`[Queue] Processing message for +${item.to} (Bulk: ${item.isBulk})`);
+        const result = await sendRealWhatsAppMessageDirectly(dbDevice, item.to, item.text);
+        
+        // If sent successfully, increment daily sent count and save to DB (persisting to db-store.json & central Supabase)
+        if (result.success) {
+          dbDevice.dailySentCount = (dbDevice.dailySentCount || 0) + 1;
+          saveDevice(dbDevice);
+          console.log(`[Queue] Message sent. Sent count for ${dbDevice.name}: ${dbDevice.dailySentCount}/${dbDevice.maxDailyLimit || 250}`);
+        }
+
+        item.resolve(result);
+      } catch (err) {
+        item.reject(err);
+      }
+
+      // If this was a bulk message, or if there's another bulk message next, apply Jitter Delay (15 to 45 seconds)
+      if (this.queue.length > 0) {
+        const nextItem = this.queue[0];
+        if (item.isBulk || nextItem.isBulk) {
+          const jitter = Math.floor(Math.random() * (45000 - 15000 + 1)) + 15000;
+          console.log(`[Queue] Applying Jitter Delay of ${Math.round(jitter / 1000)}s between sends to avoid bans.`);
+          await new Promise((resolve) => setTimeout(resolve, jitter));
+        } else {
+          // Small delay for normal chat messages to ensure sequential delivery
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+        }
+      }
+    }
+    this.processing = false;
+    this.process();
+  }
+}
+
+const outgoingQueue = new OutgoingMessageQueue();
+
+// Helper to send real WhatsApp messages using configured APIs directly
+async function sendRealWhatsAppMessageDirectly(device: DeviceLink, to: string, text: string): Promise<{ success: boolean; error?: string }> {
   const cleanPhone = to.replace(/[\s\+\-\(\)]/g, '').trim();
   
   try {
@@ -3576,6 +3791,12 @@ async function sendRealWhatsAppMessage(device: DeviceLink, to: string, text: str
   }
 }
 
+// Helper to send real WhatsApp messages using configured APIs (routed through sequential queue)
+async function sendRealWhatsAppMessage(device: DeviceLink, to: string, text: string, isBulk = false): Promise<{ success: boolean; error?: string }> {
+  const parsedText = parseSpintax(text);
+  return outgoingQueue.enqueue(device, to, parsedText, isBulk);
+}
+
 // Simulation logic
 async function runCampaignSimulation(campaignId: string) {
   const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -3584,11 +3805,7 @@ async function runCampaignSimulation(campaignId: string) {
     let campaign = getAllCampaigns().find((c) => c.id === campaignId);
     if (!campaign) return;
 
-    const activeDevices = getAllDevices().filter((d) => ['connected', 'ready', 'authenticated'].includes(d.status));
-    const primaryDevice = activeDevices.length > 0 ? activeDevices[0] : null;
-    const deviceName = primaryDevice ? primaryDevice.name : 'Default System Gateway';
-
-    campaign.logs.push(`[${new Date().toLocaleTimeString()}] Connected to linked device: "${deviceName}".`);
+    campaign.logs.push(`[${new Date().toLocaleTimeString()}] Starting outreach campaign with dynamic load distribution and device failover.`);
     saveCampaign(campaign);
     broadcast({ type: 'campaign:update', campaign });
 
@@ -3612,8 +3829,47 @@ async function runCampaignSimulation(campaignId: string) {
         continue;
       }
 
+      // Dynamic load balancing and device failover: find an active device with remaining daily quota
+      const activeDevices = getAllDevices().filter((d) => ['connected', 'ready', 'authenticated'].includes(d.status));
+      let selectedDevice: DeviceLink | null = null;
+      const todayStr = new Date().toISOString().split('T')[0];
+
+      for (const d of activeDevices) {
+        // Calculate max daily quota limit (incorporates account warm-up schedule)
+        let maxLimit = d.maxDailyLimit;
+        if (maxLimit === undefined || maxLimit === null) {
+          if (d.linkedAt) {
+            const daysConnected = Math.floor((Date.now() - new Date(d.linkedAt).getTime()) / (24 * 60 * 60 * 1000)) || 0;
+            maxLimit = Math.min(250, 20 + daysConnected * 15);
+          } else {
+            maxLimit = 20;
+          }
+        }
+
+        let sentCount = d.dailySentCount || 0;
+        if (d.lastSentResetDate !== todayStr) {
+          sentCount = 0;
+        }
+
+        if (sentCount < maxLimit) {
+          selectedDevice = d;
+          break;
+        }
+      }
+
+      // If all accounts are exhausted, pause the campaign and wait for user intervention
+      if (!selectedDevice && activeDevices.length > 0) {
+        campaign.status = 'paused';
+        campaign.logs.push(`[${new Date().toLocaleTimeString()}] [⏸] All linked WhatsApp accounts have reached their daily sending limits. Campaign paused automatically.`);
+        saveCampaign(campaign);
+        broadcast({ type: 'campaign:update', campaign });
+        break;
+      }
+
+      const deviceName = selectedDevice ? selectedDevice.name : 'Simulated Gateway';
+
       target.status = 'sending';
-      campaign.logs.push(`[${new Date().toLocaleTimeString()}] [${i + 1}/${campaign.targets.length}] Dispatching template to ${target.name} (+${target.phone})...`);
+      campaign.logs.push(`[${new Date().toLocaleTimeString()}] [${i + 1}/${campaign.targets.length}] Dispatching template via "${deviceName}" to ${target.name} (+${target.phone})...`);
       saveCampaign(campaign);
       broadcast({ type: 'campaign:update', campaign });
 
@@ -3623,13 +3879,13 @@ async function runCampaignSimulation(campaignId: string) {
       let isSuccess = true;
       let errorMsg = '';
 
-      if (primaryDevice && (primaryDevice.method === 'ultramsg' || primaryDevice.method === 'greenapi' || primaryDevice.method === 'cloud_api' || primaryDevice.method === 'qr')) {
+      if (selectedDevice && (selectedDevice.method === 'ultramsg' || selectedDevice.method === 'greenapi' || selectedDevice.method === 'cloud_api' || selectedDevice.method === 'qr')) {
         const textToSend = campaign.templateText.replace(/\{\{name\}\}/g, target.name).replace(/\{name\}/g, target.name);
         campaign.logs.push(`[${new Date().toLocaleTimeString()}] Executing live HTTP callback dispatch to +${target.phone}...`);
         saveCampaign(campaign);
         broadcast({ type: 'campaign:update', campaign });
 
-        const result = await sendRealWhatsAppMessage(primaryDevice, target.phone, textToSend);
+        const result = await sendRealWhatsAppMessage(selectedDevice, target.phone, textToSend, true);
         isSuccess = result.success;
         errorMsg = result.error || 'Gateway Timeout';
       } else {
@@ -4236,29 +4492,122 @@ async function startServer() {
   // Set up AI Agent automatic responder for WhatsApp incoming messages
   setIncomingMessageHandler(async (deviceId, sock, jid, pushName, messageContent, fromMe, timestamp, messageId) => {
     try {
+      // Humanization: Send read receipt and activate typing immediately on incoming messages from clients
+      if (!fromMe && sock) {
+        try {
+          await sock.readMessages([{ remoteJid: jid, id: messageId, fromMe: false }]);
+          console.log(`[Humanization] Read receipt sent immediately for message ${messageId} to ${jid}`);
+        } catch (receiptErr) {
+          console.error('[Humanization] Failed to send read receipt:', receiptErr);
+        }
+
+        try {
+          await sock.sendPresenceUpdate('composing', jid);
+          console.log(`[Humanization] Typing status 'composing' activated for ${jid}`);
+        } catch (presenceErr) {
+          console.error('[Humanization] Failed to set typing presence:', presenceErr);
+        }
+      }
       // 1. Find the device in the local database
       const devices = getAllDevices();
       const device = devices.find((d) => d.id === deviceId);
-      
-      // 2. Check if the AI agent is active for this device
       if (!device) {
         console.log(`[AI Agent DEBUG] Device ${deviceId} not found.`);
         return;
       }
+
+      const contactPhone = jid.split('@')[0];
+      const contactId = `contact_${contactPhone}`;
+      
+      // 2. Fetch or create the conversation to track customer journey state
+      const realUsers = getAllUsers().filter((u) => u.id !== 'meta-ai' && !u.id.startsWith('contact_'));
+      const ownerId = device.ownerId || realUsers[0]?.id || 'user_default';
+      const conv = getOrCreateConversation(ownerId, contactId, deviceId);
+
+      // Detect message text content
+      let userMessageText = '';
+      if (messageContent.conversation) {
+        userMessageText = messageContent.conversation;
+      } else if (messageContent.extendedTextMessage) {
+        userMessageText = messageContent.extendedTextMessage.text || '';
+      } else if (messageContent.imageMessage) {
+        userMessageText = messageContent.imageMessage.caption || '';
+      }
+
+      // Live Customer Journey Stage Transition Check
+      const customStages = device.flowStagesEnabled && device.flowStages && device.flowStages.length > 0
+        ? device.flowStages
+        : undefined;
+
+      const historyMsgs = getMessagesForConversation(conv.id);
+      const previousStageId = conv.label || 'awareness';
+
+      const localAnalysis = analyzeMessagesLocal(historyMsgs, conv.label, customStages);
+      const currentStageId = localAnalysis.stage || 'awareness';
+
+      if (currentStageId !== previousStageId) {
+        console.log(`[Flow Automation] Stage transition detected for +${contactPhone}: "${previousStageId}" -> "${currentStageId}"`);
+        conv.label = currentStageId;
+        saveConversation(conv);
+
+        // Broadcast to client UI
+        broadcast({
+          type: 'conversation:update',
+          conversation: conv
+        });
+
+        // Trigger stage automations if custom stages are active
+        if (customStages) {
+          const matchedStage = customStages.find(s => s.id === currentStageId);
+          if (matchedStage) {
+            // A. Send Auto-Response text
+            if (matchedStage.autoResponseText && matchedStage.autoResponseText.trim()) {
+              const textToSend = matchedStage.autoResponseText;
+              console.log(`[Flow Automation] Sending auto-response for stage "${matchedStage.name}": "${textToSend}"`);
+              
+              // Delay slightly for natural human feel
+              setTimeout(async () => {
+                await sendBaileysMessage(deviceId, jid, textToSend);
+                
+                const autoMsg: Message = {
+                  id: `msg_${Math.random().toString(36).substring(2, 11)}`,
+                  conversationId: conv.id,
+                  senderId: ownerId,
+                  recipientId: contactId,
+                  content: textToSend,
+                  type: 'text',
+                  status: 'delivered',
+                  timestamp: new Date().toISOString()
+                };
+                saveMessage(autoMsg);
+                broadcast({ type: 'message:new', message: autoMsg });
+              }, 2000);
+            }
+
+            // B. Notify Sales Agents via Alert Broadcast
+            if (matchedStage.notifyOnEnter) {
+              broadcast({
+                type: 'flow:stage_alert',
+                deviceId,
+                contactName: pushName || contactPhone,
+                contactPhone,
+                stageName: matchedStage.name,
+                stageColor: matchedStage.color
+              });
+            }
+          }
+        }
+      }
+
+      // 3. Check if the AI agent is active for this device
       if (!device.aiAgentEnabled) {
         console.log(`[AI Agent DEBUG] AI Agent disabled for device ${deviceId}.`);
         return;
       }
       
       console.log(`[AI Agent DEBUG] AI Agent active for device ${deviceId}.`);
-      
-      const contactPhone = jid.split('@')[0];
-      const contactId = `contact_${contactPhone}`;
-      
       console.log(`[AI Agent - ${device.aiAgentName || 'System'}] Analyzing message on device "${device.name}" for contact +${contactPhone}...`);
       
-      // 3. Detect the message content/type
-      let userMessageText = '';
       let contentsPayload: any = null;
       let incomingAudioBuffer: Buffer | null = null;
       
@@ -4344,10 +4693,6 @@ async function startServer() {
       // 4. Check for Stop Keyword / Human Takeover trigger
       const stopKeyword = (device.aiStopKeyword || '').trim().toLowerCase();
       const userTextLower = userMessageText.trim().toLowerCase();
-      
-      const realUsers = getAllUsers().filter((u) => u.id !== 'meta-ai' && !u.id.startsWith('contact_'));
-      const ownerId = device?.ownerId || realUsers[0]?.id || 'user_default';
-      const conv = getOrCreateConversation(ownerId, contactId, deviceId);
 
       // If the conversation is already in a human takeover state (AI Paused), skip AI auto-replies
       if (conv.aiPaused) {
@@ -4384,6 +4729,14 @@ async function startServer() {
           ? `تم إيقاف المساعد الذكي مؤقتاً وتحويلك لموظف الخدمة البشرية 👤. يرجى الانتظار، وسيتواصل معك أحد عملائنا قريباً لمساعدتك.`
           : `AI assistant has been paused. You are being transferred to a human representative 👤. Please wait, one of our team members will be with you shortly.`;
         
+        // Humanization: Delay before sending the takeover message
+        if (!fromMe && sock) {
+          const humanDelay = Math.floor(Math.random() * (8000 - 3000 + 1)) + 3000;
+          console.log(`[Humanization] Delaying takeover reply by ${humanDelay}ms...`);
+          await new Promise(resolve => setTimeout(resolve, humanDelay));
+          try { await sock.sendPresenceUpdate('paused', jid); } catch (e) {}
+        }
+
         await sendBaileysMessage(deviceId, jid, takeoverReply);
         
         const takeoverMsg: Message = {
@@ -4428,6 +4781,15 @@ async function startServer() {
         };
         saveMessage(quotaMsg);
         broadcast({ type: 'message:new', message: quotaMsg });
+
+        // Humanization: Delay before sending quota message
+        if (!fromMe && sock) {
+          const humanDelay = Math.floor(Math.random() * (8000 - 3000 + 1)) + 3000;
+          console.log(`[Humanization] Delaying quota reply by ${humanDelay}ms...`);
+          await new Promise(resolve => setTimeout(resolve, humanDelay));
+          try { await sock.sendPresenceUpdate('paused', jid); } catch (e) {}
+        }
+
         await sendBaileysMessage(deviceId, jid, quotaMsg.content);
         return; // Halt AI execution
       }
@@ -4470,6 +4832,16 @@ async function startServer() {
           const combinedKnowledge = [device.aiKnowledgeBase, trainingHubKnowledge].filter(Boolean).join('\n\n');
           const finalKnowledgeBase = combinedKnowledge || '(No factual knowledge base provided. Answer general greetings politely, but if asked about business details like pricing, policies, or products, politely apologize and offer to transfer them to human support.)';
 
+          // 2.5 CUSTOM FLOW STAGE INSTRUCTION OVERRIDE
+          let stageInstruction = '';
+          if (device.flowStagesEnabled && device.flowStages && conv.label) {
+            const activeStage = device.flowStages.find(s => s.id === conv.label);
+            if (activeStage && activeStage.stageAiInstructions && activeStage.stageAiInstructions.trim()) {
+              stageInstruction = `
+- CRITICAL STAGE-SPECIFIC INSTRUCTION: The customer is currently in the journey stage "${activeStage.name}" (${activeStage.nameEn}). You MUST strictly prioritize and adhere to these guidelines for this stage: ${activeStage.stageAiInstructions}`;
+            }
+          }
+
           const systemPrompt = `You are an elite, highly intelligent corporate AI customer support agent named "${device.aiAgentName || 'WhatsApp Smart Agent'}", representing our premium brand on WhatsApp.
 Your absolute goal is to deliver impeccable, friendly, accurate, and prestigious support to our customers.
 
@@ -4484,7 +4856,10 @@ ${device.aiAgentInstructions ? `- Strict Persona Rules: ${device.aiAgentInstruct
   * Current natural greeting is: ${currentPeriodStr}. Use this naturally in initial greetings!
 - Treat the customer with maximum respect, using natural Arabic or English honorifics (e.g., "يا فندم", "حضرتك", "طال عمرك", "على راسي يا غالي", "أبشر بسعدك").
 
-2. EMOTIONAL INTELLIGENCE & crisis mitigation:
+2. CRM STAGE CONTEXT ADAPTIVITY:${stageInstruction}
+- The customer is currently categorized under the stage: ${conv.label || 'awareness'}.
+
+3. EMOTIONAL INTELLIGENCE & crisis mitigation:
 ${sentimentInstruction}
 - If the customer is satisfied or showing positive emotion, validate it with enthusiasm and prestigious appreciation.
 
@@ -4498,10 +4873,13 @@ ${finalKnowledgeBase}
     - In Arabic: "يسعدنا جداً اهتمامك يا فندم! لتزويدك بأدق التفاصيل والأسعار الحصرية والردود المناسبة، هل يمكنني الحصول على الاسم الكريم؟ وسيقوم مسؤول بشري من فريقنا بالتواصل معك فوراً وتلبية طلبك."
     - In English: "We appreciate your interest! To provide you with the most accurate pricing and details, could you please provide your name? I will have a specialized team member reach out to you directly."
 
-4. CONTEXT & MEMORY CONTINUITY:
+4. CONTEXT & MEMORY CONTINUITY, CONCISENESS & NO REPETITION (CRITICAL ANTI-SHADOWBAN RULES):
 - Review the Conversation History carefully.
 - Refer to the customer by their name (${pushName || 'Valued Customer'}) where natural.
-- Avoid repeating introductory lines across turns. Address subsequent queries organically as a continuous conversation.
+- Keep your answers highly professional, interactive, and directly to the point. Avoid fluff or overly long answers.
+- GREETING LIMITS: DO NOT repeat greetings, welcome messages, or introductory phrases (like "مرحباً", "أهلاً بك", "Hi", "Hello") in subsequent messages in the conversation if they have already been greeted or if there is active history. Treat the conversation as a continuous stream of replies!
+- NO SYSTEM PHONE LISTINGS: NEVER mention, list, or write out the system/support phone number (+${contactPhone} or any other number) repeatedly or unnecessarily in your responses. Referencing the phone number when the user is already actively chatting on it is redundant and flagged as spam/bot behavior.
+- Address subsequent queries organically as a continuous conversation without generic template intros.
 
 5. FORMATTING FOR WHATSAPP (READABILITY MAX):
 - Keep your responses compact, highly scannable, and ideal for reading on a mobile interface.
@@ -4624,6 +5002,13 @@ Formulate your exceptionally smart and professional response now:`;
       }
       
       // 7. Send the response via real Baileys WhatsApp channel
+      if (!fromMe && sock) {
+        const humanDelay = Math.floor(Math.random() * (8000 - 3000 + 1)) + 3000;
+        console.log(`[Humanization] Delaying AI reply by ${humanDelay}ms...`);
+        await new Promise(resolve => setTimeout(resolve, humanDelay));
+        try { await sock.sendPresenceUpdate('paused', jid); } catch (e) {}
+      }
+
       console.log(`[AI Agent - Dispatching Reply] Sending reply via device "${device.name}" to +${contactPhone}. Voice: ${!!responseAudioBuffer}`);
       const sendResult = await sendBaileysMessage(deviceId, jid, responseText, responseAudioBuffer || undefined);
       
@@ -4978,7 +5363,7 @@ ${eventDetails.parking}. 📍`;
     }
 
     try {
-      const result = await sendRealWhatsAppMessage(device, phone, messageText);
+      const result = await sendRealWhatsAppMessage(device, phone, messageText, true);
       console.log(`[ExpoCore Webhook] Dispatch result for ${phone}:`, result);
       return res.json({
         success: result.success,

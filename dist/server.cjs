@@ -108,6 +108,18 @@ async function backupSessionToSupabase(deviceId) {
         const stat = import_fs.default.statSync(filePath);
         if (stat.isFile()) {
           const fileContent = import_fs.default.readFileSync(filePath, "utf-8").replace(/\0/g, "");
+          if (fileName.endsWith(".json")) {
+            try {
+              if (!fileContent.trim()) {
+                console.warn(`[Supabase Backup] Skipping backup of ${fileName} for device ${deviceId} because it is empty.`);
+                continue;
+              }
+              JSON.parse(fileContent);
+            } catch (err) {
+              console.error(`[Supabase Backup] Skipping backup of ${fileName} for device ${deviceId} because it contains invalid JSON:`, err);
+              continue;
+            }
+          }
           const id = `${deviceId}/${fileName}`;
           upsertData.push({
             id,
@@ -166,9 +178,15 @@ async function restoreSessionFromSupabase(deviceId) {
       return false;
     }
     console.log(`[Supabase Restore] Device ${deviceId}: Found ${data.length} session files in Supabase.`);
-    if (!import_fs.default.existsSync(sessionDir)) {
-      import_fs.default.mkdirSync(sessionDir, { recursive: true });
+    if (import_fs.default.existsSync(sessionDir)) {
+      try {
+        import_fs.default.rmSync(sessionDir, { recursive: true, force: true });
+        console.log(`[Supabase Restore] Cleared local session directory for ${deviceId} to prepare for clean restore.`);
+      } catch (rmErr) {
+        console.error(`[Supabase Restore] Failed to clear directory before restore:`, rmErr);
+      }
     }
+    import_fs.default.mkdirSync(sessionDir, { recursive: true });
     let restoredCount = 0;
     for (const record of data) {
       const destPath = import_path.default.join(sessionDir, record.file_path);
@@ -334,6 +352,7 @@ __export(db_exports, {
   addStatusViewer: () => addStatusViewer,
   cloneDefaultUserConversations: () => cloneDefaultUserConversations,
   deleteCampaign: () => deleteCampaign,
+  deleteConversation: () => deleteConversation,
   deleteDevice: () => deleteDevice,
   deleteUser: () => deleteUser,
   getActiveStatuses: () => getActiveStatuses,
@@ -548,6 +567,7 @@ function saveMessage(message) {
   db.messages.push(message);
   if (db.conversations[message.conversationId]) {
     db.conversations[message.conversationId].updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+    delete db.conversations[message.conversationId].aiAnalysis;
   }
   writeDb(db);
   return message;
@@ -651,6 +671,21 @@ function deleteCampaign(campaignId) {
   if (db.campaigns && db.campaigns[campaignId]) {
     delete db.campaigns[campaignId];
     writeDb(db);
+  }
+}
+function deleteConversation(conversationId) {
+  const db = readDb();
+  if (db.conversations && db.conversations[conversationId]) {
+    delete db.conversations[conversationId];
+    if (db.messages) {
+      for (const msgId of Object.keys(db.messages)) {
+        if (db.messages[msgId].conversationId === conversationId) {
+          delete db.messages[msgId];
+        }
+      }
+    }
+    writeDb(db);
+    console.log(`[DB] Deleted conversation ${conversationId} and purged all associated messages.`);
   }
 }
 function cloneDefaultUserConversations(newUserId) {
@@ -916,6 +951,8 @@ init_db();
 init_supabase();
 
 // src/whatsapp.ts
+var import_socks_proxy_agent = require("socks-proxy-agent");
+var import_https_proxy_agent = require("https-proxy-agent");
 var import_baileys = __toESM(require("@whiskeysockets/baileys"), 1);
 var import_pino = __toESM(require("pino"), 1);
 var import_path3 = __toESM(require("path"), 1);
@@ -925,6 +962,7 @@ init_supabase();
 var activeSockets = /* @__PURE__ */ new Map();
 var activeReconnectTimeouts = /* @__PURE__ */ new Map();
 var conflictCounters = /* @__PURE__ */ new Map();
+var reconnectionAttempts = /* @__PURE__ */ new Map();
 var sessionsInProgress = /* @__PURE__ */ new Set();
 function hasSavedSession(deviceId) {
   const credsPath = import_path3.default.join(process.cwd(), "whatsapp-sessions", deviceId, "creds.json");
@@ -1289,6 +1327,42 @@ async function startWhatsAppSession(deviceId) {
     return;
   }
   sessionsInProgress.add(deviceId);
+  const device = getAllDevices().find((d) => d.id === deviceId);
+  const proxyUrl = device?.proxyUrl;
+  let agent = void 0;
+  if (proxyUrl) {
+    console.log(`[WhatsApp Session] Device ${deviceId} is configuring proxy connection: ${proxyUrl}`);
+    try {
+      if (proxyUrl.startsWith("socks")) {
+        agent = new import_socks_proxy_agent.SocksProxyAgent(proxyUrl);
+      } else if (proxyUrl.startsWith("http")) {
+        agent = new import_https_proxy_agent.HttpsProxyAgent(proxyUrl);
+      }
+    } catch (proxyErr) {
+      console.error(`[WhatsApp Session] Failed to initialize proxy agent for ${proxyUrl}:`, proxyErr);
+    }
+  }
+  let browserSignature;
+  if (device && device.browserSignature && Array.isArray(device.browserSignature) && device.browserSignature.length === 3) {
+    browserSignature = device.browserSignature;
+    console.log(`[WhatsApp Session] Using persistent browser fingerprint for device ${deviceId}:`, browserSignature);
+  } else {
+    const browsers = [
+      ["Windows", "Chrome", "124.0.0"],
+      ["macOS", "Chrome", "124.0.0"],
+      ["Windows", "Firefox", "125.0"],
+      ["macOS", "Firefox", "125.0"],
+      ["macOS", "Safari", "17.4"],
+      ["Windows", "Edge", "123.0"]
+    ];
+    const selectedBrowser = browsers[Math.floor(Math.random() * browsers.length)];
+    browserSignature = [selectedBrowser[0], selectedBrowser[1], selectedBrowser[2]];
+    if (device) {
+      device.browserSignature = browserSignature;
+      saveDevice(device);
+      console.log(`[WhatsApp Session] Generated and persisted new browser fingerprint for device ${deviceId}:`, browserSignature);
+    }
+  }
   const existingTimeout = activeReconnectTimeouts.get(deviceId);
   if (existingTimeout) {
     clearTimeout(existingTimeout);
@@ -1298,10 +1372,42 @@ async function startWhatsAppSession(deviceId) {
   try {
     closeSocketOnly(deviceId);
     const sessionPath = import_path3.default.join(process.cwd(), "whatsapp-sessions", deviceId);
-    const sessionExists = import_fs3.default.existsSync(sessionPath) && import_fs3.default.readdirSync(sessionPath).length > 0;
-    if (!sessionExists) {
-      console.log(`[WhatsApp Session] Local session for device ${deviceId} is missing or empty. Attempting to restore from Supabase...`);
-      await restoreSessionFromSupabase(deviceId);
+    const credsPath = import_path3.default.join(sessionPath, "creds.json");
+    let localCredsValid = false;
+    if (import_fs3.default.existsSync(credsPath)) {
+      try {
+        const content = import_fs3.default.readFileSync(credsPath, "utf8");
+        JSON.parse(content);
+        localCredsValid = true;
+      } catch (parseErr) {
+        console.warn(`[WhatsApp Session] Detected corrupted local creds.json for device ${deviceId}:`, parseErr.message);
+      }
+    }
+    if (!localCredsValid) {
+      console.log(`[WhatsApp Session] Local creds.json for device ${deviceId} is missing or corrupted. Attempting to restore from Supabase...`);
+      if (import_fs3.default.existsSync(sessionPath)) {
+        try {
+          import_fs3.default.rmSync(sessionPath, { recursive: true, force: true });
+        } catch (rmErr) {
+          console.error(`[WhatsApp Session] Failed to clear partial session path:`, rmErr);
+        }
+      }
+      const restored = await restoreSessionFromSupabase(deviceId);
+      if (restored) {
+        if (import_fs3.default.existsSync(credsPath)) {
+          try {
+            const content = import_fs3.default.readFileSync(credsPath, "utf8");
+            JSON.parse(content);
+            console.log(`[WhatsApp Session] Successfully restored valid session for device ${deviceId} from Supabase.`);
+          } catch (parseErr) {
+            console.error(`[WhatsApp Session] Restored creds.json from Supabase is corrupted. Clearing folder to start fresh.`);
+            try {
+              import_fs3.default.rmSync(sessionPath, { recursive: true, force: true });
+            } catch (rmErr) {
+            }
+          }
+        }
+      }
     }
     let state;
     let saveCreds;
@@ -1337,6 +1443,7 @@ async function startWhatsAppSession(deviceId) {
       syncFullHistory: false,
       shouldSyncHistoryMessage: () => false,
       linkPreviewImageUpload: false,
+      agent,
       // --- Stability Settings ---
       // Keep the TCP connection alive with periodic pings to prevent server-side timeout
       keepAliveIntervalMs: 25e3,
@@ -1346,7 +1453,7 @@ async function startWhatsAppSession(deviceId) {
       // Maximum number of message retries before giving up
       maxMsgRetryCount: 5,
       // Emulate a real browser to avoid WhatsApp flagging the connection as a bot
-      browser: ["ChatCore", "Chrome", "124.0.0"],
+      browser: browserSignature,
       // Do not generate high-res link previews to reduce bandwidth and avoid disconnects
       generateHighQualityLinkPreview: false
     });
@@ -1361,8 +1468,8 @@ async function startWhatsAppSession(deviceId) {
         return;
       }
       const devices = getAllDevices();
-      const device = devices.find((d) => d.id === deviceId);
-      if (!device) {
+      const device2 = devices.find((d) => d.id === deviceId);
+      if (!device2) {
         console.log(`Device ${deviceId} was deleted. Ending socket connection.`);
         try {
           sock.end(void 0);
@@ -1377,12 +1484,12 @@ async function startWhatsAppSession(deviceId) {
       if (qr) {
         console.log(`QR Code generated for device ${deviceId}`);
         const qrImage = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&color=00a884&data=${encodeURIComponent(qr)}`;
-        device.qrCodeUrl = qrImage;
-        device.status = "linking";
-        saveDevice(device);
+        device2.qrCodeUrl = qrImage;
+        device2.status = "linking";
+        saveDevice(device2);
         broadcastUpdate({
           type: "device:update",
-          device
+          device: device2
         });
       }
       if (connection === "close") {
@@ -1394,7 +1501,7 @@ async function startWhatsAppSession(deviceId) {
           return;
         }
         const statusCode = lastDisconnect?.error?.output?.statusCode;
-        const loggedOut = statusCode === import_baileys.DisconnectReason.loggedOut || statusCode === import_baileys.DisconnectReason.badSession || statusCode === 401 || statusCode === 403 || statusCode === 405;
+        const loggedOut = statusCode === import_baileys.DisconnectReason.loggedOut || statusCode === 401;
         const err = lastDisconnect?.error;
         const errMsg = (err instanceof Error ? err.message : typeof err === "object" ? JSON.stringify(err) : String(err)).toLowerCase();
         const isConflict = errMsg.includes("conflict") || statusCode === 440;
@@ -1414,15 +1521,15 @@ async function startWhatsAppSession(deviceId) {
           } else {
             console.log(`[WhatsApp] Device ${deviceId} un-paired permanently (logged out). Setting status to disconnected.`);
           }
-          device.status = "disconnected";
-          device.qrCodeUrl = void 0;
-          device.phoneNumber = void 0;
-          device.linkedAt = void 0;
-          saveDevice(device);
+          device2.status = "disconnected";
+          device2.qrCodeUrl = void 0;
+          device2.phoneNumber = void 0;
+          device2.linkedAt = void 0;
+          saveDevice(device2);
           deleteSessionFolder(deviceId);
           broadcastUpdate({
             type: "device:update",
-            device
+            device: device2
           });
         } else {
           if (isConflict) {
@@ -1431,34 +1538,43 @@ async function startWhatsAppSession(deviceId) {
             console.log(`[WhatsApp] Conflict count for device ${deviceId} is now ${currentConflicts}.`);
             if (currentConflicts >= 2) {
               console.log(`[WhatsApp] Two consecutive conflicts for device ${deviceId}. Auto-reconnect halted to let the primary session connect.`);
-              device.status = "disconnected";
-              device.qrCodeUrl = void 0;
-              saveDevice(device);
+              device2.status = "disconnected";
+              device2.qrCodeUrl = void 0;
+              saveDevice(device2);
               broadcastUpdate({
                 type: "device:update",
-                device
+                device: device2
               });
               return;
             }
           }
           console.log(`[WhatsApp] Transient disconnect handled for ${deviceId}. Reason code: ${statusCode}. Reconnecting...`);
-          device.status = "connecting";
-          saveDevice(device);
+          device2.status = "connecting";
+          saveDevice(device2);
           broadcastUpdate({
             type: "device:update",
-            device
+            device: device2
           });
           const prevTimeout = activeReconnectTimeouts.get(deviceId);
           if (prevTimeout) {
             clearTimeout(prevTimeout);
           }
-          let delay = isRestartRequired ? 5e3 : 2e4 + Math.random() * 1e4;
+          const attempts = reconnectionAttempts.get(deviceId) || 0;
+          reconnectionAttempts.set(deviceId, attempts + 1);
+          const baseDelay = 5e3;
+          const maxDelay = 10 * 60 * 1e3;
+          let delay = baseDelay * Math.pow(2, attempts);
+          if (delay > maxDelay) delay = maxDelay;
+          delay += Math.random() * 5e3;
+          if (isRestartRequired) {
+            delay = 5e3;
+          }
           if (isConflict) {
             const conflictCount = conflictCounters.get(deviceId) || 1;
             delay = conflictCount * 3e4 + Math.random() * 1e4;
             console.log(`[WhatsApp] Backing off connection retry due to conflict. Waiting ${Math.round(delay / 1e3)} seconds.`);
           }
-          console.log(`Reconnecting to WhatsApp for device ${deviceId} in ${Math.round(delay / 1e3)} seconds...`);
+          console.log(`Reconnecting to WhatsApp for device ${deviceId} (attempt ${attempts + 1}) in ${Math.round(delay / 1e3)} seconds...`);
           const timeoutId = setTimeout(() => {
             activeReconnectTimeouts.delete(deviceId);
             const currentDevices = getAllDevices();
@@ -1480,14 +1596,15 @@ async function startWhatsAppSession(deviceId) {
         const cleanPhone = fullJid.split(":")[0] || fullJid.split("@")[0] || "";
         console.log(`WhatsApp connected successfully on +${cleanPhone} for device ${deviceId}!`);
         conflictCounters.set(deviceId, 0);
-        device.status = "connected";
-        device.phoneNumber = `+${cleanPhone}`;
-        device.qrCodeUrl = void 0;
-        device.linkedAt = (/* @__PURE__ */ new Date()).toISOString();
-        saveDevice(device);
+        reconnectionAttempts.set(deviceId, 0);
+        device2.status = "connected";
+        device2.phoneNumber = `+${cleanPhone}`;
+        device2.qrCodeUrl = void 0;
+        device2.linkedAt = (/* @__PURE__ */ new Date()).toISOString();
+        saveDevice(device2);
         broadcastUpdate({
           type: "device:update",
-          device
+          device: device2
         });
         setTimeout(() => {
           syncOwnProfileDetails(sock).catch((err) => console.error(err));
@@ -1532,6 +1649,12 @@ async function startWhatsAppSession(deviceId) {
       }
     });
     sock.ev.on("messaging-history.set", async ({ chats, contacts, messages }) => {
+      const dev = getAllDevices().find((d) => d.id === deviceId);
+      const shouldSyncHistory = dev?.syncHistory !== false;
+      if (!shouldSyncHistory) {
+        console.log(`[WhatsApp Session] Skipping initial history sync for device ${deviceId} due to syncHistory configuration.`);
+        return;
+      }
       try {
         if (contacts) {
           await handleBaileysContacts(sock, contacts, deviceId);
@@ -1559,13 +1682,20 @@ async function startWhatsAppSession(deviceId) {
     sessionsInProgress.delete(deviceId);
   }
 }
-async function sendBaileysMessage(deviceId, to, text, audioBuffer) {
+async function sendBaileysMessage(deviceId, to, text, audioBuffer, pdfBuffer, pdfFilename) {
   const sock = activeSockets.get(deviceId);
   if (!sock) {
     return { success: false, error: "Device connection is offline or starting up" };
   }
   try {
     let cleanPhone = to.replace(/[\s\+\-\(\)]/g, "").trim();
+    if (/^01[0125]\d{8}$/.test(cleanPhone)) {
+      cleanPhone = "20" + cleanPhone.slice(1);
+    } else if (/^1[0125]\d{8}$/.test(cleanPhone)) {
+      cleanPhone = "20" + cleanPhone;
+    } else if (/^00201[0125]\d{8}$/.test(cleanPhone)) {
+      cleanPhone = cleanPhone.slice(2);
+    }
     if (!cleanPhone.endsWith("@s.whatsapp.net")) {
       cleanPhone = `${cleanPhone}@s.whatsapp.net`;
     }
@@ -1586,6 +1716,23 @@ async function sendBaileysMessage(deviceId, to, text, audioBuffer) {
         // MP3/MPEG compliant MIME type for Gemini TTS audio files
         ptt: true
         // Send as a real Voice Note
+      });
+    } else if (pdfBuffer) {
+      try {
+        const [result] = await sock.onWhatsApp(cleanPhone);
+        if (!result || !result.exists) {
+          console.warn(`[Baileys Send] Number ${cleanPhone} is not registered on WhatsApp!`);
+          return { success: false, error: "Target phone number is not registered on WhatsApp" };
+        }
+        cleanPhone = result.jid;
+      } catch (checkErr) {
+        console.warn(`[Baileys Send] Failed to verify number on WhatsApp, attempting anyway:`, checkErr);
+      }
+      await sock.sendMessage(cleanPhone, {
+        document: pdfBuffer,
+        mimetype: "application/pdf",
+        fileName: pdfFilename || "ticket.pdf",
+        caption: text
       });
     } else {
       try {
@@ -1623,6 +1770,20 @@ function stopWhatsAppSession(deviceId) {
     console.log(`[WhatsApp Session] No active socket found for device: ${deviceId}`);
   }
   deleteSessionFolder(deviceId);
+}
+function parseSpintax(text) {
+  if (!text) return text;
+  const spintaxPattern = /\{([^{}]+)\}/g;
+  let newText = text;
+  let matches = spintaxPattern.exec(newText);
+  while (matches) {
+    const options = matches[1].split("|");
+    const chosenOption = options[Math.floor(Math.random() * options.length)];
+    newText = newText.replace(matches[0], chosenOption);
+    spintaxPattern.lastIndex = 0;
+    matches = spintaxPattern.exec(newText);
+  }
+  return newText;
 }
 
 // server.ts
@@ -1956,9 +2117,9 @@ app.post("/api/expocore/webhook", async (req, res) => {
   const apiKey = req.headers["x-api-key"];
   if (apiKey !== process.env.API_KEY && apiKey !== process.env.WATBUS_API_KEY) {
   }
-  const { name, phone, ticket, ticketUrl, customMessage, eventName, deviceId } = req.body;
-  if (!phone || !customMessage && !ticket) {
-    res.status(400).json({ error: "Phone and message/ticket are required" });
+  const { name, phone, ticket, ticketUrl, customMessage, eventName, deviceId, pdfBase64, pdfFilename } = req.body;
+  if (!phone || !customMessage && !ticket && !pdfBase64) {
+    res.status(400).json({ error: "Phone and message/ticket/pdf are required" });
     return;
   }
   const devices = getAllDevices();
@@ -1988,7 +2149,15 @@ app.post("/api/expocore/webhook", async (req, res) => {
     let messageToSend = customMessage || `\u0645\u0631\u062D\u0628\u0627\u064B ${name}\u060C \u062A\u0630\u0643\u0631\u062A\u0643 \u0644\u0645\u0639\u0631\u0636 ${eventName} \u0647\u064A: ${ticket}
 \u0631\u0627\u0628\u0637 \u0627\u0644\u062A\u0630\u0643\u0631\u0629: ${ticketUrl}`;
     const cleanPhone = phone.replace(/[^\d]/g, "");
-    const result = await sendBaileysMessage(targetDevice.id, cleanPhone, messageToSend);
+    let pdfBuffer;
+    if (pdfBase64) {
+      try {
+        pdfBuffer = Buffer.from(pdfBase64, "base64");
+      } catch (err) {
+        console.error("[ExpoCore Webhook] Failed to decode base64 PDF:", err.message);
+      }
+    }
+    const result = await sendBaileysMessage(targetDevice.id, cleanPhone, messageToSend, void 0, pdfBuffer, pdfFilename);
     if (!result.success) {
       console.error(`[ExpoCore Webhook] sendBaileysMessage failed for device ${targetDevice.id}:`, result.error);
       res.status(500).json({ error: result.error || "WhatsApp socket failed to send the message" });
@@ -2571,6 +2740,26 @@ app.get("/api/users/:userId/conversations", (req, res) => {
   });
   res.json({ conversations: enriched });
 });
+app.delete("/api/conversations/:id", (req, res) => {
+  const { id } = req.params;
+  const tenantId = getTenantId(req);
+  const db = readDb();
+  const conv = db.conversations?.[id];
+  if (!conv) {
+    res.status(404).json({ error: "Conversation not found" });
+    return;
+  }
+  if (tenantId && !conv.participantIds.includes(tenantId)) {
+    res.status(403).json({ error: "Unauthorized access to delete this conversation" });
+    return;
+  }
+  deleteConversation(id);
+  broadcast({
+    type: "conversation:delete",
+    conversationId: id
+  });
+  res.json({ success: true, message: "Conversation deleted successfully and all messages purged" });
+});
 app.post("/api/conversations", (req, res) => {
   const senderId = req.body.senderId || req.body.userId;
   let recipientId = req.body.recipientId || req.body.targetUsername;
@@ -2919,24 +3108,64 @@ function getAvatarColorForId(id) {
   }
   return colors[sum % colors.length];
 }
-function analyzeMessagesLocal(messages, label) {
-  let stage = "awareness";
+var DEFAULT_FLOW_STAGES = [
+  { id: "awareness", name: "\u0648\u0639\u064A \u0639\u0627\u0645", nameEn: "Awareness", color: "#6366f1", keywords: ["\u062A\u0641\u0627\u0635\u064A\u0644", "\u0628\u0627\u0642\u0629", "\u0645\u0645\u0643\u0646", "\u0634\u0631\u062D", "\u0641\u064A\u062F\u064A\u0648", "\u0628\u0631\u0646\u0627\u0645\u062C", "\u062A\u0648\u0636\u064A\u062D"] },
+  { id: "consideration", name: "\u0627\u0647\u062A\u0645\u0627\u0645 \u0648\u0645\u0642\u0627\u0631\u0646\u0629", nameEn: "Consideration", color: "#3b82f6", keywords: ["\u062A\u0641\u0627\u0635\u064A\u0644", "\u0628\u0627\u0642\u0629", "\u0645\u0645\u0643\u0646", "\u0634\u0631\u062D", "\u0641\u064A\u062F\u064A\u0648", "\u0628\u0631\u0646\u0627\u0645\u062C", "\u062A\u0648\u0636\u064A\u062D"] },
+  { id: "intent", name: "\u0646\u064A\u0629 \u062C\u0627\u062F\u0629", nameEn: "Intent", color: "#a855f7", keywords: ["\u0631\u0642\u0645 \u0627\u0644\u062D\u0633\u0627\u0628", "\u0628\u0643\u0645 \u0627\u0644\u0627\u0634\u062A\u0631\u0627\u0643", "\u0633\u0639\u0631 \u0627\u0644\u0628\u0627\u0642\u0629", "\u0631\u0627\u0628\u0637 \u0627\u0644\u062F\u0641\u0639", "\u0637\u0631\u064A\u0642\u0629 \u0627\u0644\u062F\u0641\u0639", "\u062E\u0635\u0645"] },
+  { id: "action", name: "\u062A\u0641\u0639\u064A\u0644 \u0648\u0627\u0634\u062A\u0631\u0627\u0643", nameEn: "Action", color: "#10b981", keywords: ["\u062A\u0645 \u0627\u0644\u062A\u062D\u0648\u064A\u0644", "\u062D\u0648\u0644\u062A", "\u0627\u064A\u0635\u0627\u0644", "\u0625\u064A\u0635\u0627\u0644", "\u0627\u0644\u062A\u062D\u0648\u064A\u0644 \u0627\u0644\u0628\u0646\u0643\u064A", "\u0641\u0648\u062F\u0627\u0641\u0648\u0646 \u0643\u0627\u0634", "\u0627\u0634\u062A\u0631\u0643 \u0627\u0644\u0633\u0646\u0648\u064A"] },
+  { id: "loyalty", name: "\u0648\u0644\u0627\u0621 \u0648\u062A\u0648\u0635\u064A\u0629", nameEn: "Loyalty", color: "#ec4899", keywords: ["\u0634\u0643\u0631\u0627", "\u062A\u0633\u0644\u0645", "\u0645\u0645\u062A\u0627\u0632 \u062C\u062F\u0627", "\u0631\u0648\u0639\u0629", "\u0623\u0634\u0643\u0631\u0643", "\u0631\u0627\u0626\u0639"] }
+];
+function analyzeMessagesLocal(messages, label, flowStages) {
+  const activeStages = flowStages && flowStages.length > 0 ? flowStages : DEFAULT_FLOW_STAGES;
+  let stage = activeStages[0]?.id || "awareness";
   let sentiment = "neutral";
   let temp = "cold";
   let dealValue = 0;
+  const customerMessages = messages.filter((m) => m.senderId && m.senderId.startsWith("contact_"));
+  const lastCustomerMsg = customerMessages[customerMessages.length - 1]?.content || "";
   const fullText = messages.map((m) => m.content || "").join(" ").toLowerCase();
-  if (label === "Converted" || label === "Paid" || label === "Success" || /تم التحويل|حولت|ايصال|إيصال|التحويل البنكي|فودافون كاش|اشترك السنوي/g.test(fullText)) {
-    stage = "action";
+  let matchedStageByLabel = false;
+  if (label) {
+    const lLower = label.toLowerCase();
+    const matched = activeStages.find((s) => s.id.toLowerCase() === lLower || s.name.toLowerCase() === lLower || s.nameEn.toLowerCase() === lLower);
+    if (matched) {
+      stage = matched.id;
+      matchedStageByLabel = true;
+    }
+  }
+  if (!matchedStageByLabel && activeStages.length > 0) {
+    let maxMatches = -1;
+    let bestStageId = activeStages[0].id;
+    activeStages.forEach((st) => {
+      let matches = 0;
+      if (st.keywords && Array.isArray(st.keywords)) {
+        st.keywords.forEach((kw) => {
+          if (kw && fullText.includes(kw.toLowerCase())) {
+            matches++;
+          }
+        });
+      }
+      if (matches > maxMatches) {
+        maxMatches = matches;
+        bestStageId = st.id;
+      }
+    });
+    if (maxMatches > 0) {
+      stage = bestStageId;
+    }
+  }
+  if (stage === "action" || stage.toLowerCase().includes("\u062F\u0641\u0639") || stage.toLowerCase().includes("\u0634\u0631\u0627\u0621") || stage.toLowerCase().includes("success") || stage.toLowerCase().includes("paid")) {
     dealValue = fullText.includes("\u0633\u0646\u0629") || fullText.includes("\u0627\u0644\u0633\u0646\u0648\u064A") ? 299 : 79;
-  } else if (label === "VIP" || label === "Intent" || /رقم الحساب|بكم الاشتراك|سعر الباقة|رابط الدفع|طريقة الدفع|خصم/g.test(fullText)) {
-    stage = "intent";
+    temp = "hot";
+  } else if (stage === "intent" || stage.toLowerCase().includes("\u0646\u064A\u0629") || stage.toLowerCase().includes("\u0645\u0647\u062A\u0645")) {
     dealValue = 79;
-  } else if (label === "Lead" || label === "Pending" || /تفاصيل|باقة|ممكن|شرح|فيديو|برنامج|توضيح/g.test(fullText)) {
-    stage = "consideration";
-    dealValue = 0;
-  } else if (label === "Loyalty" || label === "Partner" || /شكرا|تسلم|ممتاز جدا|روعة|أشكرك|رائع/g.test(fullText)) {
-    stage = "loyalty";
+    temp = "warm";
+  } else if (stage === "loyalty" || stage.toLowerCase().includes("\u0648\u0644\u0627\u0621") || stage.toLowerCase().includes("\u0634\u0643\u0631")) {
     dealValue = 150;
+    temp = "hot";
+  } else {
+    dealValue = 0;
+    temp = "cold";
   }
   if (/روعة|رائع جدا|ممتاز جدا|عاش|بطل|تحفة|سعيد جدا/g.test(fullText)) {
     sentiment = "excited";
@@ -2945,30 +3174,69 @@ function analyzeMessagesLocal(messages, label) {
   } else if (/مشكلة|عطل|واقف|توقف|سيء|بطيء|لا يعمل|مش شغال/g.test(fullText)) {
     sentiment = "negative";
   }
-  if (stage === "action" || stage === "loyalty") {
-    temp = "hot";
-  } else if (stage === "intent" || stage === "consideration") {
-    temp = "warm";
+  let intent = "\u0628\u062F\u0621 \u0627\u0644\u062A\u0639\u0627\u0631\u0641 \u0648\u0627\u0644\u0627\u0633\u062A\u0641\u0633\u0627\u0631";
+  let intentEn = "Initial inquiry and greeting";
+  const matchedStageObj = activeStages.find((s) => s.id === stage) || activeStages[0];
+  if (lastCustomerMsg) {
+    const cleanMsg = lastCustomerMsg.replace(/\n/g, " ").trim();
+    const snippet = cleanMsg.length > 40 ? cleanMsg.substring(0, 37) + "..." : cleanMsg;
+    intent = `\u0627\u0644\u0627\u0633\u062A\u0641\u0633\u0627\u0631 \u0639\u0646: "${snippet}"`;
+    intentEn = `Inquiring about: "${snippet}"`;
+  } else {
+    if (matchedStageObj) {
+      intent = `\u0645\u0631\u062D\u0644\u0629: ${matchedStageObj.name}`;
+      intentEn = `Stage: ${matchedStageObj.nameEn}`;
+    }
   }
-  const summary = stage === "action" ? "\u062A\u0645 \u062A\u0623\u0643\u064A\u062F \u0627\u0644\u062F\u0641\u0639 \u0648\u0627\u0644\u062A\u062D\u0648\u064A\u0644 \u0628\u0646\u062C\u0627\u062D\u060C \u0627\u0644\u0639\u0645\u064A\u0644 \u0645\u062A\u0641\u0627\u0639\u0644 \u0648\u0625\u064A\u062C\u0627\u0628\u064A." : stage === "intent" ? "\u0627\u0644\u0639\u0645\u064A\u0644 \u064A\u0633\u062A\u0641\u0633\u0631 \u0639\u0646 \u0645\u0639\u0644\u0648\u0645\u0627\u062A \u0627\u0644\u062A\u062D\u0648\u064A\u0644 \u0627\u0644\u0628\u0646\u0643\u064A \u0648\u0631\u0627\u0628\u0637 \u0627\u0644\u062F\u0641\u0639 \u0648\u0644\u062F\u064A\u0647 \u0646\u064A\u0629 \u062C\u0627\u062F\u0629." : stage === "consideration" ? "\u0627\u0644\u0639\u0645\u064A\u0644 \u064A\u0633\u062A\u0641\u0633\u0631 \u0639\u0646 \u0627\u0644\u062A\u0641\u0627\u0635\u064A\u0644 \u0648\u0645\u064A\u0632\u0627\u062A \u0627\u0644\u0628\u0648\u062A \u0648\u064A\u0642\u0627\u0631\u0646 \u0628\u064A\u0646 \u0627\u0644\u0628\u0627\u0642\u0627\u062A." : "\u0627\u0644\u0639\u0645\u064A\u0644 \u062A\u0648\u0627\u0635\u0644 \u0645\u0639\u0646\u0627 \u0644\u0628\u062F\u0621 \u0627\u0644\u0627\u0633\u062A\u0641\u0633\u0627\u0631 \u0627\u0644\u0639\u0627\u0645 \u0648\u0627\u0644\u062A\u0639\u0631\u0641 \u0639\u0644\u0649 \u0627\u0644\u062E\u062F\u0645\u0629.";
-  const summaryEn = stage === "action" ? "Payment successfully verified. Client is highly cooperative and satisfied." : stage === "intent" ? "Client is requesting checkout link and account numbers. High intent." : stage === "consideration" ? "Client is exploring features and comparing packages. Warm lead." : "Client initiated introductory greetings and initial inquiries.";
-  const recommendedAction = stage === "action" ? "\u0623\u0631\u0633\u0644 \u0644\u0647 \u062F\u0644\u064A\u0644 \u0627\u0644\u062A\u0634\u063A\u064A\u0644 \u0627\u0644\u0633\u0631\u064A\u0639 \u0648\u0643\u0648\u062F \u062A\u0641\u0639\u064A\u0644 \u0627\u0644\u0645\u064A\u0632\u0627\u062A \u0627\u0644\u0627\u062D\u062A\u0631\u0627\u0641\u064A\u0629 \u0641\u0648\u0631\u0627\u064B." : stage === "intent" ? "\u0623\u0631\u0633\u0644 \u0644\u0647 \u062A\u0641\u0627\u0635\u064A\u0644 \u0627\u0644\u062D\u0633\u0627\u0628\u0627\u062A \u0627\u0644\u0628\u0646\u0643\u064A\u0629 \u0623\u0648 \u0643\u0648\u062F \u062E\u0635\u0645 \u0644\u0633\u0631\u0639\u0629 \u0625\u062A\u0645\u0627\u0645 \u0627\u0644\u0635\u0641\u0642\u0629." : stage === "consideration" ? "\u0623\u0631\u0633\u0644 \u0644\u0647 \u0641\u064A\u062F\u064A\u0648 \u0634\u0631\u062D \u0627\u0644\u0628\u0648\u062A \u0627\u0644\u062A\u0644\u0642\u0627\u0626\u064A \u0645\u0639 \u062A\u0641\u0627\u0635\u064A\u0644 \u0627\u0644\u0628\u0627\u0642\u0627\u062A." : "\u0623\u0631\u0633\u0644 \u0644\u0647 \u0631\u0633\u0627\u0644\u0629 \u062A\u0631\u062D\u064A\u0628\u064A\u0629 \u062A\u0634\u0631\u062D \u0641\u064A\u0647\u0627 \u0627\u0644\u062E\u062F\u0645\u0627\u062A \u0648\u0627\u0644\u0623\u0633\u0639\u0627\u0631 \u0627\u0644\u0645\u062A\u0648\u0641\u0631\u0629.";
-  const recommendedActionEn = stage === "action" ? "Send the onboarding guides and activate their account keys immediately." : stage === "intent" ? "Send direct payment links or dynamic coupon codes to speed up purchase." : stage === "consideration" ? "Send short demonstration videos and PDF guides." : "Send a welcoming broadcast detailing standard plans.";
-  const keyNeeds = stage === "action" ? ["\u062A\u0641\u0639\u064A\u0644 \u0627\u0644\u062D\u0633\u0627\u0628 \u0627\u0644\u0633\u0631\u064A\u0639", "\u0627\u0644\u062D\u0635\u0648\u0644 \u0639\u0644\u0649 \u0627\u0644\u0641\u0627\u062A\u0648\u0631\u0629"] : stage === "intent" ? ["\u0628\u0648\u0627\u0628\u0629 \u062F\u0641\u0639 \u0622\u0645\u0646\u0629", "\u062A\u0641\u0639\u064A\u0644 \u0643\u0648\u062F \u0627\u0644\u062E\u0635\u0645"] : stage === "consideration" ? ["\u0645\u064A\u0632\u0627\u062A \u0627\u0644\u0631\u062F \u0627\u0644\u062A\u0644\u0642\u0627\u0626\u064A", "\u0627\u0644\u062A\u0643\u0627\u0645\u0644 \u0627\u0644\u0645\u0628\u0627\u0634\u0631"] : ["\u0627\u0644\u062A\u0639\u0631\u0641 \u0639\u0644\u0649 \u062E\u062F\u0645\u0627\u062A \u0627\u0644\u0645\u0646\u0635\u0629"];
-  const keyNeedsEn = stage === "action" ? ["Fast setup activation", "Invoicing support"] : stage === "intent" ? ["Secure checkouts", "Coupon validation"] : stage === "consideration" ? ["Self-reply capabilities", "API Integration"] : ["General consultation"];
-  const draftReply = stage === "action" ? "\u062A\u0645 \u0627\u0633\u062A\u0644\u0627\u0645 \u0627\u0644\u062F\u0641\u0639 \u0648\u062A\u0641\u0639\u064A\u0644 \u062D\u0633\u0627\u0628\u0643 \u0628\u0646\u062C\u0627\u062D! \u0625\u0644\u064A\u0643 \u062F\u0644\u064A\u0644 \u0627\u0644\u0625\u0639\u062F\u0627\u062F \u0627\u0644\u0633\u0631\u064A\u0639 \u0644\u0644\u0631\u0628\u0637 \u0627\u0644\u062A\u0644\u0642\u0627\u0626\u064A." : stage === "intent" ? "\u0623\u0647\u0644\u0627\u064B \u0628\u0643! \u064A\u0645\u0643\u0646\u0643 \u0627\u0644\u062F\u0641\u0639 \u0645\u0628\u0627\u0634\u0631\u0629 \u0639\u0628\u0631 \u0627\u0644\u0631\u0627\u0628\u0637 \u0627\u0644\u062A\u0627\u0644\u064A \u0623\u0648 \u0627\u0644\u062A\u062D\u0648\u064A\u0644 \u0644\u0644\u062D\u0633\u0627\u0628 \u0627\u0644\u0628\u0646\u0643\u064A \u0627\u0644\u0645\u0631\u0641\u0642 \u0644\u062A\u0641\u0639\u064A\u0644 \u0627\u0644\u0628\u0627\u0642\u0629 \u0641\u0648\u0631\u0627\u064B." : stage === "consideration" ? "\u0623\u0647\u0644\u0627\u064B \u0628\u0643! \u064A\u0633\u0639\u062F\u0646\u064A \u0625\u0631\u0633\u0627\u0644 \u0641\u064A\u062F\u064A\u0648 \u062A\u0648\u0636\u064A\u062D\u064A (\u0645\u062F\u0629 \u062F\u0642\u064A\u0642\u062A\u064A\u0646) \u064A\u0634\u0631\u062D \u0644\u0643 \u0643\u064A\u0641\u064A\u0629 \u0631\u0628\u0637 \u0648\u062A\u0641\u0639\u064A\u0644 \u0627\u0644\u0631\u062F\u0648\u062F \u0627\u0644\u0630\u0643\u064A\u0629." : "\u0623\u0647\u0644\u0627\u064B \u0628\u0643! \u0643\u064A\u0641 \u064A\u0645\u0643\u0646\u0646\u064A \u0645\u0633\u0627\u0639\u062F\u062A\u0643 \u0627\u0644\u064A\u0648\u0645 \u0641\u064A ChatCore\u061F";
-  const draftReplyEn = stage === "action" ? "Payment received! Your account is active. Here is our setup tutorial." : stage === "intent" ? "Hello! You can complete checkout via the attached link or bank details to start instantly." : stage === "consideration" ? "Welcome! Let me send you a 2-minute video showing how to set up self-reply filters." : "Hello! How can we assist you today at ChatCore?";
+  const keyNeeds = [];
+  const keyNeedsEn = [];
+  if (matchedStageObj) {
+    keyNeeds.push(`\u0627\u0644\u0627\u0633\u062A\u0642\u0631\u0627\u0631 \u0641\u064A \u0645\u0631\u062D\u0644\u0629: ${matchedStageObj.name}`);
+    keyNeedsEn.push(`Progressing in: ${matchedStageObj.nameEn}`);
+  }
+  if (fullText.includes("\u0633\u0639\u0631") || fullText.includes("\u0628\u0643\u0645") || fullText.includes("\u0627\u0634\u062A\u0631\u0627\u0643")) {
+    keyNeeds.push("\u0645\u0639\u0631\u0641\u0629 \u0623\u0633\u0639\u0627\u0631 \u0627\u0644\u0628\u0627\u0642\u0627\u062A \u0648\u0627\u0644\u0639\u0631\u0648\u0636");
+    keyNeedsEn.push("Pricing options and package offers");
+  }
+  if (fullText.includes("\u0634\u0631\u062D") || fullText.includes("\u0643\u064A\u0641") || fullText.includes("\u0628\u0631\u0646\u0627\u0645\u062C")) {
+    keyNeeds.push("\u0634\u0631\u062D \u062A\u0641\u0635\u064A\u0644\u064A \u0644\u0643\u064A\u0641\u064A\u0629 \u0639\u0645\u0644 \u0627\u0644\u0646\u0638\u0627\u0645");
+    keyNeedsEn.push("Detailed platform walkthrough");
+  }
+  if (keyNeeds.length === 0) {
+    keyNeeds.push("\u0627\u0633\u062A\u0643\u0634\u0627\u0641 \u062E\u062F\u0645\u0627\u062A \u0627\u0644\u0645\u0646\u0635\u0629 \u0648\u0627\u0644\u062A\u0639\u0631\u0641 \u0639\u0644\u064A\u0647\u0627");
+    keyNeedsEn.push("General platform exploration");
+  }
+  let recommendedAction = "\u062A\u0648\u0627\u0635\u0644 \u0645\u0639 \u0627\u0644\u0639\u0645\u064A\u0644 \u0644\u062A\u0642\u062F\u064A\u0645 \u0627\u0644\u0645\u0633\u0627\u0639\u062F\u0629 \u0648\u0627\u0644\u0625\u062C\u0627\u0628\u0629 \u0639\u0644\u0649 \u0627\u0633\u062A\u0641\u0633\u0627\u0631\u0627\u062A\u0647.";
+  let recommendedActionEn = "Follow up to assist and answer questions.";
+  let draftReply = "\u0623\u0647\u0644\u0627\u064B \u0628\u0643! \u0643\u064A\u0641 \u064A\u0645\u0643\u0646\u0646\u064A \u0645\u0633\u0627\u0639\u062F\u062A\u0643 \u0627\u0644\u064A\u0648\u0645\u061F";
+  let draftReplyEn = "Hello! How can I help you today?";
+  if (stage === "action" || stage.toLowerCase().includes("\u062F\u0641\u0639") || stage.toLowerCase().includes("\u0634\u0631\u0627\u0621")) {
+    recommendedAction = "\u062A\u0623\u0643\u064A\u062F \u062A\u0641\u0639\u064A\u0644 \u0627\u0644\u0627\u0634\u062A\u0631\u0627\u0643 \u0648\u0625\u0631\u0633\u0627\u0644 \u0628\u064A\u0627\u0646\u0627\u062A \u0627\u0644\u062F\u062E\u0648\u0644 \u0648\u0645\u062A\u0627\u0628\u0639\u0629 \u0625\u0631\u0636\u0627\u0621 \u0627\u0644\u0639\u0645\u064A\u0644.";
+    recommendedActionEn = "Confirm subscription activation, send credentials, and ensure customer satisfaction.";
+    draftReply = "\u062A\u0645 \u062A\u0641\u0639\u064A\u0644 \u0627\u0634\u062A\u0631\u0627\u0643\u0643 \u0628\u0646\u062C\u0627\u062D! \u064A\u0633\u0639\u062F\u0646\u0627 \u0627\u0646\u0636\u0645\u0627\u0645\u0643 \u0625\u0644\u064A\u0646\u0627\u060C \u0648\u0633\u064A\u0642\u0648\u0645 \u0645\u0645\u062B\u0644\u0646\u0627 \u0628\u0625\u0631\u0633\u0627\u0644 \u0627\u0644\u062A\u0641\u0627\u0635\u064A\u0644 \u0627\u0644\u0622\u0646.";
+    draftReplyEn = "Your subscription is active! We are glad to have you. Our representative will send details shortly.";
+  } else if (stage === "intent" || stage.toLowerCase().includes("\u0646\u064A\u0629")) {
+    recommendedAction = "\u0623\u0631\u0633\u0644 \u062A\u0641\u0627\u0635\u064A\u0644 \u0627\u0644\u062D\u0633\u0627\u0628\u0627\u062A \u0627\u0644\u0628\u0646\u0643\u064A\u0629 \u0623\u0648 \u0631\u0648\u0627\u0628\u0637 \u0627\u0644\u062F\u0641\u0639 \u0641\u0648\u0631\u0627\u064B \u0644\u0625\u063A\u0644\u0627\u0642 \u0627\u0644\u0635\u0641\u0642\u0629.";
+    recommendedActionEn = "Send checkout links and bank details immediately to close the sale.";
+    draftReply = "\u0623\u0647\u0644\u0627\u064B \u0628\u0643! \u064A\u0645\u0643\u0646\u0643 \u0625\u062A\u0645\u0627\u0645 \u0627\u0644\u0627\u0634\u062A\u0631\u0627\u0643 \u0639\u0628\u0631 \u0631\u0627\u0628\u0637 \u0627\u0644\u062F\u0641\u0639 \u0627\u0644\u062A\u0627\u0644\u064A \u0623\u0648 \u0627\u0644\u062A\u062D\u0648\u064A\u0644 \u0644\u0644\u062D\u0633\u0627\u0628\u0627\u062A \u0627\u0644\u0628\u0646\u0643\u064A\u0629 \u0627\u0644\u0645\u0631\u0641\u0642\u0629.";
+    draftReplyEn = "Hello! You can complete your subscription via this payment link or the attached bank accounts.";
+  } else if (stage === "consideration" || stage.toLowerCase().includes("\u0627\u0647\u062A\u0645\u0627\u0645") || stage.toLowerCase().includes("\u062F\u0631\u0627\u0633\u0629")) {
+    recommendedAction = "\u0623\u0631\u0633\u0644 \u0644\u0644\u0639\u0645\u064A\u0644 \u0641\u064A\u062F\u064A\u0648 \u062A\u0648\u0636\u064A\u062D\u064A \u0648\u0635\u0648\u0631 \u062A\u0648\u0636\u062D \u0645\u0645\u064A\u0632\u0627\u062A \u0627\u0644\u0628\u0648\u062A.";
+    recommendedActionEn = "Send a feature demo video and screenshots to show chatbot value.";
+    draftReply = "\u064A\u0633\u0639\u062F\u0646\u064A \u0634\u0631\u062D \u0627\u0644\u0646\u0638\u0627\u0645 \u0644\u0643! \u0625\u0644\u064A\u0643 \u0647\u0630\u0627 \u0627\u0644\u0641\u064A\u062F\u064A\u0648 \u0627\u0644\u062A\u0648\u0636\u064A\u062D\u064A \u0627\u0644\u0633\u0631\u064A\u0639 \u0627\u0644\u0630\u064A \u064A\u0634\u0631\u062D \u0645\u0645\u064A\u0632\u0627\u062A ChatCore.";
+    draftReplyEn = "Happy to explain the system! Here is a quick video demonstrating ChatCore features.";
+  }
   return {
     stage,
     sentiment,
     temp,
     dealValue,
     aiAnalysis: {
-      intent: stage === "action" ? "\u0625\u062A\u0645\u0627\u0645 \u0627\u0644\u062F\u0641\u0639 \u0648\u0627\u0644\u0627\u0634\u062A\u0631\u0627\u0643 \u0627\u0644\u0633\u0646\u0648\u064A" : stage === "intent" ? "\u0637\u0644\u0628 \u062A\u0641\u0627\u0635\u064A\u0644 \u0627\u0644\u062F\u0641\u0639" : stage === "consideration" ? "\u0627\u0644\u0627\u0633\u062A\u0641\u0633\u0627\u0631 \u0639\u0646 \u0627\u0644\u0645\u064A\u0632\u0627\u062A" : "\u0628\u062F\u0621 \u0627\u0644\u062A\u0639\u0627\u0631\u0641",
-      intentEn: stage === "action" ? "Complete subscription" : stage === "intent" ? "Checkout inquiries" : stage === "consideration" ? "Feature exploration" : "Initial greeting",
+      intent,
+      intentEn,
       confidence: 95,
-      summary,
-      summaryEn,
+      summary: sentiment === "negative" ? "\u0627\u0644\u0639\u0645\u064A\u0644 \u064A\u0648\u0627\u062C\u0647 \u0645\u0634\u0643\u0644\u0629 \u0623\u0648 \u064A\u0628\u062F\u0648 \u0645\u0633\u062A\u0627\u0621\u064B \u0648\u064A\u062D\u062A\u0627\u062C \u0644\u0645\u062A\u0627\u0628\u0639\u0629 \u0648\u062F\u0639\u0645." : `\u0627\u0644\u0639\u0645\u064A\u0644 \u0641\u064A \u0645\u0631\u062D\u0644\u0629 ${matchedStageObj?.name || stage}.`,
+      summaryEn: sentiment === "negative" ? "Client is facing issues and needs support." : `Client is in ${matchedStageObj?.nameEn || stage} stage.`,
       keyNeeds,
       keyNeedsEn,
       recommendedAction,
@@ -2994,20 +3262,35 @@ app.get("/api/crm/funnel", async (req, res) => {
     if (queryDeviceId && queryDeviceId !== "all") {
       filteredConvs = filteredConvs.filter((c) => c.deviceId === queryDeviceId);
     }
+    let activeStages = DEFAULT_FLOW_STAGES;
+    if (queryDeviceId && queryDeviceId !== "all") {
+      const dev = userDevices.find((d) => d.id === queryDeviceId);
+      if (dev && dev.flowStagesEnabled && dev.flowStages && dev.flowStages.length > 0) {
+        activeStages = dev.flowStages;
+      }
+    } else if (userDevices.length > 0) {
+      const firstDevWithStages = userDevices.find((d) => d.flowStagesEnabled && d.flowStages && d.flowStages.length > 0);
+      if (firstDevWithStages && firstDevWithStages.flowStages) {
+        activeStages = firstDevWithStages.flowStages;
+      }
+    }
     const contacts = Object.values(users).filter((u) => {
       if (!u.id.startsWith("contact_")) return false;
       return filteredConvs.some((c) => c.participantIds.includes(u.id));
     });
     const funnelCustomers = await Promise.all(contacts.map(async (contact) => {
       const conv = filteredConvs.find((c) => c.participantIds.includes(contact.id));
+      const convDevice = conv ? userDevices.find((d) => d.id === conv.deviceId) : void 0;
+      const convFlowStages = convDevice && convDevice.flowStagesEnabled && convDevice.flowStages && convDevice.flowStages.length > 0 ? convDevice.flowStages : void 0;
       if (!conv) {
+        const defaultStage = convFlowStages && convFlowStages[0] ? convFlowStages[0].id : "awareness";
         return {
           id: contact.id,
           name: contact.username || "WhatsApp User",
           nameEn: contact.username || "WhatsApp User",
           phoneNumber: "+" + contact.id.replace("contact_", ""),
           avatarColor: getAvatarColorForId(contact.id),
-          stage: "awareness",
+          stage: defaultStage,
           lastMessageTime: "00:00",
           unread: false,
           sentiment: "neutral",
@@ -3050,7 +3333,7 @@ app.get("/api/crm/funnel", async (req, res) => {
           time: formattedTime
         };
       });
-      const analysis = analyzeMessagesLocal(convMessages, conv.label);
+      const analysis = analyzeMessagesLocal(convMessages, conv.label, convFlowStages);
       let finalAiAnalysis = { ...analysis.aiAnalysis };
       let lastMsgTime = "00:00";
       if (convMessages.length > 0) {
@@ -3075,13 +3358,14 @@ app.get("/api/crm/funnel", async (req, res) => {
         sentiment: analysis.sentiment,
         temp: analysis.temp,
         dealValue: analysis.dealValue,
+        deviceId: conv.deviceId,
         chatHistory,
         aiAnalysis: finalAiAnalysis
       };
     }));
     const filteredCustomers = funnelCustomers.filter((c) => c.chatHistory.length > 0 || c.name && c.name !== "WhatsApp User" && !c.name.startsWith("+"));
     filteredCustomers.sort((a, b) => b.chatHistory.length - a.chatHistory.length);
-    res.json({ customers: filteredCustomers });
+    res.json({ customers: filteredCustomers, stages: activeStages });
   } catch (err) {
     console.error("Failed to generate funnel customers:", err);
     res.status(500).json({ error: err.message || "Failed to fetch funnel customers" });
@@ -3523,20 +3807,29 @@ app.post("/api/crm/analyze-customer", async (req, res) => {
     if (!conv) {
       return res.status(404).json({ error: "Conversation not found for customer" });
     }
+    const userDevices = getAllDevices();
+    const convDevice = userDevices.find((d) => d.id === conv.deviceId);
+    const convFlowStages = convDevice && convDevice.flowStagesEnabled && convDevice.flowStages && convDevice.flowStages.length > 0 ? convDevice.flowStages : DEFAULT_FLOW_STAGES;
     const convMessages = messages.filter((m) => m.conversationId === conv.id);
     convMessages.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
-    const fallbackAnalysis = analyzeMessagesLocal(convMessages, conv.label).aiAnalysis;
+    const fallbackAnalysis = analyzeMessagesLocal(convMessages, conv.label, convFlowStages).aiAnalysis;
     let finalAiAnalysis = { ...fallbackAnalysis };
     if (ai) {
       try {
         if (convMessages.length > 0) {
           const chatContext = convMessages.slice(-12).map((m) => `${m.senderId.startsWith("contact_") ? "Customer" : "Agent"}: ${m.content}`).join("\n");
+          const stagesDescription = convFlowStages.map((s) => `- ID: "${s.id}", Name: "${s.name}" (English: "${s.nameEn}"), Keywords: [${s.keywords.join(", ")}], Description: "${s.description || ""}"`).join("\n");
           const prompt = `You are an expert Arabic CRM Analyst. Analyze this chat history and return a clean JSON object containing accurate insights.
+          The company has a custom customer journey flow with the following stages:
+          ${stagesDescription}
+
+          Please classify the customer's current state into ONE of the stage IDs listed above.
           The response MUST be in raw JSON matching this TypeScript type:
           {
             "intent": "The primary intent in Arabic (max 10 words)",
             "intentEn": "The primary intent in English (max 10 words)",
-            "confidence": 95, // number (0-100)
+            "stage": "ONE of the stage IDs listed above that fits the customer's state best",
+            "confidence": 95,
             "summary": "A concise summary of their situation and sentiment in Arabic (1-2 sentences)",
             "summaryEn": "A concise summary of their situation and sentiment in English (1-2 sentences)",
             "keyNeeds": ["Need 1 in Arabic", "Need 2 in Arabic"],
@@ -3574,6 +3867,9 @@ app.post("/api/crm/analyze-customer", async (req, res) => {
                 draftReply: parsed.draftReply,
                 draftReplyEn: parsed.draftReplyEn || parsed.draftReply
               };
+              if (parsed.stage && convFlowStages.some((s) => s.id === parsed.stage)) {
+                conv.label = parsed.stage;
+              }
             }
           }
         }
@@ -3834,7 +4130,7 @@ app.get("/api/devices", (req, res) => {
   res.json({ devices });
 });
 app.post("/api/devices", (req, res) => {
-  const { name, method, phoneNumber, cloudApiKey, phoneId, businessId, instanceId, token, apiEndpoint, gatewayType } = req.body;
+  const { name, method, phoneNumber, cloudApiKey, phoneId, businessId, instanceId, token, apiEndpoint, gatewayType, syncHistory } = req.body;
   if (!name || !method) {
     res.status(400).json({ error: "Device Name and Link Method are required" });
     return;
@@ -3865,7 +4161,8 @@ app.post("/api/devices", (req, res) => {
     // Will be populated dynamically by the real Baileys session
     linkedAt: isDirectConnection ? (/* @__PURE__ */ new Date()).toISOString() : void 0,
     apiKey: "waba_sec_" + id.substring(4) + "_" + Math.random().toString(36).substring(2, 10),
-    webhookUrl: "https://your-api.com/whatsapp/webhook"
+    webhookUrl: "https://your-api.com/whatsapp/webhook",
+    syncHistory: syncHistory === true || syncHistory === "true" || syncHistory === void 0
   };
   saveDevice(device);
   if (method === "qr") {
@@ -4031,12 +4328,11 @@ app.delete("/api/devices/:id", (req, res) => {
 });
 app.post("/api/devices/:id/agent", (req, res) => {
   const { id } = req.params;
-  const { aiAgentEnabled, aiAgentName, aiAgentInstructions, aiModel, aiTemperature, aiKnowledgeBase, aiStopKeyword, aiVoiceEnabled, aiVoiceTone } = req.body;
+  const { aiAgentEnabled, aiAgentName, aiAgentInstructions, aiModel, aiTemperature, aiKnowledgeBase, aiStopKeyword, aiVoiceEnabled, aiVoiceTone, flowStages, flowStagesEnabled } = req.body;
   const tenantId = getTenantId(req);
   console.log(`[DEBUG - /api/devices/:id/agent] Updating AI settings for device id: "${id}". tenantId: "${tenantId}"`);
   console.log(`[DEBUG - /api/devices/:id/agent] Incoming body:`, JSON.stringify(req.body, null, 2));
   const allDevices = getAllDevices();
-  console.log(`[DEBUG - /api/devices/:id/agent] All registered devices in DB:`, JSON.stringify(allDevices, null, 2));
   const dbDevice = allDevices.find((d) => d.id === id);
   if (!dbDevice) {
     console.error(`[DEBUG - /api/devices/:id/agent] ERROR: Device with id "${id}" not found in database!`);
@@ -4044,14 +4340,11 @@ app.post("/api/devices/:id/agent", (req, res) => {
     return;
   }
   if (tenantId && !dbDevice.ownerId) {
-    console.log(`[DEBUG - /api/devices/:id/agent] Device "${id}" had no owner. Claiming it for tenantId: "${tenantId}".`);
     dbDevice.ownerId = tenantId;
   } else if (tenantId && dbDevice.ownerId && dbDevice.ownerId !== tenantId) {
-    console.error(`[DEBUG - /api/devices/:id/agent] ERROR: Unauthorized access! Device owner: "${dbDevice.ownerId}" but requester tenantId is: "${tenantId}"`);
     res.status(403).json({ error: "Unauthorized access to this device." });
     return;
   }
-  console.log(`[DEBUG - /api/devices/:id/agent] Updating device properties. Before:`, JSON.stringify(dbDevice, null, 2));
   dbDevice.aiAgentEnabled = !!aiAgentEnabled;
   dbDevice.aiAgentName = aiAgentName || "";
   dbDevice.aiAgentInstructions = aiAgentInstructions || "";
@@ -4061,7 +4354,12 @@ app.post("/api/devices/:id/agent", (req, res) => {
   dbDevice.aiStopKeyword = aiStopKeyword || "";
   dbDevice.aiVoiceEnabled = !!aiVoiceEnabled;
   dbDevice.aiVoiceTone = aiVoiceTone || "professional";
-  console.log(`[DEBUG - /api/devices/:id/agent] Saving device properties. After:`, JSON.stringify(dbDevice, null, 2));
+  if (flowStages) {
+    dbDevice.flowStages = flowStages;
+  }
+  if (flowStagesEnabled !== void 0) {
+    dbDevice.flowStagesEnabled = !!flowStagesEnabled;
+  }
   saveDevice(dbDevice);
   broadcast({
     type: "device:update",
@@ -4166,7 +4464,7 @@ ${src.content}`).join("\n\n");
 });
 app.post("/api/devices/:id/update", (req, res) => {
   const { id } = req.params;
-  const { name, phoneNumber, method, instanceId, token, apiEndpoint, cloudApiKey, phoneId, businessId, apiKey, webhookUrl } = req.body;
+  const { name, phoneNumber, method, instanceId, token, apiEndpoint, cloudApiKey, phoneId, businessId, apiKey, webhookUrl, proxyUrl, maxDailyLimit, dailySentCount, syncHistory } = req.body;
   const tenantId = getTenantId(req);
   const dbDevice = getAllDevices().find((d) => d.id === id);
   if (!dbDevice) {
@@ -4190,6 +4488,14 @@ app.post("/api/devices/:id/update", (req, res) => {
   if (businessId !== void 0) dbDevice.businessId = businessId;
   if (apiKey !== void 0) dbDevice.apiKey = apiKey;
   if (webhookUrl !== void 0) dbDevice.webhookUrl = webhookUrl;
+  if (proxyUrl !== void 0) dbDevice.proxyUrl = proxyUrl;
+  if (syncHistory !== void 0) dbDevice.syncHistory = syncHistory === true || syncHistory === "true";
+  if (maxDailyLimit !== void 0) {
+    dbDevice.maxDailyLimit = maxDailyLimit === "" || maxDailyLimit === null ? void 0 : Number(maxDailyLimit);
+  }
+  if (dailySentCount !== void 0) {
+    dbDevice.dailySentCount = dailySentCount === "" || dailySentCount === null ? void 0 : Number(dailySentCount);
+  }
   saveDevice(dbDevice);
   broadcast({
     type: "device:update",
@@ -4390,7 +4696,95 @@ app.post("/api/campaigns/:id/run", (req, res) => {
   runCampaignSimulation(id);
   res.json({ campaign });
 });
-async function sendRealWhatsAppMessage(device, to, text) {
+function isQuietHours() {
+  const hour = (/* @__PURE__ */ new Date()).getHours();
+  return hour >= 22 || hour < 8;
+}
+var OutgoingMessageQueue = class {
+  constructor() {
+    this.queue = [];
+    this.processing = false;
+  }
+  async enqueue(device, to, text, isBulk) {
+    return new Promise((resolve, reject) => {
+      this.queue.push({
+        id: Math.random().toString(36).substring(7),
+        device,
+        to,
+        text,
+        isBulk,
+        resolve,
+        reject
+      });
+      this.process();
+    });
+  }
+  async process() {
+    if (this.processing) return;
+    if (this.queue.length === 0) return;
+    this.processing = true;
+    const item = this.queue.shift();
+    if (item) {
+      while (item.isBulk && isQuietHours()) {
+        console.log(`[Queue] Smart Sleep active (Quiet Hours 10PM - 8AM). Pausing bulk message dispatch for 5 minutes...`);
+        await new Promise((resolve) => setTimeout(resolve, 5 * 60 * 1e3));
+      }
+      const currentDevices = getAllDevices();
+      const dbDevice = currentDevices.find((d) => d.id === item.device.id) || item.device;
+      const todayStr = (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
+      if (dbDevice.lastSentResetDate !== todayStr) {
+        dbDevice.dailySentCount = 0;
+        dbDevice.lastSentResetDate = todayStr;
+        saveDevice(dbDevice);
+      }
+      if (item.isBulk) {
+        let maxLimit = dbDevice.maxDailyLimit;
+        if (maxLimit === void 0 || maxLimit === null) {
+          if (dbDevice.linkedAt) {
+            const daysConnected = Math.floor((Date.now() - new Date(dbDevice.linkedAt).getTime()) / (24 * 60 * 60 * 1e3)) || 0;
+            maxLimit = Math.min(250, 20 + daysConnected * 15);
+          } else {
+            maxLimit = 20;
+          }
+        }
+        const currentSent = dbDevice.dailySentCount !== void 0 ? dbDevice.dailySentCount : 0;
+        if (currentSent >= maxLimit) {
+          console.warn(`[Queue] Daily message limit reached for device ${dbDevice.name} (${currentSent}/${maxLimit}). Blocking bulk message dispatch.`);
+          item.resolve({ success: false, error: `Daily message sending limit reached for this device (${currentSent}/${maxLimit})` });
+          this.processing = false;
+          this.process();
+          return;
+        }
+      }
+      try {
+        console.log(`[Queue] Processing message for +${item.to} (Bulk: ${item.isBulk})`);
+        const result = await sendRealWhatsAppMessageDirectly(dbDevice, item.to, item.text);
+        if (result.success) {
+          dbDevice.dailySentCount = (dbDevice.dailySentCount || 0) + 1;
+          saveDevice(dbDevice);
+          console.log(`[Queue] Message sent. Sent count for ${dbDevice.name}: ${dbDevice.dailySentCount}/${dbDevice.maxDailyLimit || 250}`);
+        }
+        item.resolve(result);
+      } catch (err) {
+        item.reject(err);
+      }
+      if (this.queue.length > 0) {
+        const nextItem = this.queue[0];
+        if (item.isBulk || nextItem.isBulk) {
+          const jitter = Math.floor(Math.random() * (45e3 - 15e3 + 1)) + 15e3;
+          console.log(`[Queue] Applying Jitter Delay of ${Math.round(jitter / 1e3)}s between sends to avoid bans.`);
+          await new Promise((resolve) => setTimeout(resolve, jitter));
+        } else {
+          await new Promise((resolve) => setTimeout(resolve, 1e3));
+        }
+      }
+    }
+    this.processing = false;
+    this.process();
+  }
+};
+var outgoingQueue = new OutgoingMessageQueue();
+async function sendRealWhatsAppMessageDirectly(device, to, text) {
   const cleanPhone = to.replace(/[\s\+\-\(\)]/g, "").trim();
   try {
     if (device.method === "ultramsg") {
@@ -4462,15 +4856,16 @@ async function sendRealWhatsAppMessage(device, to, text) {
     return { success: false, error: err.message || "API Connection timeout" };
   }
 }
+async function sendRealWhatsAppMessage(device, to, text, isBulk = false) {
+  const parsedText = parseSpintax(text);
+  return outgoingQueue.enqueue(device, to, parsedText, isBulk);
+}
 async function runCampaignSimulation(campaignId) {
   const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   try {
     let campaign = getAllCampaigns().find((c) => c.id === campaignId);
     if (!campaign) return;
-    const activeDevices = getAllDevices().filter((d) => ["connected", "ready", "authenticated"].includes(d.status));
-    const primaryDevice = activeDevices.length > 0 ? activeDevices[0] : null;
-    const deviceName = primaryDevice ? primaryDevice.name : "Default System Gateway";
-    campaign.logs.push(`[${(/* @__PURE__ */ new Date()).toLocaleTimeString()}] Connected to linked device: "${deviceName}".`);
+    campaign.logs.push(`[${(/* @__PURE__ */ new Date()).toLocaleTimeString()}] Starting outreach campaign with dynamic load distribution and device failover.`);
     saveCampaign(campaign);
     broadcast({ type: "campaign:update", campaign });
     await delay(1500);
@@ -4486,19 +4881,49 @@ async function runCampaignSimulation(campaignId) {
         saveCampaign(campaign);
         continue;
       }
+      const activeDevices = getAllDevices().filter((d) => ["connected", "ready", "authenticated"].includes(d.status));
+      let selectedDevice = null;
+      const todayStr = (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
+      for (const d of activeDevices) {
+        let maxLimit = d.maxDailyLimit;
+        if (maxLimit === void 0 || maxLimit === null) {
+          if (d.linkedAt) {
+            const daysConnected = Math.floor((Date.now() - new Date(d.linkedAt).getTime()) / (24 * 60 * 60 * 1e3)) || 0;
+            maxLimit = Math.min(250, 20 + daysConnected * 15);
+          } else {
+            maxLimit = 20;
+          }
+        }
+        let sentCount2 = d.dailySentCount || 0;
+        if (d.lastSentResetDate !== todayStr) {
+          sentCount2 = 0;
+        }
+        if (sentCount2 < maxLimit) {
+          selectedDevice = d;
+          break;
+        }
+      }
+      if (!selectedDevice && activeDevices.length > 0) {
+        campaign.status = "paused";
+        campaign.logs.push(`[${(/* @__PURE__ */ new Date()).toLocaleTimeString()}] [\u23F8] All linked WhatsApp accounts have reached their daily sending limits. Campaign paused automatically.`);
+        saveCampaign(campaign);
+        broadcast({ type: "campaign:update", campaign });
+        break;
+      }
+      const deviceName = selectedDevice ? selectedDevice.name : "Simulated Gateway";
       target.status = "sending";
-      campaign.logs.push(`[${(/* @__PURE__ */ new Date()).toLocaleTimeString()}] [${i + 1}/${campaign.targets.length}] Dispatching template to ${target.name} (+${target.phone})...`);
+      campaign.logs.push(`[${(/* @__PURE__ */ new Date()).toLocaleTimeString()}] [${i + 1}/${campaign.targets.length}] Dispatching template via "${deviceName}" to ${target.name} (+${target.phone})...`);
       saveCampaign(campaign);
       broadcast({ type: "campaign:update", campaign });
       await delay(userDelayMs / 2);
       let isSuccess = true;
       let errorMsg = "";
-      if (primaryDevice && (primaryDevice.method === "ultramsg" || primaryDevice.method === "greenapi" || primaryDevice.method === "cloud_api" || primaryDevice.method === "qr")) {
+      if (selectedDevice && (selectedDevice.method === "ultramsg" || selectedDevice.method === "greenapi" || selectedDevice.method === "cloud_api" || selectedDevice.method === "qr")) {
         const textToSend = campaign.templateText.replace(/\{\{name\}\}/g, target.name).replace(/\{name\}/g, target.name);
         campaign.logs.push(`[${(/* @__PURE__ */ new Date()).toLocaleTimeString()}] Executing live HTTP callback dispatch to +${target.phone}...`);
         saveCampaign(campaign);
         broadcast({ type: "campaign:update", campaign });
-        const result = await sendRealWhatsAppMessage(primaryDevice, target.phone, textToSend);
+        const result = await sendRealWhatsAppMessage(selectedDevice, target.phone, textToSend, true);
         isSuccess = result.success;
         errorMsg = result.error || "Gateway Timeout";
       } else {
@@ -4985,21 +5410,93 @@ async function startServer() {
   setBroadcastHandler(broadcast);
   setIncomingMessageHandler(async (deviceId, sock, jid, pushName, messageContent, fromMe, timestamp, messageId) => {
     try {
+      if (!fromMe && sock) {
+        try {
+          await sock.readMessages([{ remoteJid: jid, id: messageId, fromMe: false }]);
+          console.log(`[Humanization] Read receipt sent immediately for message ${messageId} to ${jid}`);
+        } catch (receiptErr) {
+          console.error("[Humanization] Failed to send read receipt:", receiptErr);
+        }
+        try {
+          await sock.sendPresenceUpdate("composing", jid);
+          console.log(`[Humanization] Typing status 'composing' activated for ${jid}`);
+        } catch (presenceErr) {
+          console.error("[Humanization] Failed to set typing presence:", presenceErr);
+        }
+      }
       const devices = getAllDevices();
       const device = devices.find((d) => d.id === deviceId);
       if (!device) {
         console.log(`[AI Agent DEBUG] Device ${deviceId} not found.`);
         return;
       }
+      const contactPhone = jid.split("@")[0];
+      const contactId = `contact_${contactPhone}`;
+      const realUsers = getAllUsers().filter((u) => u.id !== "meta-ai" && !u.id.startsWith("contact_"));
+      const ownerId = device.ownerId || realUsers[0]?.id || "user_default";
+      const conv = getOrCreateConversation(ownerId, contactId, deviceId);
+      let userMessageText = "";
+      if (messageContent.conversation) {
+        userMessageText = messageContent.conversation;
+      } else if (messageContent.extendedTextMessage) {
+        userMessageText = messageContent.extendedTextMessage.text || "";
+      } else if (messageContent.imageMessage) {
+        userMessageText = messageContent.imageMessage.caption || "";
+      }
+      const customStages = device.flowStagesEnabled && device.flowStages && device.flowStages.length > 0 ? device.flowStages : void 0;
+      const historyMsgs = getMessagesForConversation(conv.id);
+      const previousStageId = conv.label || "awareness";
+      const localAnalysis = analyzeMessagesLocal(historyMsgs, conv.label, customStages);
+      const currentStageId = localAnalysis.stage || "awareness";
+      if (currentStageId !== previousStageId) {
+        console.log(`[Flow Automation] Stage transition detected for +${contactPhone}: "${previousStageId}" -> "${currentStageId}"`);
+        conv.label = currentStageId;
+        saveConversation(conv);
+        broadcast({
+          type: "conversation:update",
+          conversation: conv
+        });
+        if (customStages) {
+          const matchedStage = customStages.find((s) => s.id === currentStageId);
+          if (matchedStage) {
+            if (matchedStage.autoResponseText && matchedStage.autoResponseText.trim()) {
+              const textToSend = matchedStage.autoResponseText;
+              console.log(`[Flow Automation] Sending auto-response for stage "${matchedStage.name}": "${textToSend}"`);
+              setTimeout(async () => {
+                await sendBaileysMessage(deviceId, jid, textToSend);
+                const autoMsg = {
+                  id: `msg_${Math.random().toString(36).substring(2, 11)}`,
+                  conversationId: conv.id,
+                  senderId: ownerId,
+                  recipientId: contactId,
+                  content: textToSend,
+                  type: "text",
+                  status: "delivered",
+                  timestamp: (/* @__PURE__ */ new Date()).toISOString()
+                };
+                saveMessage(autoMsg);
+                broadcast({ type: "message:new", message: autoMsg });
+              }, 2e3);
+            }
+            if (matchedStage.notifyOnEnter) {
+              broadcast({
+                type: "flow:stage_alert",
+                deviceId,
+                contactName: pushName || contactPhone,
+                contactPhone,
+                stageName: matchedStage.name,
+                stageColor: matchedStage.color
+              });
+            }
+          }
+        }
+      }
       if (!device.aiAgentEnabled) {
         console.log(`[AI Agent DEBUG] AI Agent disabled for device ${deviceId}.`);
         return;
       }
       console.log(`[AI Agent DEBUG] AI Agent active for device ${deviceId}.`);
-      const contactPhone = jid.split("@")[0];
-      const contactId = `contact_${contactPhone}`;
       console.log(`[AI Agent - ${device.aiAgentName || "System"}] Analyzing message on device "${device.name}" for contact +${contactPhone}...`);
-      let userMessageText = "";
       let contentsPayload = null;
       let incomingAudioBuffer = null;
       const messageType = messageContent.audioMessage ? "audio" : messageContent.imageMessage ? "image" : "text";
@@ -5073,9 +5570,6 @@ async function startServer() {
       }
       const stopKeyword = (device.aiStopKeyword || "").trim().toLowerCase();
       const userTextLower = userMessageText.trim().toLowerCase();
-      const realUsers = getAllUsers().filter((u) => u.id !== "meta-ai" && !u.id.startsWith("contact_"));
-      const ownerId = device?.ownerId || realUsers[0]?.id || "user_default";
-      const conv = getOrCreateConversation(ownerId, contactId, deviceId);
       if (conv.aiPaused) {
         console.log(`[AI Agent - Human Takeover Active] Skipping auto-reply for +${contactPhone} because AI is paused for this conversation.`);
         return;
@@ -5117,6 +5611,15 @@ async function startServer() {
         });
         const isArabicMessage = /[\u0600-\u06FF]/.test(userMessageText);
         const takeoverReply = isArabicMessage ? `\u062A\u0645 \u0625\u064A\u0642\u0627\u0641 \u0627\u0644\u0645\u0633\u0627\u0639\u062F \u0627\u0644\u0630\u0643\u064A \u0645\u0624\u0642\u062A\u0627\u064B \u0648\u062A\u062D\u0648\u064A\u0644\u0643 \u0644\u0645\u0648\u0638\u0641 \u0627\u0644\u062E\u062F\u0645\u0629 \u0627\u0644\u0628\u0634\u0631\u064A\u0629 \u{1F464}. \u064A\u0631\u062C\u0649 \u0627\u0644\u0627\u0646\u062A\u0638\u0627\u0631\u060C \u0648\u0633\u064A\u062A\u0648\u0627\u0635\u0644 \u0645\u0639\u0643 \u0623\u062D\u062F \u0639\u0645\u0644\u0627\u0626\u0646\u0627 \u0642\u0631\u064A\u0628\u0627\u064B \u0644\u0645\u0633\u0627\u0639\u062F\u062A\u0643.` : `AI assistant has been paused. You are being transferred to a human representative \u{1F464}. Please wait, one of our team members will be with you shortly.`;
+        if (!fromMe && sock) {
+          const humanDelay = Math.floor(Math.random() * (8e3 - 3e3 + 1)) + 3e3;
+          console.log(`[Humanization] Delaying takeover reply by ${humanDelay}ms...`);
+          await new Promise((resolve) => setTimeout(resolve, humanDelay));
+          try {
+            await sock.sendPresenceUpdate("paused", jid);
+          } catch (e) {
+          }
+        }
         await sendBaileysMessage(deviceId, jid, takeoverReply);
         const takeoverMsg = {
           id: `msg_${Math.random().toString(36).substring(2, 11)}`,
@@ -5152,13 +5655,22 @@ async function startServer() {
         };
         saveMessage(quotaMsg);
         broadcast({ type: "message:new", message: quotaMsg });
+        if (!fromMe && sock) {
+          const humanDelay = Math.floor(Math.random() * (8e3 - 3e3 + 1)) + 3e3;
+          console.log(`[Humanization] Delaying quota reply by ${humanDelay}ms...`);
+          await new Promise((resolve) => setTimeout(resolve, humanDelay));
+          try {
+            await sock.sendPresenceUpdate("paused", jid);
+          } catch (e) {
+          }
+        }
         await sendBaileysMessage(deviceId, jid, quotaMsg.content);
         return;
       }
       if (ai) {
         try {
-          const historyMsgs = getMessagesForConversation(conv.id);
-          const last20 = historyMsgs.slice(-20);
+          const historyMsgs2 = getMessagesForConversation(conv.id);
+          const last20 = historyMsgs2.slice(-20);
           let formattedHistory = "";
           if (last20.length > 0) {
             formattedHistory = last20.map((m) => {
@@ -5182,6 +5694,14 @@ async function startServer() {
 ${source.content}`).join("\n\n");
           const combinedKnowledge = [device.aiKnowledgeBase, trainingHubKnowledge].filter(Boolean).join("\n\n");
           const finalKnowledgeBase = combinedKnowledge || "(No factual knowledge base provided. Answer general greetings politely, but if asked about business details like pricing, policies, or products, politely apologize and offer to transfer them to human support.)";
+          let stageInstruction = "";
+          if (device.flowStagesEnabled && device.flowStages && conv.label) {
+            const activeStage = device.flowStages.find((s) => s.id === conv.label);
+            if (activeStage && activeStage.stageAiInstructions && activeStage.stageAiInstructions.trim()) {
+              stageInstruction = `
+- CRITICAL STAGE-SPECIFIC INSTRUCTION: The customer is currently in the journey stage "${activeStage.name}" (${activeStage.nameEn}). You MUST strictly prioritize and adhere to these guidelines for this stage: ${activeStage.stageAiInstructions}`;
+            }
+          }
           const systemPrompt = `You are an elite, highly intelligent corporate AI customer support agent named "${device.aiAgentName || "WhatsApp Smart Agent"}", representing our premium brand on WhatsApp.
 Your absolute goal is to deliver impeccable, friendly, accurate, and prestigious support to our customers.
 
@@ -5196,7 +5716,10 @@ ${device.aiAgentInstructions ? `- Strict Persona Rules: ${device.aiAgentInstruct
   * Current natural greeting is: ${currentPeriodStr}. Use this naturally in initial greetings!
 - Treat the customer with maximum respect, using natural Arabic or English honorifics (e.g., "\u064A\u0627 \u0641\u0646\u062F\u0645", "\u062D\u0636\u0631\u062A\u0643", "\u0637\u0627\u0644 \u0639\u0645\u0631\u0643", "\u0639\u0644\u0649 \u0631\u0627\u0633\u064A \u064A\u0627 \u063A\u0627\u0644\u064A", "\u0623\u0628\u0634\u0631 \u0628\u0633\u0639\u062F\u0643").
 
-2. EMOTIONAL INTELLIGENCE & crisis mitigation:
+2. CRM STAGE CONTEXT ADAPTIVITY:${stageInstruction}
+- The customer is currently categorized under the stage: ${conv.label || "awareness"}.
+
+3. EMOTIONAL INTELLIGENCE & crisis mitigation:
 ${sentimentInstruction}
 - If the customer is satisfied or showing positive emotion, validate it with enthusiasm and prestigious appreciation.
 
@@ -5210,10 +5733,13 @@ ${finalKnowledgeBase}
     - In Arabic: "\u064A\u0633\u0639\u062F\u0646\u0627 \u062C\u062F\u0627\u064B \u0627\u0647\u062A\u0645\u0627\u0645\u0643 \u064A\u0627 \u0641\u0646\u062F\u0645! \u0644\u062A\u0632\u0648\u064A\u062F\u0643 \u0628\u0623\u062F\u0642 \u0627\u0644\u062A\u0641\u0627\u0635\u064A\u0644 \u0648\u0627\u0644\u0623\u0633\u0639\u0627\u0631 \u0627\u0644\u062D\u0635\u0631\u064A\u0629 \u0648\u0627\u0644\u0631\u062F\u0648\u062F \u0627\u0644\u0645\u0646\u0627\u0633\u0628\u0629\u060C \u0647\u0644 \u064A\u0645\u0643\u0646\u0646\u064A \u0627\u0644\u062D\u0635\u0648\u0644 \u0639\u0644\u0649 \u0627\u0644\u0627\u0633\u0645 \u0627\u0644\u0643\u0631\u064A\u0645\u061F \u0648\u0633\u064A\u0642\u0648\u0645 \u0645\u0633\u0624\u0648\u0644 \u0628\u0634\u0631\u064A \u0645\u0646 \u0641\u0631\u064A\u0642\u0646\u0627 \u0628\u0627\u0644\u062A\u0648\u0627\u0635\u0644 \u0645\u0639\u0643 \u0641\u0648\u0631\u0627\u064B \u0648\u062A\u0644\u0628\u064A\u0629 \u0637\u0644\u0628\u0643."
     - In English: "We appreciate your interest! To provide you with the most accurate pricing and details, could you please provide your name? I will have a specialized team member reach out to you directly."
 
-4. CONTEXT & MEMORY CONTINUITY:
+4. CONTEXT & MEMORY CONTINUITY, CONCISENESS & NO REPETITION (CRITICAL ANTI-SHADOWBAN RULES):
 - Review the Conversation History carefully.
 - Refer to the customer by their name (${pushName || "Valued Customer"}) where natural.
-- Avoid repeating introductory lines across turns. Address subsequent queries organically as a continuous conversation.
+- Keep your answers highly professional, interactive, and directly to the point. Avoid fluff or overly long answers.
+- GREETING LIMITS: DO NOT repeat greetings, welcome messages, or introductory phrases (like "\u0645\u0631\u062D\u0628\u0627\u064B", "\u0623\u0647\u0644\u0627\u064B \u0628\u0643", "Hi", "Hello") in subsequent messages in the conversation if they have already been greeted or if there is active history. Treat the conversation as a continuous stream of replies!
+- NO SYSTEM PHONE LISTINGS: NEVER mention, list, or write out the system/support phone number (+${contactPhone} or any other number) repeatedly or unnecessarily in your responses. Referencing the phone number when the user is already actively chatting on it is redundant and flagged as spam/bot behavior.
+- Address subsequent queries organically as a continuous conversation without generic template intros.
 
 5. FORMATTING FOR WHATSAPP (READABILITY MAX):
 - Keep your responses compact, highly scannable, and ideal for reading on a mobile interface.
@@ -5314,6 +5840,15 @@ Formulate your exceptionally smart and professional response now:`;
           recipientId: ownerId,
           isTyping: false
         }));
+      }
+      if (!fromMe && sock) {
+        const humanDelay = Math.floor(Math.random() * (8e3 - 3e3 + 1)) + 3e3;
+        console.log(`[Humanization] Delaying AI reply by ${humanDelay}ms...`);
+        await new Promise((resolve) => setTimeout(resolve, humanDelay));
+        try {
+          await sock.sendPresenceUpdate("paused", jid);
+        } catch (e) {
+        }
       }
       console.log(`[AI Agent - Dispatching Reply] Sending reply via device "${device.name}" to +${contactPhone}. Voice: ${!!responseAudioBuffer}`);
       const sendResult = await sendBaileysMessage(deviceId, jid, responseText, responseAudioBuffer || void 0);
@@ -5605,7 +6140,7 @@ We look forward to seeing you! I am your WhatsApp Smart Agent. If you have any q
       });
     }
     try {
-      const result = await sendRealWhatsAppMessage(device, phone, messageText);
+      const result = await sendRealWhatsAppMessage(device, phone, messageText, true);
       console.log(`[ExpoCore Webhook] Dispatch result for ${phone}:`, result);
       return res.json({
         success: result.success,

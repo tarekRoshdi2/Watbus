@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { User, DemoLead } from '../types';
+import { User, DemoLead, DeviceLink } from '../types';
 import { 
   Activity, 
   Users, 
@@ -37,7 +37,7 @@ interface Props {
 
 export default function AdminPage({ currentUser, lang }: Props) {
   const [data, setData] = useState<{users: User[], demoLeads: DemoLead[]} | null>(null);
-  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'logs' | 'settings'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'security' | 'logs' | 'settings'>('overview');
   
   // Modals state
   const [isAddUserOpen, setIsAddUserOpen] = useState(false);
@@ -58,6 +58,66 @@ export default function AdminPage({ currentUser, lang }: Props) {
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [saveError, setSaveError] = useState('');
+  
+  // WhatsApp security device edit modal state
+  const [devices, setDevices] = useState<DeviceLink[]>([]);
+  const [loadingDevices, setLoadingDevices] = useState(false);
+  const [editingDevice, setEditingDevice] = useState<DeviceLink | null>(null);
+  const [editProxyUrl, setEditProxyUrl] = useState('');
+  const [editMaxDailyLimit, setEditMaxDailyLimit] = useState('');
+  const [editDailySentCount, setEditDailySentCount] = useState('');
+
+  const fetchDevices = () => {
+    if (!currentUser) return;
+    setLoadingDevices(true);
+    fetch('/api/devices', {
+      headers: { 'x-user-id': currentUser.id }
+    })
+      .then(res => res.json())
+      .then(data => {
+        setDevices(data.devices || []);
+        setLoadingDevices(false);
+      })
+      .catch(err => {
+        console.error("Error fetching devices for admin:", err);
+        setLoadingDevices(false);
+      });
+  };
+
+  const handleEditDeviceClick = (dev: DeviceLink) => {
+    setEditingDevice(dev);
+    setEditProxyUrl(dev.proxyUrl || '');
+    setEditMaxDailyLimit(dev.maxDailyLimit !== undefined ? String(dev.maxDailyLimit) : '');
+    setEditDailySentCount(dev.dailySentCount !== undefined ? String(dev.dailySentCount) : '0');
+  };
+
+  const handleSaveDeviceSettings = async () => {
+    if (!editingDevice) return;
+    setIsSaving(true);
+    try {
+      const response = await fetch(`/api/devices/${editingDevice.id}/update`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          proxyUrl: editProxyUrl || '',
+          maxDailyLimit: editMaxDailyLimit === '' ? null : Number(editMaxDailyLimit),
+          dailySentCount: editDailySentCount === '' ? 0 : Number(editDailySentCount)
+        })
+      });
+      if (response.ok) {
+        alert(lang === 'ar' ? 'تم حفظ إعدادات أمان الرقم بنجاح!' : 'Device security settings updated successfully!');
+        setEditingDevice(null);
+        fetchDevices();
+      } else {
+        alert(lang === 'ar' ? 'فشل تعديل الإعدادات' : 'Failed to update settings');
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Error occurred');
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   // Fetch users report
   const fetchReport = () => {
@@ -70,6 +130,12 @@ export default function AdminPage({ currentUser, lang }: Props) {
   useEffect(() => {
     fetchReport();
   }, []);
+
+  useEffect(() => {
+    if (activeTab === 'security') {
+      fetchDevices();
+    }
+  }, [activeTab]);
 
   // Fetch detailed work & activity for a user
   const fetchUserWork = (userId: string) => {
@@ -175,6 +241,7 @@ export default function AdminPage({ currentUser, lang }: Props) {
   const tabs = [
     { id: 'overview', name: lang === 'ar' ? 'نظرة عامة' : 'Overview', icon: Activity },
     { id: 'users', name: lang === 'ar' ? 'إدارة المستخدمين' : 'User Management', icon: Users },
+    { id: 'security', name: lang === 'ar' ? 'أمان الواتساب' : 'WhatsApp Anti-Ban', icon: ShieldAlert },
     { id: 'logs', name: lang === 'ar' ? 'سجلات النظام' : 'System Logs', icon: FileText },
     { id: 'settings', name: lang === 'ar' ? 'الإعدادات' : 'Settings', icon: Settings },
     { id: 'otp', name: lang === 'ar' ? 'اختبار OTP' : 'OTP Testing', icon: Shield },
@@ -468,6 +535,163 @@ export default function AdminPage({ currentUser, lang }: Props) {
       )}
 
       {activeTab === 'otp' && <OTPTesting lang={lang} />}
+
+      {activeTab === 'security' && (
+        <div className="bg-white dark:bg-zinc-900 p-6 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-sm space-y-6">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+              <h2 className="font-bold text-lg flex items-center gap-2">
+                <ShieldAlert className="w-5 h-5 text-[#00a884]" />
+                {lang === 'ar' ? 'أمان الواتساب والحماية من الحظر' : 'WhatsApp Anti-Ban & Security Control'}
+              </h2>
+              <p className="text-xs text-zinc-400 mt-1">
+                {lang === 'ar' ? 'التحكم في إعدادات البروكسي والـ User Agent وسقف الإرسال لحسابات الواتساب لمنع الحظر والـ Shadowban.' : 'Manage proxies, daily limits, browser agents and safeguards for WhatsApp lines.'}
+              </p>
+            </div>
+            <button 
+              onClick={fetchDevices}
+              disabled={loadingDevices}
+              className="px-4 py-2 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 rounded-xl font-bold transition-all text-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${loadingDevices ? 'animate-spin' : ''}`} />
+              {lang === 'ar' ? 'تحديث قنوات الواتساب' : 'Refresh Channels'}
+            </button>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-right animate-fade-in" dir={lang === 'ar' ? 'rtl' : 'ltr'}>
+              <thead>
+                <tr className="text-xs text-zinc-400 border-b border-zinc-200 dark:border-zinc-800 pb-2">
+                  <th className="py-3 text-start px-4">{lang === 'ar' ? 'اسم القناة/الرقم' : 'Channel Name & Phone'}</th>
+                  <th className="py-3 text-start px-4">{lang === 'ar' ? 'صاحب الحساب' : 'Owner ID'}</th>
+                  <th className="py-3 text-start px-4">{lang === 'ar' ? 'نوع الاتصال' : 'Connection Type'}</th>
+                  <th className="py-3 text-start px-4">{lang === 'ar' ? 'الحالة' : 'Status'}</th>
+                  <th className="py-3 text-start px-4">{lang === 'ar' ? 'البروكسي (Proxy)' : 'Proxy Server'}</th>
+                  <th className="py-3 text-start px-4">{lang === 'ar' ? 'معدل الإرسال اليومي' : 'Daily Sent Rate'}</th>
+                  <th className="py-3 text-center px-4">{lang === 'ar' ? 'إجراءات الأمان' : 'Actions'}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {devices.length > 0 ? (
+                  devices.map(device => {
+                    const maxLimit = device.maxDailyLimit;
+                    let calculatedLimit = maxLimit;
+                    let isWarmUp = false;
+                    if (maxLimit === undefined || maxLimit === null) {
+                      isWarmUp = true;
+                      if (device.linkedAt) {
+                        const daysConnected = Math.floor((Date.now() - new Date(device.linkedAt).getTime()) / (24 * 60 * 60 * 1000)) || 0;
+                        calculatedLimit = Math.min(250, 20 + daysConnected * 15);
+                      } else {
+                        calculatedLimit = 20;
+                      }
+                    }
+                    const currentSent = device.dailySentCount || 0;
+                    const pct = Math.min(100, Math.round((currentSent / (calculatedLimit || 250)) * 100));
+
+                    return (
+                      <tr key={device.id} className="text-xs border-b border-zinc-100 dark:border-zinc-850 hover:bg-zinc-50 dark:hover:bg-zinc-800/40">
+                        <td className="py-4 px-4">
+                          <div className="font-bold text-zinc-800 dark:text-zinc-100">{device.name}</div>
+                          <div className="text-[10px] text-zinc-400 font-mono mt-0.5">{device.phoneNumber || 'Simulation (No active line)'}</div>
+                        </td>
+                        <td className="py-4 px-4 font-mono text-zinc-500">
+                          {device.ownerId || (lang === 'ar' ? 'عام (بدون مالك)' : 'Global/System')}
+                        </td>
+                        <td className="py-4 px-4 uppercase font-bold text-zinc-500">
+                          <span className="px-2 py-0.5 rounded-md bg-zinc-100 dark:bg-zinc-800 text-[10px]">
+                            {device.method}
+                          </span>
+                        </td>
+                        <td className="py-4 px-4">
+                          <span className={`px-2.5 py-1 rounded-full font-bold text-[10px] flex items-center gap-1 w-max ${
+                            device.status === 'connected' || device.status === 'ready' || device.status === 'authenticated'
+                              ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20'
+                              : device.status === 'connecting' || device.status === 'linking'
+                              ? 'bg-amber-500/10 text-amber-500 border border-amber-500/20'
+                              : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400'
+                          }`}>
+                            <span className={`w-1.5 h-1.5 rounded-full ${
+                              device.status === 'connected' || device.status === 'ready' || device.status === 'authenticated'
+                                ? 'bg-emerald-500 animate-pulse'
+                                : device.status === 'connecting' || device.status === 'linking'
+                                ? 'bg-amber-500 animate-bounce'
+                                : 'bg-zinc-400'
+                            }`} />
+                            {device.status}
+                          </span>
+                        </td>
+                        <td className="py-4 px-4">
+                          {device.proxyUrl ? (
+                            <span className="px-2 py-1 rounded bg-indigo-500/10 text-indigo-500 border border-indigo-500/20 font-mono text-[10px] block max-w-[150px] truncate" title={device.proxyUrl}>
+                              {device.proxyUrl}
+                            </span>
+                          ) : (
+                            <span className="text-zinc-400 text-[10px]">—</span>
+                          )}
+                        </td>
+                        <td className="py-4 px-4">
+                          <div className="w-32 space-y-1">
+                            <div className="flex justify-between text-[10px] font-bold">
+                              <span>{currentSent} / {calculatedLimit}</span>
+                              {isWarmUp && <span className="text-amber-500 text-[8px] bg-amber-500/10 px-1 py-0.5 rounded uppercase">WarmUp</span>}
+                            </div>
+                            <div className="w-full bg-zinc-100 dark:bg-zinc-800 h-1.5 rounded-full overflow-hidden">
+                              <div 
+                                className={`h-full rounded-full transition-all ${
+                                  pct > 85 ? 'bg-rose-500' : pct > 50 ? 'bg-amber-500' : 'bg-[#00a884]'
+                                }`} 
+                                style={{ width: `${pct}%` }} 
+                              />
+                            </div>
+                          </div>
+                        </td>
+                        <td className="py-4 px-4 text-center">
+                          <div className="flex items-center justify-center gap-2">
+                            <button
+                              onClick={() => handleEditDeviceClick(device)}
+                              className="p-1.5 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-600 dark:text-zinc-300 rounded-lg transition-all cursor-pointer"
+                              title={lang === 'ar' ? 'تعديل إعدادات الأمان' : 'Edit Security Settings'}
+                            >
+                              <Edit className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={async () => {
+                                const confirmReset = window.confirm(lang === 'ar' ? 'تصفير عداد الإرسال اليومي لهذا الرقم؟' : 'Reset daily sent count for this device?');
+                                if (!confirmReset) return;
+                                try {
+                                  await fetch(`/api/devices/${device.id}/update`, {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ dailySentCount: 0 })
+                                  });
+                                  fetchDevices();
+                                } catch (e) {
+                                  console.error(e);
+                                }
+                              }}
+                              className="p-1.5 bg-[#00a884]/10 hover:bg-[#00a884]/20 text-[#00a884] rounded-lg transition-all cursor-pointer"
+                              title={lang === 'ar' ? 'تصفير العداد' : 'Reset Limit'}
+                            >
+                              <RefreshCw className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                ) : (
+                  <tr>
+                    <td colSpan={7} className="text-center py-8 text-zinc-400 text-xs">
+                      {lang === 'ar' ? 'لا يوجد بوابات واتساب مسجلة حالياً.' : 'No WhatsApp gateways found.'}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* ADD USER DIALOG MODAL */}
       {isAddUserOpen && (
@@ -888,6 +1112,89 @@ export default function AdminPage({ currentUser, lang }: Props) {
               </button>
             </div>
 
+          </div>
+        </div>
+      )}
+
+      {/* WhatsApp Device Security Settings Modal */}
+      {editingDevice && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-4 animate-fade-in" dir={lang === 'ar' ? 'rtl' : 'ltr'}>
+          <div className="bg-white dark:bg-zinc-900 rounded-3xl p-6 md:p-8 w-full max-w-md border border-zinc-200 dark:border-zinc-800 shadow-2xl space-y-5">
+            <div className="flex justify-between items-center border-b border-zinc-100 dark:border-zinc-850 pb-3">
+              <h2 className="text-lg font-black text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
+                <ShieldAlert className="w-5 h-5 text-[#00a884]" />
+                {lang === 'ar' ? 'تعديل إعدادات أمان القناة' : 'Edit Gateway Security'}
+              </h2>
+              <button 
+                onClick={() => setEditingDevice(null)}
+                className="w-8 h-8 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-zinc-500 hover:text-zinc-700 cursor-pointer"
+              >
+                <XCircle className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              {/* Proxy URL */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-zinc-400">{lang === 'ar' ? 'خادم البروكسي (Proxy URL)' : 'Proxy Connection String'}</label>
+                <input 
+                  type="text" 
+                  placeholder="e.g. socks5://username:password@ip:port" 
+                  className="w-full p-3 text-sm rounded-xl border dark:bg-zinc-950 dark:border-zinc-850 focus:border-[#00a884] outline-none font-mono"
+                  value={editProxyUrl}
+                  onChange={(e) => setEditProxyUrl(e.target.value)}
+                />
+                <p className="text-[10px] text-zinc-400 mt-1 font-semibold">
+                  {lang === 'ar' ? 'يدعم HTTP, HTTPS, SOCKS5 للاتصال بواتساب من IP مختلف.' : 'Supports HTTP, HTTPS, SOCKS5 connection strings.'}
+                </p>
+              </div>
+
+              {/* Max Daily Limit */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-zinc-400">
+                  {lang === 'ar' ? 'الحد الأقصى للإرسال اليومي للحملات' : 'Max Daily Bulk Message Limit'}
+                </label>
+                <input 
+                  type="number" 
+                  placeholder={lang === 'ar' ? 'اتركه فارغاً للتسخين التلقائي (20-250)' : 'Leave empty for auto-warming (20-250)'} 
+                  className="w-full p-3 text-sm rounded-xl border dark:bg-zinc-950 dark:border-zinc-850 focus:border-[#00a884] outline-none font-semibold font-mono"
+                  value={editMaxDailyLimit}
+                  onChange={(e) => setEditMaxDailyLimit(e.target.value)}
+                />
+                <p className="text-[10px] text-zinc-400 mt-1">
+                  {lang === 'ar' ? 'الحد الأقصى للرسائل الصادرة يومياً. تركه فارغاً يفعّل الإحماء التلقائي.' : 'Max campaign messages per 24 hours. Leave blank for automated warming schedule.'}
+                </p>
+              </div>
+
+              {/* Current Daily Sent Count */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-zinc-400">{lang === 'ar' ? 'العداد الحالي لليوم' : 'Current Day Sent Count'}</label>
+                <input 
+                  type="number" 
+                  className="w-full p-3 text-sm rounded-xl border dark:bg-zinc-950 dark:border-zinc-850 focus:border-[#00a884] outline-none font-mono font-semibold"
+                  value={editDailySentCount}
+                  onChange={(e) => setEditDailySentCount(e.target.value)}
+                />
+              </div>
+
+              <button 
+                disabled={isSaving}
+                className="w-full py-3 bg-[#00a884] hover:bg-[#008f6e] text-white rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                onClick={handleSaveDeviceSettings}
+              >
+                {isSaving ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    <span>{lang === 'ar' ? 'يتم الحفظ...' : 'Saving...'}</span>
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>{lang === 'ar' ? 'تأكيد وحفظ الإعدادات' : 'Save Security Settings'}</span>
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}

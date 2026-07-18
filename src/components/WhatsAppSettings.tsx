@@ -24,7 +24,7 @@ import {
   Settings,
   BellRing
 } from 'lucide-react';
-import { DeviceLink } from '../types.js';
+import { DeviceLink, FlowStage } from '../types.js';
 import { translations } from '../translations.js';
 
 interface WhatsAppSettingsProps {
@@ -52,6 +52,7 @@ export default function WhatsAppSettings({
   const [openDevSettingsDeviceId, setOpenDevSettingsDeviceId] = useState<string | null>(null);
   const [deviceWebhookUrls, setDeviceWebhookUrls] = useState<Record<string, string>>({});
   const [deviceApiKeys, setDeviceApiKeys] = useState<Record<string, string>>({});
+  const [deviceSyncHistory, setDeviceSyncHistory] = useState<Record<string, boolean>>({});
   const [deviceLogs, setDeviceLogs] = useState<Record<string, string[]>>({});
   const [copiedApiKeyDeviceId, setCopiedApiKeyDeviceId] = useState<string | null>(null);
   const [isSavingDevSettings, setIsSavingDevSettings] = useState<string | null>(null);
@@ -69,6 +70,10 @@ export default function WhatsAppSettings({
         ...prev,
         [device.id]: device.apiKey || ''
       }));
+      setDeviceSyncHistory(prev => ({
+        ...prev,
+        [device.id]: device.syncHistory !== false
+      }));
     }
   };
 
@@ -83,6 +88,7 @@ export default function WhatsAppSettings({
     try {
       const webhook = deviceWebhookUrls[deviceId] || 'https://your-api.com/whatsapp/webhook';
       const key = deviceApiKeys[deviceId] || '';
+      const syncHist = deviceSyncHistory[deviceId] !== undefined ? deviceSyncHistory[deviceId] : true;
       
       const res = await fetch(`/api/devices/${deviceId}/update`, {
         method: 'POST',
@@ -92,7 +98,8 @@ export default function WhatsAppSettings({
         },
         body: JSON.stringify({
           apiKey: key,
-          webhookUrl: webhook
+          webhookUrl: webhook,
+          syncHistory: syncHist
         })
       });
 
@@ -221,6 +228,7 @@ export default function WhatsAppSettings({
   const [newPhone, setNewPhone] = useState('');
   const [newMethod, setNewMethod] = useState<'qr' | 'cloud_api' | 'ultramsg' | 'greenapi'>('qr');
   const [isAdding, setIsAdding] = useState(false);
+  const [newSyncHistory, setNewSyncHistory] = useState(true);
 
   // Advanced fields for API gateways
   const [instanceId, setInstanceId] = useState('');
@@ -232,6 +240,8 @@ export default function WhatsAppSettings({
 
   // AI Agent Settings modal state
   const [editingAgentDeviceId, setEditingAgentDeviceId] = useState<string | null>(null);
+  const [agentTab, setAgentTab] = useState<'agent' | 'flow'>('agent');
+  const [stagesList, setStagesList] = useState<FlowStage[]>([]);
   const [agentEnabled, setAgentEnabled] = useState(false);
   const [agentName, setAgentName] = useState('');
   const [agentInstructions, setAgentInstructions] = useState('');
@@ -243,8 +253,18 @@ export default function WhatsAppSettings({
   const [agentVoiceTone, setAgentVoiceTone] = useState<'professional' | 'friendly' | 'formal'>('professional');
   const [isSavingAgent, setIsSavingAgent] = useState(false);
 
+  const DEFAULT_FLOW_STAGES: FlowStage[] = [
+    { id: 'awareness', name: 'وعي عام', nameEn: 'Awareness', color: '#6366f1', keywords: ['تفاصيل', 'باقة', 'ممكن', 'شرح', 'فيديو', 'برنامج', 'توضيح'] },
+    { id: 'consideration', name: 'اهتمام ومقارنة', nameEn: 'Consideration', color: '#3b82f6', keywords: ['تفاصيل', 'باقة', 'ممكن', 'شرح', 'فيديو', 'برنامج', 'توضيح'] },
+    { id: 'intent', name: 'نية جادة', nameEn: 'Intent', color: '#a855f7', keywords: ['رقم الحساب', 'بكم الاشتراك', 'سعر الباقة', 'رابط الدفع', 'طريقة الدفع', 'خصم'] },
+    { id: 'action', name: 'تفعيل واشتراك', nameEn: 'Action', color: '#10b981', keywords: ['تم التحويل', 'حولت', 'ايصال', 'إيصال', 'التحويل البنكي', 'فودافون كاش', 'اشترك السنوي'] },
+    { id: 'loyalty', name: 'ولاء وتوصية', nameEn: 'Loyalty', color: '#ec4899', keywords: ['شكرا', 'تسلم', 'ممتاز جدا', 'روعة', 'أشكرك', 'رائع'] }
+  ];
+
   const handleOpenAgentSettings = (device: DeviceLink) => {
     setEditingAgentDeviceId(device.id);
+    setAgentTab('agent');
+    setStagesList(device.flowStages && device.flowStages.length > 0 ? device.flowStages : DEFAULT_FLOW_STAGES);
     setAgentEnabled(!!device.aiAgentEnabled);
     setAgentName(device.aiAgentName || '');
     setAgentInstructions(device.aiAgentInstructions || '');
@@ -269,7 +289,8 @@ export default function WhatsAppSettings({
         aiKnowledgeBase: agentKnowledgeBase,
         aiStopKeyword: agentStopKeyword,
         aiVoiceEnabled: agentVoiceEnabled,
-        aiVoiceTone: agentVoiceTone
+        aiVoiceTone: agentVoiceTone,
+        flowStages: stagesList
       });
       setEditingAgentDeviceId(null);
     } catch (err) {
@@ -288,7 +309,8 @@ export default function WhatsAppSettings({
       const devicePayload: any = {
         name: newName,
         phoneNumber: newPhone || undefined,
-        method: newMethod
+        method: newMethod,
+        syncHistory: newSyncHistory
       };
 
       if (newMethod === 'ultramsg' || newMethod === 'greenapi') {
@@ -315,6 +337,7 @@ export default function WhatsAppSettings({
     setNewName('');
     setNewPhone('');
     setNewMethod('qr');
+    setNewSyncHistory(true);
     setInstanceId('');
     setToken('');
     setApiEndpoint('');
@@ -357,7 +380,8 @@ export default function WhatsAppSettings({
       </div>
 
       {/* Supabase Sync Dashboard */}
-      <div className="bg-white dark:bg-zinc-900 border border-zinc-200/50 dark:border-zinc-800/80 rounded-3xl p-6 shadow-xs mb-8 rtl:text-right ltr:text-left">
+      {currentUser?.role === 'admin' && (
+        <div className="bg-white dark:bg-zinc-900 border border-zinc-200/50 dark:border-zinc-800/80 rounded-3xl p-6 shadow-xs mb-8 rtl:text-right ltr:text-left">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-zinc-100 dark:border-zinc-800 pb-4 mb-4">
           <div className="flex items-center gap-2">
             {!supabaseStatus?.configured ? (
@@ -570,6 +594,7 @@ ALTER TABLE crm_backups DISABLE ROW LEVEL SECURITY;`}
           </div>
         )}
       </div>
+      )}
 
       {/* Devices Grid List */}
       <div className="rtl:text-right ltr:text-left">
@@ -852,6 +877,22 @@ ALTER TABLE crm_backups DISABLE ROW LEVEL SECURITY;`}
                         </p>
                       </div>
 
+                      {/* Sync History Toggle */}
+                      {device.method === 'qr' && (
+                        <div className="flex items-center gap-2 pt-1 rtl:flex-row-reverse text-right select-none">
+                          <input
+                            type="checkbox"
+                            id={`syncHistory_${device.id}`}
+                            checked={deviceSyncHistory[device.id] !== undefined ? deviceSyncHistory[device.id] : (device.syncHistory !== false)}
+                            onChange={(e) => setDeviceSyncHistory({ ...deviceSyncHistory, [device.id]: e.target.checked })}
+                            className="w-4 h-4 accent-[#00a884]"
+                          />
+                          <label htmlFor={`syncHistory_${device.id}`} className="text-xs font-bold text-zinc-700 dark:text-zinc-300 cursor-pointer">
+                            {lang === 'ar' ? 'مزامنة سجل الرسائل السابقة من الهاتف عند الاتصال' : 'Enable sync of past chat history from phone'}
+                          </label>
+                        </div>
+                      )}
+
                       {/* Buttons for Saving & Testing */}
                       <div className="flex items-center gap-2 pt-1">
                         <button
@@ -1008,6 +1049,20 @@ ALTER TABLE crm_backups DISABLE ROW LEVEL SECURITY;`}
                       </>
                     )}
                   </select>
+                  {newMethod === 'qr' && (
+                    <div className="flex items-center gap-2 pt-2.5 rtl:flex-row-reverse text-right select-none">
+                      <input
+                        type="checkbox"
+                        id="newSyncHistory"
+                        checked={newSyncHistory}
+                        onChange={(e) => setNewSyncHistory(e.target.checked)}
+                        className="w-4 h-4 accent-[#00a884]"
+                      />
+                      <label htmlFor="newSyncHistory" className="text-xs font-bold text-zinc-650 dark:text-zinc-350 cursor-pointer select-none">
+                        {lang === 'ar' ? 'مزامنة سجل المحادثات السابقة عند الربط' : 'Sync past chat history upon connection'}
+                      </label>
+                    </div>
+                  )}
                   {(!currentUser?.subscriptionPlan || currentUser?.subscriptionPlan === 'starter') && newMethod !== 'qr' && (
                     <div className="mt-2 text-[10px] text-amber-600 bg-amber-50 dark:bg-amber-950/30 p-2 rounded-lg flex items-center gap-1.5 border border-amber-200/50 dark:border-amber-900/50">
                       <Lock className="w-3 h-3" />
@@ -1083,7 +1138,7 @@ ALTER TABLE crm_backups DISABLE ROW LEVEL SECURITY;`}
                 </h3>
               </div>
 
-              <div className="p-6 space-y-4 rtl:text-right ltr:text-left max-h-[75vh] overflow-y-auto custom-scrollbar">
+              <div className="p-6 space-y-4 rtl:text-right ltr:text-left max-h-[70vh] overflow-y-auto custom-scrollbar">
                 {/* Enable AI Toggle */}
                 <div className="flex items-center justify-between bg-zinc-50 dark:bg-zinc-950 p-4 rounded-2xl border border-zinc-200/50 dark:border-zinc-800/80">
                   <input
@@ -1111,7 +1166,7 @@ ALTER TABLE crm_backups DISABLE ROW LEVEL SECURITY;`}
                       placeholder={t.agentNamePlaceholder}
                       value={agentName}
                       onChange={(e) => setAgentName(e.target.value)}
-                      className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 py-2.5 text-xs outline-none focus:border-amber-500 rtl:text-right ltr:text-left"
+                      className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 py-2.5 text-xs outline-none focus:border-amber-500 rtl:text-right ltr:text-left font-bold"
                     />
                   </div>
 
@@ -1174,7 +1229,7 @@ ALTER TABLE crm_backups DISABLE ROW LEVEL SECURITY;`}
                     placeholder={t.stopKeywordPlaceholder}
                     value={agentStopKeyword}
                     onChange={(e) => setAgentStopKeyword(e.target.value)}
-                    className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 py-2.5 text-xs outline-none focus:border-amber-500 rtl:text-right ltr:text-left"
+                    className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 py-2.5 text-xs outline-none focus:border-amber-500 rtl:text-right ltr:text-left font-bold"
                   />
                   <span className="text-[9px] text-zinc-400 mt-1 block">
                     {t.stopKeywordSub}
@@ -1195,7 +1250,7 @@ ALTER TABLE crm_backups DISABLE ROW LEVEL SECURITY;`}
                     }
                     value={agentInstructions}
                     onChange={(e) => setAgentInstructions(e.target.value)}
-                    className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 py-3 text-xs outline-none focus:border-amber-500 rtl:text-right ltr:text-left leading-relaxed"
+                    className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 py-3 text-xs outline-none focus:border-amber-500 rtl:text-right ltr:text-left leading-relaxed font-bold"
                   />
                   <span className="text-[9px] text-zinc-400 mt-1 block">
                     {lang === 'ar' 
@@ -1208,7 +1263,7 @@ ALTER TABLE crm_backups DISABLE ROW LEVEL SECURITY;`}
                 <div className="pt-4 border-t border-zinc-200 dark:border-zinc-800">
                   <div className="flex items-center gap-2 mb-4">
                     <div className="w-8 h-8 rounded-full bg-indigo-500/10 flex items-center justify-center">
-                      <CloudLightning className="w-4 h-4 text-indigo-500" />
+                      <CloudLightning className="w-4 h-4 text-indigo-500 animate-pulse" />
                     </div>
                     <div className="rtl:text-right ltr:text-left">
                       <h3 className="text-sm font-bold text-zinc-800 dark:text-zinc-200">{t.voiceAiSettingsTitle}</h3>
@@ -1224,6 +1279,7 @@ ALTER TABLE crm_backups DISABLE ROW LEVEL SECURITY;`}
                         <p className="text-[9px] text-zinc-500">{t.enableVoiceRepliesSub}</p>
                       </div>
                       <button
+                        type="button"
                         onClick={() => setAgentVoiceEnabled(!agentVoiceEnabled)}
                         className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
                           agentVoiceEnabled ? 'bg-indigo-600' : 'bg-zinc-300 dark:bg-zinc-700'
@@ -1251,6 +1307,7 @@ ALTER TABLE crm_backups DISABLE ROW LEVEL SECURITY;`}
                           ].map((tone) => (
                             <button
                               key={tone.id}
+                              type="button"
                               onClick={() => setAgentVoiceTone(tone.id as any)}
                               className={`px-2 py-2 rounded-xl text-[10px] font-bold border transition-all ${
                                 agentVoiceTone === tone.id
@@ -1267,7 +1324,7 @@ ALTER TABLE crm_backups DISABLE ROW LEVEL SECURITY;`}
                   </div>
                 </div>
 
-                {/* Knowledge Base & FAQs Textarea Removed (Now centralized in AiKnowledgeBase.tsx) */}
+                {/* Knowledge Base Announcement */}
                 <div className="rtl:text-right ltr:text-left bg-emerald-50 dark:bg-emerald-950/20 p-4 rounded-xl border border-emerald-100 dark:border-emerald-900/50">
                   <div className="flex items-start gap-3">
                     <div className="mt-1">
@@ -1279,13 +1336,14 @@ ALTER TABLE crm_backups DISABLE ROW LEVEL SECURITY;`}
                       </h4>
                       <p className="text-[10px] text-emerald-600 dark:text-emerald-500 mb-3 leading-relaxed">
                         {lang === 'ar' 
-                          ? 'لضمان أقصى احترافية ودقة، يرجى التوجه إلى "مركز التدريب המخصص" من القائمة الجانبية لإضافة ملفاتك الخاصة، روابط المواقع، ونصوص الأسعار بدلاً من كتابتها هنا.' 
+                          ? 'لضمان أقصى احترافية ودقة، يرجى التوجه إلى "مركز التدريب المخصص" من القائمة الجانبية لإضافة ملفاتك الخاصة، روابط المواقع، ونصوص الأسعار بدلاً من كتابتها هنا.' 
                           : 'For maximum accuracy, please visit the "Custom Training Center" from the sidebar to upload files, scrape websites, and add pricing data instead of typing it here.'}
                       </p>
                     </div>
                   </div>
                 </div>
-
+              </div>
+              <div className="p-6 pt-0">
                 <button
                   type="button"
                   onClick={handleSaveAgentSettings}

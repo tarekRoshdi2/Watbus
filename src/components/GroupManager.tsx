@@ -65,6 +65,8 @@ export default function GroupManager({ currentUser, devices, lang }: GroupManage
       alert("Feature coming soon: This will allow adding selected members to another group of your choice.");
   };
 
+
+
   return (
     <div className="flex-1 p-6 space-y-6 bg-zinc-50 dark:bg-zinc-950 overflow-y-auto">
       <h2 className="text-2xl font-bold text-zinc-800 dark:text-zinc-100">

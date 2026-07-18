@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Star,
@@ -42,7 +42,7 @@ import {
   Printer
 } from 'lucide-react';
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, BarChart, Bar, Cell } from 'recharts';
-import { DeviceLink } from '../types.js';
+import { DeviceLink, FlowStage } from '../types.js';
 
 interface CustomerFeedbackProps {
   currentUser: any;
@@ -56,7 +56,7 @@ interface FunnelCustomer {
   nameEn: string;
   phoneNumber: string;
   avatarColor: string;
-  stage: 'awareness' | 'consideration' | 'intent' | 'action' | 'loyalty';
+  stage: string;
   lastMessageTime: string;
   unread: boolean;
   sentiment: 'positive' | 'neutral' | 'negative' | 'excited';
@@ -322,6 +322,15 @@ export default function CustomerFeedback({ currentUser, devices, lang }: Custome
   };
 
   // States for Funnel Tab
+  const DEFAULT_FLOW_STAGES: FlowStage[] = [
+    { id: 'awareness', name: 'وعي عام', nameEn: 'Awareness', color: '#6366f1', keywords: ['تفاصيل', 'باقة', 'ممكن', 'شرح', 'فيديو', 'برنامج', 'توضيح'] },
+    { id: 'consideration', name: 'اهتمام ومقارنة', nameEn: 'Consideration', color: '#3b82f6', keywords: ['تفاصيل', 'باقة', 'ممكن', 'شرح', 'فيديو', 'برنامج', 'توضيح'] },
+    { id: 'intent', name: 'نية جادة', nameEn: 'Intent', color: '#a855f7', keywords: ['رقم الحساب', 'بكم الاشتراك', 'سعر الباقة', 'رابط الدفع', 'طريقة الدفع', 'خصم'] },
+    { id: 'action', name: 'تفعيل واشتراك', nameEn: 'Action', color: '#10b981', keywords: ['تم التحويل', 'حولت', 'ايصال', 'إيصال', 'التحويل البنكي', 'فودافون كاش', 'اشترك السنوي'] },
+    { id: 'loyalty', name: 'ولاء وتوصية', nameEn: 'Loyalty', color: '#ec4899', keywords: ['شكرا', 'تسلم', 'ممتاز جدا', 'روعة', 'أشكرك', 'رائع'] }
+  ];
+
+  const [stagesList, setStagesList] = useState<FlowStage[]>(DEFAULT_FLOW_STAGES);
   const [funnelFilter, setFunnelFilter] = useState<string>('all');
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>('cust-1');
   const [chatInputValue, setChatInputValue] = useState('');
@@ -329,6 +338,7 @@ export default function CustomerFeedback({ currentUser, devices, lang }: Custome
   const [copiedText, setCopiedText] = useState(false);
   const [isLoadingFunnel, setIsLoadingFunnel] = useState(false);
   const [analyzingCustomerId, setAnalyzingCustomerId] = useState<string | null>(null);
+  const chatContainerRef = useRef<HTMLDivElement | null>(null);
 
   const fetchFunnelData = async () => {
     setIsLoadingFunnel(true);
@@ -341,6 +351,11 @@ export default function CustomerFeedback({ currentUser, devices, lang }: Custome
       if (res.ok) {
         const data = await res.json();
         const customers = data.customers || [];
+        if (data.stages && data.stages.length > 0) {
+          setStagesList(data.stages);
+        } else {
+          setStagesList(DEFAULT_FLOW_STAGES);
+        }
         setLocalCustomers((prev) => {
           const showStatic = selectedDeviceId === 'all' && customers.length === 0;
           const combined = showStatic ? [...customers, ...REAL_FUNNEL_CUSTOMERS] : customers;
@@ -574,19 +589,42 @@ export default function CustomerFeedback({ currentUser, devices, lang }: Custome
 
   // Dynamic funnel stats counting
   const funnelMetrics = useMemo(() => {
-    return {
-      awareness: localCustomers.filter(c => c.stage === 'awareness').length,
-      consideration: localCustomers.filter(c => c.stage === 'consideration').length,
-      intent: localCustomers.filter(c => c.stage === 'intent').length,
-      action: localCustomers.filter(c => c.stage === 'action').length,
-      loyalty: localCustomers.filter(c => c.stage === 'loyalty').length
-    };
-  }, [localCustomers]);
+    const metrics: Record<string, number> = {};
+    stagesList.forEach(stage => {
+      metrics[stage.id] = localCustomers.filter(c => c.stage === stage.id).length;
+    });
+    return metrics;
+  }, [localCustomers, stagesList]);
 
-  // Active Selected Customer
   const selectedCustomer = useMemo(() => {
     return localCustomers.find(c => c.id === selectedCustomerId) || localCustomers[0];
   }, [localCustomers, selectedCustomerId]);
+
+  // Debounced auto-analysis refresh when selected customer changes to ensure realistic up-to-date data
+  useEffect(() => {
+    if (selectedCustomerId && selectedCustomerId.startsWith('contact_')) {
+      const timer = setTimeout(() => {
+        handleRefreshAiAnalysis(selectedCustomerId);
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [selectedCustomerId]);
+
+  // Auto-scroll funnel chat container to the bottom
+  useEffect(() => {
+    const scrollContainer = () => {
+      if (chatContainerRef.current) {
+        chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+      }
+    };
+    scrollContainer();
+    const t1 = setTimeout(scrollContainer, 50);
+    const t2 = setTimeout(scrollContainer, 250);
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
+  }, [selectedCustomerId, selectedCustomer?.chatHistory]);
 
   // Filtered customer list based on search and funnel status
   const filteredCustomers = useMemo(() => {
@@ -634,11 +672,22 @@ export default function CustomerFeedback({ currentUser, devices, lang }: Custome
     if (selectedCustomerId.startsWith('contact_')) {
       try {
         const userId = currentUser?.id || 'admin-tarek';
+        const selectedCustomer = localCustomers.find(c => c.id === selectedCustomerId);
+        const resolvedDeviceId = selectedCustomer?.deviceId || selectedDeviceId;
+        const activeDevices = devices.filter((d) => ['connected', 'ready', 'authenticated'].includes(d.status));
+        const finalDeviceId = resolvedDeviceId && resolvedDeviceId !== 'all' 
+          ? resolvedDeviceId 
+          : (activeDevices[0]?.id || devices[0]?.id || 'device_default');
+
         // 1. Get or create conversation with contact
         const convRes = await fetch('/api/conversations', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ senderId: userId, recipientId: selectedCustomerId })
+          body: JSON.stringify({ 
+            senderId: userId, 
+            recipientId: selectedCustomerId,
+            deviceId: finalDeviceId
+          })
         });
         
         if (convRes.ok) {
@@ -829,118 +878,50 @@ export default function CustomerFeedback({ currentUser, devices, lang }: Custome
         <div className="space-y-6 relative z-10">
           
           {/* TOP FUNNEL PROGRESSION BAR (قمع التسويق المبيعات البصري) */}
-          <div className="grid grid-cols-1 sm:grid-cols-5 gap-3.5 bg-white dark:bg-zinc-900 border border-zinc-200/40 dark:border-zinc-800/80 p-5 rounded-3xl shadow-xs">
-            {/* Awareness Stage */}
-            <button
-              onClick={() => setFunnelFilter(funnelFilter === 'awareness' ? 'all' : 'awareness')}
-              className={`p-3.5 rounded-2xl border text-center transition-all cursor-pointer relative flex flex-col justify-between ${
-                funnelFilter === 'awareness'
-                  ? 'border-indigo-500 bg-indigo-50/25 dark:bg-indigo-950/10'
-                  : 'border-zinc-100 dark:border-zinc-800/60 bg-zinc-50/40 dark:bg-zinc-950/20 hover:bg-zinc-100/50'
-              }`}
-            >
-              <div className="flex justify-between items-center flex-row-reverse mb-1.5">
-                <Compass className="w-4 h-4 text-indigo-500" />
-                <span className="text-[10px] font-extrabold text-indigo-500 uppercase tracking-wide">
-                  {lang === 'ar' ? 'الوعي والاهتمام' : '1. Awareness'}
-                </span>
-              </div>
-              <div className="text-right">
-                <span className="text-xl font-black text-zinc-800 dark:text-zinc-100">{funnelMetrics.awareness}</span>
-                <span className="text-[9px] text-zinc-400 block mt-0.5">{lang === 'ar' ? 'دخلوا حديثاً للمنصة' : 'cold ad prospects'}</span>
-              </div>
-            </button>
-
-            {/* Consideration Stage */}
-            <button
-              onClick={() => setFunnelFilter(funnelFilter === 'consideration' ? 'all' : 'consideration')}
-              className={`p-3.5 rounded-2xl border text-center transition-all cursor-pointer relative flex flex-col justify-between ${
-                funnelFilter === 'consideration'
-                  ? 'border-sky-500 bg-sky-50/25 dark:bg-sky-950/10'
-                  : 'border-zinc-100 dark:border-zinc-800/60 bg-zinc-50/40 dark:bg-zinc-950/20 hover:bg-zinc-100/50'
-              }`}
-            >
-              <div className="flex justify-between items-center flex-row-reverse mb-1.5">
-                <MessageSquare className="w-4 h-4 text-sky-500" />
-                <span className="text-[10px] font-extrabold text-sky-500 uppercase tracking-wide">
-                  {lang === 'ar' ? 'الاهتمام والدراسة' : '2. Consideration'}
-                </span>
-              </div>
-              <div className="text-right">
-                <span className="text-xl font-black text-zinc-800 dark:text-zinc-100">{funnelMetrics.consideration}</span>
-                <span className="text-[9px] text-zinc-400 block mt-0.5">{lang === 'ar' ? 'يدرسون الميزات والمقارنة' : 'comparing features'}</span>
-              </div>
-            </button>
-
-            {/* Intent Stage */}
-            <button
-              onClick={() => setFunnelFilter(funnelFilter === 'intent' ? 'all' : 'intent')}
-              className={`p-3.5 rounded-2xl border text-center transition-all cursor-pointer relative flex flex-col justify-between ${
-                funnelFilter === 'intent'
-                  ? 'border-amber-500 bg-amber-50/25 dark:bg-amber-950/10'
-                  : 'border-zinc-100 dark:border-zinc-800/60 bg-zinc-50/40 dark:bg-zinc-950/20 hover:bg-zinc-100/50'
-              }`}
-            >
-              <div className="flex justify-between items-center flex-row-reverse mb-1.5">
-                <Brain className="w-4 h-4 text-amber-500" />
-                <span className="text-[10px] font-extrabold text-amber-500 uppercase tracking-wide">
-                  {lang === 'ar' ? 'نية الشراء والطلب' : '3. Intent'}
-                </span>
-              </div>
-              <div className="text-right">
-                <span className="text-xl font-black text-zinc-800 dark:text-zinc-100">{funnelMetrics.intent}</span>
-                <span className="text-[9px] text-zinc-400 block mt-0.5">{lang === 'ar' ? 'يتفاوضون على السعر' : 'discussing payment'}</span>
-              </div>
-            </button>
-
-            {/* Action Stage */}
-            <button
-              onClick={() => setFunnelFilter(funnelFilter === 'action' ? 'all' : 'action')}
-              className={`p-3.5 rounded-2xl border text-center transition-all cursor-pointer relative flex flex-col justify-between ${
-                funnelFilter === 'action'
-                  ? 'border-emerald-500 bg-emerald-50/25 dark:bg-emerald-950/10'
-                  : 'border-zinc-100 dark:border-zinc-800/60 bg-zinc-50/40 dark:bg-zinc-950/20 hover:bg-zinc-100/50'
-              }`}
-            >
-              <div className="flex justify-between items-center flex-row-reverse mb-1.5">
-                <DollarSign className="w-4 h-4 text-emerald-500" />
-                <span className="text-[10px] font-extrabold text-emerald-500 uppercase tracking-wide">
-                  {lang === 'ar' ? 'إتمام التحويل المالي' : '4. Action / Conversion'}
-                </span>
-              </div>
-              <div className="text-right">
-                <span className="text-xl font-black text-zinc-800 dark:text-zinc-100">{funnelMetrics.action}</span>
-                <span className="text-[9px] text-zinc-400 block mt-0.5">{lang === 'ar' ? 'دفعوا واشتركوا بالمنصة' : 'active paid customers'}</span>
-              </div>
-            </button>
-
-            {/* Loyalty Stage */}
-            <button
-              onClick={() => setFunnelFilter(funnelFilter === 'loyalty' ? 'all' : 'loyalty')}
-              className={`p-3.5 rounded-2xl border text-center transition-all cursor-pointer relative flex flex-col justify-between ${
-                funnelFilter === 'loyalty'
-                  ? 'border-purple-500 bg-purple-50/25 dark:bg-purple-950/10'
-                  : 'border-zinc-100 dark:border-zinc-800/60 bg-zinc-50/40 dark:bg-zinc-950/20 hover:bg-zinc-100/50'
-              }`}
-            >
-              <div className="flex justify-between items-center flex-row-reverse mb-1.5">
-                <Zap className="w-4 h-4 text-purple-500" />
-                <span className="text-[10px] font-extrabold text-purple-500 uppercase tracking-wide">
-                  {lang === 'ar' ? 'الولاء والتوصية' : '5. Loyalty'}
-                </span>
-              </div>
-              <div className="text-right">
-                <span className="text-xl font-black text-zinc-800 dark:text-zinc-100">{funnelMetrics.loyalty}</span>
-                <span className="text-[9px] text-zinc-400 block mt-0.5">{lang === 'ar' ? 'يدعون زملاءهم بالعمولة' : 'affiliate advocates'}</span>
-              </div>
-            </button>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5 glass-panel p-5 rounded-3xl shadow-xs">
+            {stagesList.map((stage, idx) => {
+              const count = funnelMetrics[stage.id] || 0;
+              const isSelected = funnelFilter === stage.id;
+              return (
+                <button
+                  key={stage.id}
+                  onClick={() => setFunnelFilter(funnelFilter === stage.id ? 'all' : stage.id)}
+                  className={`p-3.5 rounded-2xl border text-center transition-all cursor-pointer relative flex flex-col justify-between ${
+                    isSelected
+                      ? 'bg-zinc-50 dark:bg-zinc-950/20'
+                      : 'border-zinc-100 dark:border-zinc-800/60 bg-zinc-50/40 dark:bg-zinc-950/20 hover:bg-zinc-100/50'
+                  }`}
+                  style={{
+                    borderColor: isSelected ? stage.color : undefined
+                  }}
+                >
+                  <div className="flex justify-between items-center flex-row-reverse mb-1.5">
+                    <span 
+                      className="w-2.5 h-2.5 rounded-full block border border-white/20 shadow-xs"
+                      style={{ backgroundColor: stage.color }}
+                    ></span>
+                    <span className="text-[10px] font-extrabold uppercase tracking-wide" style={{ color: stage.color }}>
+                      {idx + 1}. {lang === 'ar' ? stage.name : stage.nameEn}
+                    </span>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-xl font-black text-zinc-800 dark:text-zinc-100">{count}</span>
+                    <span className="text-[9px] text-zinc-400 block mt-0.5">
+                      {stage.keywords && stage.keywords.length > 0 
+                        ? (lang === 'ar' ? `دلالات: ${stage.keywords.slice(0, 2).join(', ')}` : `Tags: ${stage.keywords.slice(0, 2).join(', ')}`)
+                        : (lang === 'ar' ? 'تصنيف ذكي' : 'Smart category')}
+                    </span>
+                  </div>
+                </button>
+              );
+            })}
           </div>
 
           {/* MAIN CRM WORKSPACE GRID */}
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
             
             {/* COLUMN 1: CUSTOMERS DIRECTORY (LG:COL-SPAN-3) */}
-            <div className="lg:col-span-3 flex flex-col bg-white dark:bg-zinc-900 border border-zinc-200/40 dark:border-zinc-800/80 rounded-3xl p-4 space-y-4 shadow-xs">
+            <div className="lg:col-span-3 flex flex-col glass-panel rounded-3xl p-4 space-y-4 shadow-xs">
               <div className="space-y-1 text-right">
                 <h3 className="font-extrabold text-sm text-zinc-800 dark:text-zinc-200 flex items-center gap-1.5 justify-end">
                   <span>{lang === 'ar' ? 'دليل العملاء والأرقام الحقيقية' : 'WhatsApp Client Contacts'}</span>
@@ -972,20 +953,13 @@ export default function CustomerFeedback({ currentUser, devices, lang }: Custome
                 {filteredCustomers.length > 0 ? (
                   filteredCustomers.map((cust) => {
                     const isSelected = cust.id === selectedCustomerId;
-                    const stageLabels: Record<string, string> = {
-                      awareness: lang === 'ar' ? 'وعي' : 'Awareness',
-                      consideration: lang === 'ar' ? 'دراسة' : 'Consider',
-                      intent: lang === 'ar' ? 'شراء' : 'Intent',
-                      action: lang === 'ar' ? 'عميل' : 'Converted',
-                      loyalty: lang === 'ar' ? 'ولاء' : 'Loyalty'
-                    };
-                    const stageColor: Record<string, string> = {
-                      awareness: 'bg-indigo-500/10 text-indigo-500',
-                      consideration: 'bg-sky-500/10 text-sky-500',
-                      intent: 'bg-amber-500/10 text-amber-500',
-                      action: 'bg-emerald-500/10 text-emerald-500',
-                      loyalty: 'bg-purple-500/10 text-purple-500'
-                    };
+                    const matchedStage = stagesList.find(s => s.id === cust.stage);
+                    const labelText = matchedStage 
+                      ? (lang === 'ar' ? matchedStage.name : matchedStage.nameEn)
+                      : (lang === 'ar' ? 'غير معروف' : 'Unknown');
+                    const stageStyle = matchedStage 
+                      ? { color: matchedStage.color, backgroundColor: `${matchedStage.color}15` }
+                      : { color: '#71717a', backgroundColor: '#f4f4f5' };
 
                     return (
                       <button
@@ -999,8 +973,11 @@ export default function CustomerFeedback({ currentUser, devices, lang }: Custome
                       >
                         {/* Left Info: Status / Stage badge */}
                         <div className="flex flex-col items-start space-y-1">
-                          <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded-md ${stageColor[cust.stage]}`}>
-                            {stageLabels[cust.stage]}
+                          <span 
+                            className="text-[8px] font-black uppercase px-1.5 py-0.5 rounded-md"
+                            style={stageStyle}
+                          >
+                            {labelText}
                           </span>
                           <span className="text-[9px] text-zinc-400 font-mono">{cust.lastMessageTime}</span>
                         </div>
@@ -1028,7 +1005,7 @@ export default function CustomerFeedback({ currentUser, devices, lang }: Custome
             </div>
 
             {/* COLUMN 2: WHATSAPP CHAT SIMULATOR (LG:COL-SPAN-5) */}
-            <div className="lg:col-span-5 flex flex-col bg-white dark:bg-zinc-900 border border-zinc-200/40 dark:border-zinc-800/80 rounded-3xl overflow-hidden shadow-xs relative">
+            <div className="lg:col-span-5 flex flex-col glass-panel rounded-3xl overflow-hidden shadow-xs relative">
               
               {/* WhatsApp Header Mockup */}
               <div className="bg-[#075e54] dark:bg-zinc-950 p-4 text-white flex items-center justify-between flex-row-reverse z-10">
@@ -1053,8 +1030,10 @@ export default function CustomerFeedback({ currentUser, devices, lang }: Custome
                 </div>
               </div>
 
-              {/* WhatsApp BG Pattern Wrapper with Message Bubbles */}
-              <div className="flex-1 bg-[#efeae2] dark:bg-zinc-950 p-4 min-h-[350px] max-h-[380px] overflow-y-auto space-y-3 relative flex flex-col">
+              <div 
+                ref={chatContainerRef}
+                className="flex-1 bg-[#efeae2] dark:bg-zinc-950 p-4 min-h-[350px] max-h-[380px] overflow-y-auto space-y-3 relative flex flex-col"
+              >
                 <div className="absolute inset-0 bg-[url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png')] opacity-[0.06] dark:opacity-[0.02] pointer-events-none" />
 
                 {/* Simulated timestamp line */}
@@ -1144,7 +1123,7 @@ export default function CustomerFeedback({ currentUser, devices, lang }: Custome
             </div>
 
             {/* COLUMN 3: AI SALES INTELLIGENCE COMPANION (LG:COL-SPAN-4) */}
-            <div className="lg:col-span-4 flex flex-col bg-white dark:bg-zinc-900 border border-zinc-200/40 dark:border-zinc-800/80 rounded-3xl p-5 space-y-4 shadow-xs text-right">
+            <div className="lg:col-span-4 flex flex-col glass-panel rounded-3xl p-5 space-y-4 shadow-xs text-right">
               
               {/* Intent breakdown header */}
               <div className="border-b border-zinc-100 dark:border-zinc-800/60 pb-3">

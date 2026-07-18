@@ -103,6 +103,12 @@ export interface DeviceLink {
   backupStatus?: 'synced' | 'pending' | 'error';
   apiKey?: string;
   webhookUrl?: string;
+  proxyUrl?: string;
+  dailySentCount?: number;
+  maxDailyLimit?: number;
+  lastSentResetDate?: string;
+  browserSignature?: [string, string, string];
+  syncHistory?: boolean;
   knowledgeBaseSources?: Array<{
     id: string;
     name: string;
@@ -112,6 +118,20 @@ export interface DeviceLink {
     url?: string;
     timestamp: string;
   }>;
+  flowStages?: FlowStage[];
+  flowStagesEnabled?: boolean;
+}
+
+export interface FlowStage {
+  id: string;
+  name: string;
+  nameEn: string;
+  color: string;
+  keywords: string[];
+  description?: string;
+  autoResponseText?: string;
+  notifyOnEnter?: boolean;
+  stageAiInstructions?: string;
 }
 
 export interface Campaign {

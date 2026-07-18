@@ -99,8 +99,22 @@ export async function backupSessionToSupabase(deviceId: string): Promise<boolean
         
         // We only sync files (Baileys stores credentials & prekeys in flat JSON files)
         if (stat.isFile()) {
-          // Sanitize null bytes (\u0000) because PostgreSQL text/jsonb fields strictly reject them (Error 22P05)
           const fileContent = fs.readFileSync(filePath, 'utf-8').replace(/\0/g, '');
+          
+          // Validate JSON files to prevent uploading corrupted or half-written session state
+          if (fileName.endsWith('.json')) {
+            try {
+              if (!fileContent.trim()) {
+                console.warn(`[Supabase Backup] Skipping backup of ${fileName} for device ${deviceId} because it is empty.`);
+                continue;
+              }
+              JSON.parse(fileContent);
+            } catch (err) {
+              console.error(`[Supabase Backup] Skipping backup of ${fileName} for device ${deviceId} because it contains invalid JSON:`, err);
+              continue;
+            }
+          }
+
           const id = `${deviceId}/${fileName}`;
           upsertData.push({
             id,
@@ -177,10 +191,16 @@ export async function restoreSessionFromSupabase(deviceId: string): Promise<bool
 
     console.log(`[Supabase Restore] Device ${deviceId}: Found ${data.length} session files in Supabase.`);
 
-    // Ensure local folder exists
-    if (!fs.existsSync(sessionDir)) {
-      fs.mkdirSync(sessionDir, { recursive: true });
+    // Clear local directory first to prevent conflicts with stale key files
+    if (fs.existsSync(sessionDir)) {
+      try {
+        fs.rmSync(sessionDir, { recursive: true, force: true });
+        console.log(`[Supabase Restore] Cleared local session directory for ${deviceId} to prepare for clean restore.`);
+      } catch (rmErr) {
+        console.error(`[Supabase Restore] Failed to clear directory before restore:`, rmErr);
+      }
     }
+    fs.mkdirSync(sessionDir, { recursive: true });
 
     let restoredCount = 0;
     for (const record of data) {

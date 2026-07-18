@@ -22,6 +22,7 @@ import {
   Volume2,
   Zap,
   Download,
+  Trash2,
   ChevronRight,
   Sparkles,
   FileText,
@@ -138,6 +139,7 @@ interface ChatAreaProps {
   onUpdateLabel?: (convId: string, label?: string) => void;
   onToggleAi?: (convId: string, aiPaused: boolean) => void;
   onUpdateVoiceSettings?: (convId: string, enabled: boolean, accent: string, voiceName: string) => void;
+  onDeleteConversation?: (convId: string) => void;
   onBackToList?: () => void;
   lang: 'ar' | 'en';
 }
@@ -178,6 +180,7 @@ export default function ChatArea({
   onUpdateLabel,
   onToggleAi,
   onUpdateVoiceSettings,
+  onDeleteConversation,
   onBackToList,
   lang
 }: ChatAreaProps) {
@@ -318,17 +321,19 @@ export default function ChatArea({
     }
   };
 
-  // Instantly scroll to bottom when active contact changes
+  // Instantly scroll to bottom when active contact or conversation changes
   useEffect(() => {
     scrollToBottom('auto');
     prevMessagesLengthRef.current = messages.length;
-    // Double check scroll after a short delay to accommodate dynamic rendering
-    const timer = setTimeout(() => {
-      scrollToBottom('auto');
-    }, 50);
+    // Multi-stage scroll to ensure container layout finishes rendering before scrolling
+    const timer1 = setTimeout(() => scrollToBottom('auto'), 50);
+    const timer2 = setTimeout(() => scrollToBottom('auto'), 250);
     onMarkRead();
-    return () => clearTimeout(timer);
-  }, [activeContact.id]);
+    return () => {
+      clearTimeout(timer1);
+      clearTimeout(timer2);
+    };
+  }, [activeContact.id, activeConversation?.id]);
 
   // Smooth scroll to bottom upon new messages or typing changes
   useEffect(() => {
@@ -808,6 +813,20 @@ export default function ChatArea({
 
         {/* Header Action Tools */}
         <div className="flex items-center gap-2 md:gap-4.5 text-zinc-500 dark:text-zinc-400">
+          {activeConversation && onDeleteConversation && (
+            <button 
+              onClick={() => {
+                const confirmDel = window.confirm(lang === 'ar' ? '⚠️ هل أنت متأكد تماماً من رغبتك في حذف هذه المحادثة بالكامل ومسح جميع رسائلها نهائياً؟' : '⚠️ Are you sure you want to delete this conversation and purge all its messages permanently?');
+                if (confirmDel) {
+                  onDeleteConversation(activeConversation.id);
+                }
+              }}
+              className="p-1 hover:text-red-500 transition-colors cursor-pointer" 
+              title={lang === 'ar' ? 'حذف المحادثة نهائياً' : 'Delete Chat Permanently'}
+            >
+              <Trash2 className="w-4.5 h-4.5 md:w-5 md:h-5" />
+            </button>
+          )}
           <button 
             onClick={handleExportChat}
             className="p-1 hover:text-emerald-500 transition-colors cursor-pointer" 

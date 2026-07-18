@@ -1,3 +1,5 @@
+import { SocksProxyAgent } from 'socks-proxy-agent';
+import { HttpsProxyAgent } from 'https-proxy-agent';
 import makeWASocket, { useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } from '@whiskeysockets/baileys';
 import pino from 'pino';
 import path from 'path';
@@ -24,6 +26,9 @@ export const activeReconnectTimeouts = new Map<string, NodeJS.Timeout>();
 
 // Map of consecutive conflict disconnects by device ID to prevent infinite fight loops
 export const conflictCounters = new Map<string, number>();
+
+// Map of consecutive reconnection attempts by device ID
+export const reconnectionAttempts = new Map<string, number>();
 
 // Set of device IDs that are currently in the middle of being initialized
 export const sessionsInProgress = new Set<string>();
@@ -521,6 +526,48 @@ export async function startWhatsAppSession(deviceId: string) {
   }
   sessionsInProgress.add(deviceId);
 
+  // Load device configuration for Proxy and Custom settings
+  const device = getAllDevices().find((d) => d.id === deviceId);
+  const proxyUrl = device?.proxyUrl;
+
+  let agent: any = undefined;
+  if (proxyUrl) {
+    console.log(`[WhatsApp Session] Device ${deviceId} is configuring proxy connection: ${proxyUrl}`);
+    try {
+      if (proxyUrl.startsWith('socks')) {
+        agent = new SocksProxyAgent(proxyUrl);
+      } else if (proxyUrl.startsWith('http')) {
+        agent = new HttpsProxyAgent(proxyUrl);
+      }
+    } catch (proxyErr) {
+      console.error(`[WhatsApp Session] Failed to initialize proxy agent for ${proxyUrl}:`, proxyErr);
+    }
+  }
+
+  // Retrieve or generate a persistent browser signature for this device to avoid fingerprint bans
+  let browserSignature: [string, string, string];
+  if (device && device.browserSignature && Array.isArray(device.browserSignature) && device.browserSignature.length === 3) {
+    browserSignature = device.browserSignature as [string, string, string];
+    console.log(`[WhatsApp Session] Using persistent browser fingerprint for device ${deviceId}:`, browserSignature);
+  } else {
+    const browsers = [
+      ['Windows', 'Chrome', '124.0.0'],
+      ['macOS', 'Chrome', '124.0.0'],
+      ['Windows', 'Firefox', '125.0'],
+      ['macOS', 'Firefox', '125.0'],
+      ['macOS', 'Safari', '17.4'],
+      ['Windows', 'Edge', '123.0']
+    ];
+    const selectedBrowser = browsers[Math.floor(Math.random() * browsers.length)];
+    browserSignature = [selectedBrowser[0], selectedBrowser[1], selectedBrowser[2]];
+    
+    if (device) {
+      device.browserSignature = browserSignature;
+      saveDevice(device);
+      console.log(`[WhatsApp Session] Generated and persisted new browser fingerprint for device ${deviceId}:`, browserSignature);
+    }
+  }
+
   // Clear any existing reconnect timeouts
   const existingTimeout = activeReconnectTimeouts.get(deviceId);
   if (existingTimeout) {
@@ -534,12 +581,48 @@ export async function startWhatsAppSession(deviceId: string) {
     closeSocketOnly(deviceId);
 
     const sessionPath = path.join(process.cwd(), 'whatsapp-sessions', deviceId);
+    const credsPath = path.join(sessionPath, 'creds.json');
     
-    // Check if session exists locally, if not or if it's empty, try to restore from Supabase
-    const sessionExists = fs.existsSync(sessionPath) && fs.readdirSync(sessionPath).length > 0;
-    if (!sessionExists) {
-      console.log(`[WhatsApp Session] Local session for device ${deviceId} is missing or empty. Attempting to restore from Supabase...`);
-      await restoreSessionFromSupabase(deviceId);
+    // Validate local credentials. A session is only valid if creds.json exists and is valid JSON
+    let localCredsValid = false;
+    if (fs.existsSync(credsPath)) {
+      try {
+        const content = fs.readFileSync(credsPath, 'utf8');
+        JSON.parse(content);
+        localCredsValid = true;
+      } catch (parseErr: any) {
+        console.warn(`[WhatsApp Session] Detected corrupted local creds.json for device ${deviceId}:`, parseErr.message);
+      }
+    }
+
+    if (!localCredsValid) {
+      console.log(`[WhatsApp Session] Local creds.json for device ${deviceId} is missing or corrupted. Attempting to restore from Supabase...`);
+      // Force clear the directory to prevent file conflicts
+      if (fs.existsSync(sessionPath)) {
+        try {
+          fs.rmSync(sessionPath, { recursive: true, force: true });
+        } catch (rmErr) {
+          console.error(`[WhatsApp Session] Failed to clear partial session path:`, rmErr);
+        }
+      }
+      
+      const restored = await restoreSessionFromSupabase(deviceId);
+      
+      if (restored) {
+        // Re-verify after restore
+        if (fs.existsSync(credsPath)) {
+          try {
+            const content = fs.readFileSync(credsPath, 'utf8');
+            JSON.parse(content);
+            console.log(`[WhatsApp Session] Successfully restored valid session for device ${deviceId} from Supabase.`);
+          } catch (parseErr) {
+            console.error(`[WhatsApp Session] Restored creds.json from Supabase is corrupted. Clearing folder to start fresh.`);
+            try {
+              fs.rmSync(sessionPath, { recursive: true, force: true });
+            } catch (rmErr) {}
+          }
+        }
+      }
     }
 
     let state: any;
@@ -580,6 +663,7 @@ export async function startWhatsAppSession(deviceId: string) {
       syncFullHistory: false,
       shouldSyncHistoryMessage: () => false,
       linkPreviewImageUpload: false,
+      agent,
       // --- Stability Settings ---
       // Keep the TCP connection alive with periodic pings to prevent server-side timeout
       keepAliveIntervalMs: 25000, // 25 second keepalive ping
@@ -588,7 +672,7 @@ export async function startWhatsAppSession(deviceId: string) {
       // Maximum number of message retries before giving up
       maxMsgRetryCount: 5,
       // Emulate a real browser to avoid WhatsApp flagging the connection as a bot
-      browser: ['ChatCore', 'Chrome', '124.0.0'],
+      browser: browserSignature,
       // Do not generate high-res link previews to reduce bandwidth and avoid disconnects
       generateHighQualityLinkPreview: false,
     });
@@ -647,13 +731,10 @@ export async function startWhatsAppSession(deviceId: string) {
         }
 
         const statusCode = (lastDisconnect?.error as any)?.output?.statusCode;
-        // 401 is unauthorized, 400 is badSession, 403 is forbidden, 405 is method not allowed.
-        // These are permanent logouts or corrupted session cases.
-        const loggedOut = statusCode === DisconnectReason.loggedOut || 
-                          statusCode === DisconnectReason.badSession || 
-                          statusCode === 401 || 
-                          statusCode === 403 || 
-                          statusCode === 405;
+        // 401 is unauthorized, which indicates a permanent logout (e.g. unlinked from phone).
+        // 400 (badSession), 403 (forbidden), and 405 (method not allowed) are often transient 
+        // network/file locks and should NOT trigger deletion of local/cloud sessions.
+        const loggedOut = statusCode === DisconnectReason.loggedOut || statusCode === 401;
 
         const err = lastDisconnect?.error;
         const errMsg = (err instanceof Error ? err.message : (typeof err === 'object' ? JSON.stringify(err) : String(err))).toLowerCase();
@@ -727,15 +808,29 @@ export async function startWhatsAppSession(deviceId: string) {
             clearTimeout(prevTimeout);
           }
 
-          // Back off significantly on conflicts
-          let delay = isRestartRequired ? 5000 : 20000 + Math.random() * 10000;
+          // Track consecutive reconnection attempts
+          const attempts = reconnectionAttempts.get(deviceId) || 0;
+          reconnectionAttempts.set(deviceId, attempts + 1);
+
+          // Exponential backoff: base 5s delay, doubling each retry up to 10 minutes max, with jitter
+          const baseDelay = 5000;
+          const maxDelay = 10 * 60 * 1000; // 10 minutes
+          let delay = baseDelay * Math.pow(2, attempts);
+          if (delay > maxDelay) delay = maxDelay;
+          // Add 0-5 seconds of random jitter to prevent synchronized stampedes
+          delay += Math.random() * 5000;
+
+          if (isRestartRequired) {
+            delay = 5000;
+          }
+
           if (isConflict) {
             const conflictCount = conflictCounters.get(deviceId) || 1;
             delay = conflictCount * 30000 + Math.random() * 10000; // 30s for first conflict, 60s for second conflict
             console.log(`[WhatsApp] Backing off connection retry due to conflict. Waiting ${Math.round(delay / 1000)} seconds.`);
           }
 
-          console.log(`Reconnecting to WhatsApp for device ${deviceId} in ${Math.round(delay / 1000)} seconds...`);
+          console.log(`Reconnecting to WhatsApp for device ${deviceId} (attempt ${attempts + 1}) in ${Math.round(delay / 1000)} seconds...`);
           const timeoutId = setTimeout(() => {
             activeReconnectTimeouts.delete(deviceId);
             // Verify device still exists in database and is not deleted
@@ -759,8 +854,9 @@ export async function startWhatsAppSession(deviceId: string) {
         const cleanPhone = fullJid.split(':')[0] || fullJid.split('@')[0] || '';
         console.log(`WhatsApp connected successfully on +${cleanPhone} for device ${deviceId}!`);
 
-        // Clear conflict counter on successful connection open
+        // Clear conflict counter and reconnection attempts on successful connection open
         conflictCounters.set(deviceId, 0);
+        reconnectionAttempts.set(deviceId, 0);
 
         device.status = 'connected';
         device.phoneNumber = `+${cleanPhone}`;
@@ -832,6 +928,15 @@ export async function startWhatsAppSession(deviceId: string) {
 
     // Sync WhatsApp message and contact history on initial connection
     sock.ev.on('messaging-history.set', async ({ chats, contacts, messages }: any) => {
+      // Check if history sync is allowed for this device
+      const dev = getAllDevices().find((d) => d.id === deviceId);
+      const shouldSyncHistory = dev?.syncHistory !== false; // Default is true
+
+      if (!shouldSyncHistory) {
+        console.log(`[WhatsApp Session] Skipping initial history sync for device ${deviceId} due to syncHistory configuration.`);
+        return;
+      }
+
       try {
         if (contacts) {
           await handleBaileysContacts(sock, contacts, deviceId);
@@ -870,7 +975,9 @@ export async function sendBaileysMessage(
   deviceId: string, 
   to: string, 
   text: string, 
-  audioBuffer?: Buffer
+  audioBuffer?: Buffer,
+  pdfBuffer?: Buffer,
+  pdfFilename?: string
 ): Promise<{ success: boolean; error?: string }> {
   const sock = activeSockets.get(deviceId);
   if (!sock) {
@@ -879,6 +986,16 @@ export async function sendBaileysMessage(
 
   try {
     let cleanPhone = to.replace(/[\s\+\-\(\)]/g, '').trim();
+    
+    // Normalize Egyptian mobile numbers to ensure proper delivery
+    if (/^01[0125]\d{8}$/.test(cleanPhone)) {
+      cleanPhone = '20' + cleanPhone.slice(1);
+    } else if (/^1[0125]\d{8}$/.test(cleanPhone)) {
+      cleanPhone = '20' + cleanPhone;
+    } else if (/^00201[0125]\d{8}$/.test(cleanPhone)) {
+      cleanPhone = cleanPhone.slice(2);
+    }
+
     if (!cleanPhone.endsWith('@s.whatsapp.net')) {
       cleanPhone = `${cleanPhone}@s.whatsapp.net`;
     }
@@ -900,6 +1017,25 @@ export async function sendBaileysMessage(
         audio: audioBuffer, 
         mimetype: 'audio/mpeg', // MP3/MPEG compliant MIME type for Gemini TTS audio files
         ptt: true // Send as a real Voice Note
+      });
+    } else if (pdfBuffer) {
+      // Validate that the number is actually registered on WhatsApp
+      try {
+        const [result] = await sock.onWhatsApp(cleanPhone);
+        if (!result || !result.exists) {
+          console.warn(`[Baileys Send] Number ${cleanPhone} is not registered on WhatsApp!`);
+          return { success: false, error: 'Target phone number is not registered on WhatsApp' };
+        }
+        cleanPhone = result.jid;
+      } catch (checkErr) {
+        console.warn(`[Baileys Send] Failed to verify number on WhatsApp, attempting anyway:`, checkErr);
+      }
+
+      await sock.sendMessage(cleanPhone, {
+        document: pdfBuffer,
+        mimetype: 'application/pdf',
+        fileName: pdfFilename || 'ticket.pdf',
+        caption: text
       });
     } else {
       // Validate that the number is actually registered on WhatsApp
@@ -944,4 +1080,22 @@ export function stopWhatsAppSession(deviceId: string) {
     console.log(`[WhatsApp Session] No active socket found for device: ${deviceId}`);
   }
   deleteSessionFolder(deviceId);
+}
+
+/**
+ * Simple Spintax helper to randomly select choices inside brackets like {أهلاً|مرحباً|تحياتي}
+ */
+export function parseSpintax(text: string): string {
+  if (!text) return text;
+  const spintaxPattern = /\{([^{}]+)\}/g;
+  let newText = text;
+  let matches = spintaxPattern.exec(newText);
+  while (matches) {
+    const options = matches[1].split('|');
+    const chosenOption = options[Math.floor(Math.random() * options.length)];
+    newText = newText.replace(matches[0], chosenOption);
+    spintaxPattern.lastIndex = 0;
+    matches = spintaxPattern.exec(newText);
+  }
+  return newText;
 }

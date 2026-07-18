@@ -21,7 +21,8 @@ import ClientsPage from './components/ClientsPage.js';
 import CustomerFeedback from './components/CustomerFeedback.js';
 import AiKnowledgeBase from './components/AiKnowledgeBase.js';
 import ExpoCoreAgent from './components/ExpoCoreAgent.js';
-import { LayoutDashboard, MessageSquare, Smartphone, Megaphone, LogOut, Loader2, Languages, Shield, Users, Group, Star, Brain, Bot } from 'lucide-react';
+import CustomerFlowBuilder from './components/CustomerFlowBuilder.js';
+import { LayoutDashboard, MessageSquare, Smartphone, Megaphone, LogOut, Loader2, Languages, Shield, Users, Group, Star, Brain, Bot, Workflow } from 'lucide-react';
 import { translations } from './translations.js';
 
 // Subtle synthesizer chime for incoming message alerts
@@ -88,7 +89,7 @@ function playOutgoingSound() {
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [authMode, setAuthMode] = useState<'landing' | 'login' | 'register' | 'demo'>('landing');
-  const [viewMode, setViewMode] = useState<'dashboard' | 'admin' | 'clients' | 'chat' | 'whatsapp_settings' | 'marketing' | 'group_manager' | 'feedback' | 'knowledge_base' | 'expocore_agent'>('dashboard');
+  const [viewMode, setViewMode] = useState<'dashboard' | 'admin' | 'clients' | 'chat' | 'whatsapp_settings' | 'marketing' | 'group_manager' | 'feedback' | 'knowledge_base' | 'expocore_agent' | 'customer_flow'>('dashboard');
 
   const [lang, setLang] = useState<'ar' | 'en'>(() => {
     const saved = localStorage.getItem('system_lang');
@@ -153,6 +154,15 @@ export default function App() {
         });
       } catch (err) {
         console.error('Failed to parse saved user', err);
+      }
+    }
+  }, []);
+
+  // Request browser notification permissions
+  useEffect(() => {
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      if (Notification.permission === 'default') {
+        Notification.requestPermission();
       }
     }
   }, []);
@@ -401,6 +411,19 @@ export default function App() {
             setConversations((prev) =>
               prev.map((c) => (c.id === conversation.id ? conversation : c))
             );
+            break;
+          }
+
+          case 'flow:stage_alert': {
+            const { contactName, contactPhone, stageName } = data;
+            if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+              new Notification(lang === 'ar' ? `انتقال العميل: ${contactName}` : `Customer Transition: ${contactName}`, {
+                body: lang === 'ar' 
+                  ? `دخل العميل +${contactPhone} في مرحلة: "${stageName}"` 
+                  : `Customer +${contactPhone} has transitioned into stage: "${stageName}"`,
+                icon: '/favicon.ico'
+              });
+            }
             break;
           }
 
@@ -797,6 +820,31 @@ export default function App() {
     }
   };
 
+  const handleDeleteConversation = async (convId: string) => {
+    try {
+      const res = await fetch(`/api/conversations/${convId}`, {
+        method: 'DELETE',
+        headers: {
+          'x-user-id': currentUser?.id || ''
+        }
+      });
+      if (res.ok) {
+        setConversations(prev => prev.filter(c => c.id !== convId));
+        setMessages(prev => {
+          const updated = { ...prev };
+          delete updated[convId];
+          return updated;
+        });
+        setActiveConversationId(null);
+      } else {
+        alert(lang === 'ar' ? 'فشل حذف المحادثة' : 'Failed to delete conversation');
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Error deleting conversation');
+    }
+  };
+
   const handleUpdateVoiceSettings = (convId: string, enabled: boolean, accent: string, voiceName: string) => {
     setConversations((prev) =>
       prev.map((c) =>
@@ -1027,6 +1075,23 @@ export default function App() {
               {viewMode === 'feedback' && <span className="absolute left-0 top-1/4 bottom-1/4 w-1 bg-[#00a884] rounded-r-md" />}
             </button>
 
+            {/* Customer Flow Journey Tab */}
+            <button
+              onClick={() => setViewMode('customer_flow')}
+              className={`w-12 h-12 rounded-xl flex flex-col items-center justify-center transition-all cursor-pointer relative group ${
+                viewMode === 'customer_flow'
+                  ? 'bg-white/10 text-amber-500 font-bold'
+                  : 'text-zinc-400 hover:text-white hover:bg-white/5'
+              }`}
+              title={lang === 'ar' ? 'رحلة العميل المخصصة | Customer Pipeline Flow' : 'Customer Journey Builder'}
+            >
+              <Workflow className="w-5 h-5 text-amber-500 animate-pulse" />
+              <span className="text-[8px] mt-0.5 font-bold truncate max-w-full px-1 text-amber-500">
+                {lang === 'ar' ? 'رحلة العميل' : 'Customer Flow'}
+              </span>
+              {viewMode === 'customer_flow' && <span className="absolute left-0 top-1/4 bottom-1/4 w-1 bg-amber-500 rounded-r-md" />}
+            </button>
+
             {/* Custom AI Knowledge Base Tab */}
             <button
               onClick={() => setViewMode('knowledge_base')}
@@ -1045,21 +1110,23 @@ export default function App() {
             </button>
 
             {/* ExpoCore WhatsApp Smart Agent Tab */}
-            <button
-              onClick={() => setViewMode('expocore_agent')}
-              className={`w-12 h-12 rounded-xl flex flex-col items-center justify-center transition-all cursor-pointer relative group ${
-                viewMode === 'expocore_agent'
-                  ? 'bg-white/10 text-emerald-400 font-bold'
-                  : 'text-zinc-400 hover:text-white hover:bg-white/5'
-              }`}
-              title={lang === 'ar' ? 'مساعد إكسبو كور | ExpoCore Smart Agent' : 'ExpoCore Smart Agent'}
-            >
-              <Bot className="w-5 h-5 text-emerald-400 animate-pulse" />
-              <span className="text-[8px] mt-0.5 font-bold truncate max-w-full px-1 text-emerald-400">
-                {lang === 'ar' ? 'مساعد إكسبو' : 'Expo Agent'}
-              </span>
-              {viewMode === 'expocore_agent' && <span className="absolute left-0 top-1/4 bottom-1/4 w-1 bg-emerald-400 rounded-r-md" />}
-            </button>
+            {currentUser?.role === 'admin' && (
+              <button
+                onClick={() => setViewMode('expocore_agent')}
+                className={`w-12 h-12 rounded-xl flex flex-col items-center justify-center transition-all cursor-pointer relative group ${
+                  viewMode === 'expocore_agent'
+                    ? 'bg-white/10 text-emerald-400 font-bold'
+                    : 'text-zinc-400 hover:text-white hover:bg-white/5'
+                }`}
+                title={lang === 'ar' ? 'مساعد إكسبو كور | ExpoCore Smart Agent' : 'ExpoCore Smart Agent'}
+              >
+                <Bot className="w-5 h-5 text-emerald-400 animate-pulse" />
+                <span className="text-[8px] mt-0.5 font-bold truncate max-w-full px-1 text-emerald-400">
+                  {lang === 'ar' ? 'مساعد إكسبو' : 'Expo Agent'}
+                </span>
+                {viewMode === 'expocore_agent' && <span className="absolute left-0 top-1/4 bottom-1/4 w-1 bg-emerald-400 rounded-r-md" />}
+              </button>
+            )}
           </div>
         </div>
 
@@ -1139,6 +1206,7 @@ export default function App() {
                   onUpdateLabel={handleUpdateConversationLabel}
                   onToggleAi={handleToggleAiPaused}
                   onUpdateVoiceSettings={handleUpdateVoiceSettings}
+                  onDeleteConversation={handleDeleteConversation}
                   onBackToList={() => setActiveConversationId(null)}
                   lang={lang}
                 />
@@ -1178,6 +1246,8 @@ export default function App() {
             currentUser={currentUser}
             devices={devices}
             campaigns={campaigns}
+            conversations={conversations}
+            messages={messages}
             onRefreshData={fetchBusinessData}
             lang={lang}
           />
@@ -1257,10 +1327,20 @@ export default function App() {
         )}
 
         {/* VIEW 8: EXPOCORE WHATSAPP SMART AGENT */}
-        {viewMode === 'expocore_agent' && (
+        {viewMode === 'expocore_agent' && currentUser?.role === 'admin' && (
           <ExpoCoreAgent
             currentUser={currentUser}
             lang={lang}
+          />
+        )}
+
+        {/* VIEW 9: CUSTOM CUSTOMER JOURNEY PIPELINE BUILDER */}
+        {viewMode === 'customer_flow' && (
+          <CustomerFlowBuilder
+            currentUser={currentUser}
+            devices={devices}
+            lang={lang}
+            onUpdateDeviceAgent={handleUpdateDeviceAgent}
           />
         )}
       </div>
