@@ -3813,9 +3813,24 @@ class OutgoingMessageQueue {
 
       try {
         console.log(`[Queue] Processing message for +${item.to} (Bulk: ${item.isBulk})`);
-        const result = await sendRealWhatsAppMessageDirectly(dbDevice, item.to, item.text, item.mediaType, item.mediaData);
+        let result = await sendRealWhatsAppMessageDirectly(dbDevice, item.to, item.text, item.mediaType, item.mediaData);
         
-        // If sent successfully, increment daily sent count and save to DB (persisting to db-store.json & central Supabase)
+        // Automatic retry engine for non-bulk (chat / AI) messages if socket is transiently reconnecting
+        if (!result.success && !item.isBulk) {
+          for (let retry = 1; retry <= 4; retry++) {
+            console.log(`[Queue Retry Engine] Retrying message delivery to +${item.to} (Attempt ${retry}/4)...`);
+            await new Promise(r => setTimeout(r, 3500));
+            const freshDevices = getAllDevices();
+            const freshDev = freshDevices.find(d => d.id === dbDevice.id) || dbDevice;
+            result = await sendRealWhatsAppMessageDirectly(freshDev, item.to, item.text, item.mediaType, item.mediaData);
+            if (result.success) {
+              console.log(`[Queue Retry Engine] Message successfully delivered to +${item.to} on retry attempt ${retry}!`);
+              break;
+            }
+          }
+        }
+        
+        // If sent successfully, increment daily sent count and save to DB
         if (result.success) {
           dbDevice.dailySentCount = (dbDevice.dailySentCount || 0) + 1;
           saveDevice(dbDevice);
@@ -4827,7 +4842,7 @@ async function startServer() {
               
               // Delay slightly for natural human feel
               setTimeout(async () => {
-                await sendRealWhatsAppMessageDirectly(device, contactPhone, textToSend);
+                const resWa = await sendRealWhatsAppMessage(device, contactPhone, textToSend);
                 
                 const autoMsg: Message = {
                   id: `msg_${Math.random().toString(36).substring(2, 11)}`,
@@ -4836,7 +4851,7 @@ async function startServer() {
                   recipientId: contactId,
                   content: textToSend,
                   type: 'text',
-                  status: 'delivered',
+                  status: resWa.success ? 'delivered' : 'failed',
                   timestamp: new Date().toISOString()
                 };
                 saveMessage(autoMsg);
@@ -4945,7 +4960,7 @@ async function startServer() {
                           
                           // Delay slightly for natural human feel
                           setTimeout(async () => {
-                            await sendRealWhatsAppMessageDirectly(device, contactPhone, textToSend);
+                            const resWa = await sendRealWhatsAppMessage(device, contactPhone, textToSend);
                             
                             const autoMsg: Message = {
                               id: `msg_${Math.random().toString(36).substring(2, 11)}`,
@@ -4954,7 +4969,7 @@ async function startServer() {
                               recipientId: contactId,
                               content: textToSend,
                               type: 'text',
-                              status: 'delivered',
+                              status: resWa.success ? 'delivered' : 'failed',
                               timestamp: new Date().toISOString()
                             };
                             saveMessage(autoMsg);
@@ -5131,7 +5146,7 @@ async function startServer() {
           try { await sock.sendPresenceUpdate('paused', jid); } catch (e) {}
         }
 
-        await sendRealWhatsAppMessageDirectly(device, contactPhone, takeoverReply);
+        const takeoverRes = await sendRealWhatsAppMessage(device, contactPhone, takeoverReply);
         
         const takeoverMsg: Message = {
           id: `msg_${Math.random().toString(36).substring(2, 11)}`,
@@ -5140,7 +5155,7 @@ async function startServer() {
           recipientId: contactId,
           content: takeoverReply,
           type: 'text',
-          status: 'delivered',
+          status: takeoverRes.success ? 'delivered' : 'failed',
           timestamp: new Date().toISOString()
         };
         saveMessage(takeoverMsg);
@@ -5403,11 +5418,12 @@ Formulate your exceptionally smart and professional response now:`;
         try { await sock.sendPresenceUpdate('paused', jid); } catch (e) {}
       }
 
-      console.log(`[AI Agent - Dispatching Reply] Sending reply via device "${device.name}" to +${contactPhone}. Voice: ${!!responseAudioBuffer}`);
-      const sendResult = await sendRealWhatsAppMessageDirectly(
+      console.log(`[AI Agent - Dispatching Reply] Queueing reply via device "${device.name}" to +${contactPhone}. Voice: ${!!responseAudioBuffer}`);
+      const sendResult = await sendRealWhatsAppMessage(
         device,
         contactPhone,
         responseText,
+        false,
         responseAudioBuffer ? 'audio' : 'text',
         responseAudioBuffer ? responseAudioBuffer.toString('base64') : undefined
       );
@@ -5421,7 +5437,7 @@ Formulate your exceptionally smart and professional response now:`;
         content: responseText,
         type: responseAudioBuffer ? 'audio' : 'text',
         mediaUrl: responseAudioBuffer ? `data:audio/mp3;base64,${responseAudioBuffer.toString('base64')}` : undefined,
-        status: (sendResult && sendResult.success) ? 'delivered' : 'sent',
+        status: (sendResult && sendResult.success) ? 'delivered' : 'failed',
         timestamp: new Date().toISOString()
       };
       

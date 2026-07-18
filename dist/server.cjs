@@ -1745,7 +1745,24 @@ function normalizePhoneNumber(raw) {
   return clean;
 }
 async function sendBaileysMessage(deviceId, to, text, audioBuffer, pdfBuffer, pdfFilename, imageBuffer) {
-  const sock = activeSockets.get(deviceId);
+  let sock = activeSockets.get(deviceId);
+  if (!sock) {
+    const fallbackEntry = Array.from(activeSockets.entries())[0];
+    if (fallbackEntry) {
+      sock = fallbackEntry[1];
+    }
+  }
+  if (!sock) {
+    for (let attempt = 1; attempt <= 5; attempt++) {
+      console.log(`[Baileys Send Retry] Waiting for device socket ${deviceId} to complete reconnect (Attempt ${attempt}/5)...`);
+      await new Promise((r) => setTimeout(r, 3e3));
+      sock = activeSockets.get(deviceId) || Array.from(activeSockets.entries())[0]?.[1];
+      if (sock) {
+        console.log(`[Baileys Send Retry] Socket re-established successfully! Proceeding to deliver message.`);
+        break;
+      }
+    }
+  }
   if (!sock) {
     return { success: false, error: "Device connection is offline or starting up" };
   }
@@ -4924,7 +4941,20 @@ var OutgoingMessageQueue = class {
       }
       try {
         console.log(`[Queue] Processing message for +${item.to} (Bulk: ${item.isBulk})`);
-        const result = await sendRealWhatsAppMessageDirectly(dbDevice, item.to, item.text, item.mediaType, item.mediaData);
+        let result = await sendRealWhatsAppMessageDirectly(dbDevice, item.to, item.text, item.mediaType, item.mediaData);
+        if (!result.success && !item.isBulk) {
+          for (let retry = 1; retry <= 4; retry++) {
+            console.log(`[Queue Retry Engine] Retrying message delivery to +${item.to} (Attempt ${retry}/4)...`);
+            await new Promise((r) => setTimeout(r, 3500));
+            const freshDevices = getAllDevices();
+            const freshDev = freshDevices.find((d) => d.id === dbDevice.id) || dbDevice;
+            result = await sendRealWhatsAppMessageDirectly(freshDev, item.to, item.text, item.mediaType, item.mediaData);
+            if (result.success) {
+              console.log(`[Queue Retry Engine] Message successfully delivered to +${item.to} on retry attempt ${retry}!`);
+              break;
+            }
+          }
+        }
         if (result.success) {
           dbDevice.dailySentCount = (dbDevice.dailySentCount || 0) + 1;
           saveDevice(dbDevice);
@@ -5724,7 +5754,7 @@ async function startServer() {
               const textToSend = matchedStage.autoResponseText;
               console.log(`[Flow Automation] Sending auto-response for stage "${matchedStage.name}": "${textToSend}"`);
               setTimeout(async () => {
-                await sendRealWhatsAppMessageDirectly(device, contactPhone, textToSend);
+                const resWa = await sendRealWhatsAppMessage(device, contactPhone, textToSend);
                 const autoMsg = {
                   id: `msg_${Math.random().toString(36).substring(2, 11)}`,
                   conversationId: conv.id,
@@ -5732,7 +5762,7 @@ async function startServer() {
                   recipientId: contactId,
                   content: textToSend,
                   type: "text",
-                  status: "delivered",
+                  status: resWa.success ? "delivered" : "failed",
                   timestamp: (/* @__PURE__ */ new Date()).toISOString()
                 };
                 saveMessage(autoMsg);
@@ -5827,7 +5857,7 @@ async function startServer() {
                           const textToSend = matchedStage.autoResponseText;
                           console.log(`[Background Analyst Automation] Sending auto-response for stage "${matchedStage.name}": "${textToSend}"`);
                           setTimeout(async () => {
-                            await sendRealWhatsAppMessageDirectly(device, contactPhone, textToSend);
+                            const resWa = await sendRealWhatsAppMessage(device, contactPhone, textToSend);
                             const autoMsg = {
                               id: `msg_${Math.random().toString(36).substring(2, 11)}`,
                               conversationId: conv.id,
@@ -5835,7 +5865,7 @@ async function startServer() {
                               recipientId: contactId,
                               content: textToSend,
                               type: "text",
-                              status: "delivered",
+                              status: resWa.success ? "delivered" : "failed",
                               timestamp: (/* @__PURE__ */ new Date()).toISOString()
                             };
                             saveMessage(autoMsg);
@@ -5998,7 +6028,7 @@ async function startServer() {
           } catch (e) {
           }
         }
-        await sendRealWhatsAppMessageDirectly(device, contactPhone, takeoverReply);
+        const takeoverRes = await sendRealWhatsAppMessage(device, contactPhone, takeoverReply);
         const takeoverMsg = {
           id: `msg_${Math.random().toString(36).substring(2, 11)}`,
           conversationId: conv.id,
@@ -6006,7 +6036,7 @@ async function startServer() {
           recipientId: contactId,
           content: takeoverReply,
           type: "text",
-          status: "delivered",
+          status: takeoverRes.success ? "delivered" : "failed",
           timestamp: (/* @__PURE__ */ new Date()).toISOString()
         };
         saveMessage(takeoverMsg);
@@ -6228,11 +6258,12 @@ Formulate your exceptionally smart and professional response now:`;
         } catch (e) {
         }
       }
-      console.log(`[AI Agent - Dispatching Reply] Sending reply via device "${device.name}" to +${contactPhone}. Voice: ${!!responseAudioBuffer}`);
-      const sendResult = await sendRealWhatsAppMessageDirectly(
+      console.log(`[AI Agent - Dispatching Reply] Queueing reply via device "${device.name}" to +${contactPhone}. Voice: ${!!responseAudioBuffer}`);
+      const sendResult = await sendRealWhatsAppMessage(
         device,
         contactPhone,
         responseText,
+        false,
         responseAudioBuffer ? "audio" : "text",
         responseAudioBuffer ? responseAudioBuffer.toString("base64") : void 0
       );
@@ -6244,7 +6275,7 @@ Formulate your exceptionally smart and professional response now:`;
         content: responseText,
         type: responseAudioBuffer ? "audio" : "text",
         mediaUrl: responseAudioBuffer ? `data:audio/mp3;base64,${responseAudioBuffer.toString("base64")}` : void 0,
-        status: sendResult && sendResult.success ? "delivered" : "sent",
+        status: sendResult && sendResult.success ? "delivered" : "failed",
         timestamp: (/* @__PURE__ */ new Date()).toISOString()
       };
       saveMessage(aiMsg);

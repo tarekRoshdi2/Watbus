@@ -1027,7 +1027,28 @@ export async function sendBaileysMessage(
   pdfFilename?: string,
   imageBuffer?: Buffer
 ): Promise<{ success: boolean; error?: string }> {
-  const sock = activeSockets.get(deviceId);
+  let sock = activeSockets.get(deviceId);
+  if (!sock) {
+    // Check fallback active sockets in system
+    const fallbackEntry = Array.from(activeSockets.entries())[0];
+    if (fallbackEntry) {
+      sock = fallbackEntry[1];
+    }
+  }
+
+  // If socket is transiently reconnecting, wait up to 15 seconds for socket to re-establish
+  if (!sock) {
+    for (let attempt = 1; attempt <= 5; attempt++) {
+      console.log(`[Baileys Send Retry] Waiting for device socket ${deviceId} to complete reconnect (Attempt ${attempt}/5)...`);
+      await new Promise((r) => setTimeout(r, 3000));
+      sock = activeSockets.get(deviceId) || Array.from(activeSockets.entries())[0]?.[1];
+      if (sock) {
+        console.log(`[Baileys Send Retry] Socket re-established successfully! Proceeding to deliver message.`);
+        break;
+      }
+    }
+  }
+
   if (!sock) {
     return { success: false, error: 'Device connection is offline or starting up' };
   }
