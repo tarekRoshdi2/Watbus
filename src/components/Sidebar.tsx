@@ -5,7 +5,7 @@
 
 import React, { useState } from 'react';
 import { Search, UserPlus, LogOut, Check, CheckCheck, Smartphone, Sparkles, Filter, Users } from 'lucide-react';
-import { User, Conversation, DeviceLink } from '../types.js';
+import { User, Conversation, DeviceLink, Folder } from '../types.js';
 import { translations } from '../translations.js';
 
 interface SidebarProps {
@@ -19,6 +19,11 @@ interface SidebarProps {
   onAddNewContact: (username: string, deviceId: string) => void;
   devices: DeviceLink[];
   lang: 'ar' | 'en';
+  folders: Folder[];
+  selectedFolderId: string | null;
+  onSelectFolder: (folderId: string | null) => void;
+  onCreateFolder: (name: string, color?: string) => Promise<void>;
+  onDeleteFolder: (folderId: string) => Promise<void>;
 }
 
 export default function Sidebar({
@@ -31,7 +36,12 @@ export default function Sidebar({
   onSelectConversation,
   onAddNewContact,
   devices,
-  lang
+  lang,
+  folders = [],
+  selectedFolderId,
+  onSelectFolder,
+  onCreateFolder,
+  onDeleteFolder
 }: SidebarProps) {
   const t = translations[lang];
   const [searchText, setSearchText] = useState<string>('');
@@ -68,7 +78,8 @@ export default function Sidebar({
       const matchesSearch = c.recipient.username.toLowerCase().includes(searchText.toLowerCase());
       const matchesLabel = selectedLabelFilter === 'All' || c.label === selectedLabelFilter;
       const matchesDevice = selectedDeviceId === 'all' || c.deviceId === selectedDeviceId;
-      return matchesSearch && matchesLabel && matchesDevice;
+      const matchesFolder = selectedFolderId === null || c.folderId === selectedFolderId;
+      return matchesSearch && matchesLabel && matchesDevice && matchesFolder;
     })
     .sort((a, b) => {
       const timeA = latestMessages[a.id]?.timestamp || a.updatedAt || a.createdAt;
@@ -211,6 +222,79 @@ export default function Sidebar({
         </div>
       </div>
 
+      {/* Folder Tabs Scroll Bar */}
+      <div className="px-3 pb-1 pt-2.5 bg-zinc-50/50 dark:bg-zinc-950/20 border-b border-zinc-100 dark:border-zinc-800 flex items-center gap-1.5 overflow-x-auto scrollbar-none">
+        {/* Folder tab: All */}
+        <button
+          onClick={() => onSelectFolder(null)}
+          className={`px-3 py-1.5 rounded-xl text-xs font-bold cursor-pointer whitespace-nowrap transition-all flex items-center gap-1 ${
+            selectedFolderId === null
+              ? 'bg-[#00a884] text-white shadow-xs'
+              : 'bg-white dark:bg-zinc-900 text-zinc-650 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-800/80 hover:bg-zinc-50'
+          }`}
+        >
+          <span>{lang === 'ar' ? '📁 الكل' : '📁 All'}</span>
+        </button>
+
+        {/* Custom folders */}
+        {folders.map((folder) => {
+          const isSelected = selectedFolderId === folder.id;
+          const folderCount = conversations.filter(c => c.folderId === folder.id).length;
+          return (
+            <div key={folder.id} className="relative group flex items-center">
+              <button
+                onClick={() => onSelectFolder(folder.id)}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold cursor-pointer whitespace-nowrap transition-all flex items-center gap-1.5 ${
+                  isSelected
+                    ? 'bg-zinc-900 text-white dark:bg-zinc-800 shadow-xs'
+                    : 'bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-800/80 hover:bg-zinc-50'
+                }`}
+                style={isSelected ? { borderLeft: `3px solid ${folder.color || '#00a884'}` } : {}}
+              >
+                <span 
+                  className="w-2 h-2 rounded-full animate-pulse" 
+                  style={{ backgroundColor: folder.color || '#00a884' }}
+                />
+                <span>{folder.name}</span>
+                <span className="text-[10px] bg-zinc-100 dark:bg-zinc-800 px-1 py-0.2 rounded-md font-mono text-zinc-500">
+                  {folderCount}
+                </span>
+              </button>
+              
+              {/* Delete button (visible on hover) */}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (confirm(lang === 'ar' ? 'هل أنت متأكد من حذف هذا المجلد؟ لن يتم حذف المحادثات.' : 'Are you sure you want to delete this folder? Chats will not be deleted.')) {
+                    onDeleteFolder(folder.id);
+                  }
+                }}
+                className="absolute -top-1 -right-1 bg-rose-500 hover:bg-rose-600 text-white w-3.5 h-3.5 rounded-full flex items-center justify-center text-[8px] opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer shadow-sm z-10"
+                title={lang === 'ar' ? 'حذف المجلد' : 'Delete Folder'}
+              >
+                ×
+              </button>
+            </div>
+          );
+        })}
+
+        {/* Add Folder Button */}
+        <button
+          onClick={() => {
+            const name = prompt(lang === 'ar' ? 'أدخل اسم المجلد الجديد:' : 'Enter name for new folder:');
+            if (name && name.trim()) {
+              const colors = ['#3b82f6', '#f59e0b', '#ec4899', '#8b5cf6', '#ef4444', '#00a884'];
+              const randomColor = colors[Math.floor(Math.random() * colors.length)];
+              onCreateFolder(name.trim(), randomColor);
+            }
+          }}
+          className="px-2.5 py-1.5 rounded-xl text-xs font-bold border border-dashed border-zinc-300 dark:border-zinc-800 text-zinc-500 hover:text-emerald-500 hover:border-emerald-500 transition-colors cursor-pointer whitespace-nowrap"
+          title={lang === 'ar' ? 'إنشاء مجلد جديد' : 'Create New Folder'}
+        >
+          + {lang === 'ar' ? 'مجلد' : 'Folder'}
+        </button>
+      </div>
+
       {/* Quick Filter Badges Scroll Bar */}
       <div className="px-3 pb-2.5 pt-1.5 bg-white dark:bg-zinc-900 border-b border-zinc-100 dark:border-zinc-800 flex items-center gap-1.5 overflow-x-auto scrollbar-none">
         {LABELS.map((lbl) => {
@@ -281,8 +365,16 @@ export default function Sidebar({
                   </span>
                   
                   <div className="flex items-center gap-1.5 min-w-0 max-w-[70%]">
+                    {c.folderId && folders.find(f => f.id === c.folderId) && (
+                      <span 
+                        className="text-[9px] font-black px-1.5 py-0.5 rounded-sm text-white block whitespace-nowrap"
+                        style={{ backgroundColor: folders.find(f => f.id === c.folderId)?.color || '#00a884' }}
+                      >
+                        {folders.find(f => f.id === c.folderId)?.name}
+                      </span>
+                    )}
                     {c.label && (
-                      <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-600">
+                      <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-600 block whitespace-nowrap">
                         {LABELS.find(l => l.name === c.label)?.displayName || c.label}
                       </span>
                     )}

@@ -970,6 +970,52 @@ export async function startWhatsAppSession(deviceId: string) {
 }
 
 /**
+ * Automatically normalizes any input phone string to international WhatsApp format.
+ * Supports Egypt (20), UAE (971), KSA (966), Kuwait (965), Qatar (974), Oman (968), Jordan (962), etc.
+ */
+export function normalizePhoneNumber(raw: string): string {
+  if (!raw) return '';
+  let clean = raw.replace(/[\s\+\-\(\)]/g, '').trim();
+
+  // Remove leading '00'
+  if (clean.startsWith('00')) {
+    clean = clean.substring(2);
+  }
+
+  // Already international format checks
+  if (/^201[0125]\d{8}$/.test(clean)) return clean;
+  if (/^9715\d{8}$/.test(clean)) return clean;
+  if (/^9665\d{8}$/.test(clean)) return clean;
+  if (/^965\d{8}$/.test(clean)) return clean;
+
+  // Local Egyptian mobile (010, 011, 012, 015 -> 201x...)
+  if (/^01[0125]\d{8}$/.test(clean)) {
+    return '20' + clean.substring(1);
+  }
+  // Local Egyptian mobile without leading zero (10, 11, 12, 15 -> 201x...)
+  if (/^1[0125]\d{8}$/.test(clean)) {
+    return '20' + clean;
+  }
+
+  // Local UAE mobile (050, 052, 054, 055, 056, 058 -> 9715x...)
+  if (/^05[024568]\d{7}$/.test(clean)) {
+    return '971' + clean.substring(1);
+  }
+
+  // Local Saudi Arabia mobile (051, 053, 057, 059 -> 9665x...)
+  if (/^05[1379]\d{7}$/.test(clean)) {
+    return '966' + clean.substring(1);
+  }
+
+  // Generic 10-digit Gulf number starting with 05 -> 9715...
+  if (/^05\d{8}$/.test(clean)) {
+    return '971' + clean.substring(1);
+  }
+
+  return clean;
+}
+
+/**
  * Send a real message using Baileys
  */
 export async function sendBaileysMessage(
@@ -987,16 +1033,7 @@ export async function sendBaileysMessage(
   }
 
   try {
-    let cleanPhone = to.replace(/[\s\+\-\(\)]/g, '').trim();
-    
-    // Normalize Egyptian mobile numbers to ensure proper delivery
-    if (/^01[0125]\d{8}$/.test(cleanPhone)) {
-      cleanPhone = '20' + cleanPhone.slice(1);
-    } else if (/^1[0125]\d{8}$/.test(cleanPhone)) {
-      cleanPhone = '20' + cleanPhone;
-    } else if (/^00201[0125]\d{8}$/.test(cleanPhone)) {
-      cleanPhone = cleanPhone.slice(2);
-    }
+    let cleanPhone = normalizePhoneNumber(to);
 
     if (!cleanPhone.endsWith('@s.whatsapp.net')) {
       cleanPhone = `${cleanPhone}@s.whatsapp.net`;

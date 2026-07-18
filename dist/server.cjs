@@ -354,10 +354,12 @@ __export(db_exports, {
   deleteCampaign: () => deleteCampaign,
   deleteConversation: () => deleteConversation,
   deleteDevice: () => deleteDevice,
+  deleteFolder: () => deleteFolder,
   deleteUser: () => deleteUser,
   getActiveStatuses: () => getActiveStatuses,
   getAllCampaigns: () => getAllCampaigns,
   getAllDevices: () => getAllDevices,
+  getAllFolders: () => getAllFolders,
   getAllUsers: () => getAllUsers,
   getConversationsForUser: () => getConversationsForUser,
   getMessagesForConversation: () => getMessagesForConversation,
@@ -375,6 +377,7 @@ __export(db_exports, {
   saveCampaign: () => saveCampaign,
   saveConversation: () => saveConversation,
   saveDevice: () => saveDevice,
+  saveFolder: () => saveFolder,
   saveMessage: () => saveMessage,
   saveOtpLog: () => saveOtpLog,
   saveOtpSettings: () => saveOtpSettings,
@@ -402,7 +405,8 @@ function getInitialDb() {
     otpLogs: [],
     otpSettings: {
       template: "\u0645\u0631\u062D\u0628\u0627\u064B \u0628\u0643 \u0641\u064A ChatCore. \u0631\u0645\u0632 \u0627\u0644\u062A\u062D\u0642\u0642 \u0627\u0644\u062E\u0627\u0635 \u0628\u0643 \u0647\u0648: {otp}. \u064A\u0631\u062C\u0649 \u0625\u062F\u062E\u0627\u0644\u0647 \u0641\u064A \u0627\u0644\u0645\u0648\u0642\u0639 \u0644\u062A\u0641\u0639\u064A\u0644 \u062D\u0633\u0627\u0628\u0643."
-    }
+    },
+    folders: {}
   };
 }
 function resetDbCache() {
@@ -439,6 +443,9 @@ function readDb() {
       parsed.otpSettings = {
         template: "\u0645\u0631\u062D\u0628\u0627\u064B \u0628\u0643 \u0641\u064A ChatCore. \u0631\u0645\u0632 \u0627\u0644\u062A\u062D\u0642\u0642 \u0627\u0644\u062E\u0627\u0635 \u0628\u0643 \u0647\u0648: {otp}. \u064A\u0631\u062C\u0649 \u0625\u062F\u062E\u0627\u0644\u0647 \u0641\u064A \u0627\u0644\u0645\u0648\u0642\u0639 \u0644\u062A\u0641\u0639\u064A\u0644 \u062D\u0633\u0627\u0628\u0643."
       };
+    }
+    if (!parsed.folders) {
+      parsed.folders = {};
     }
     cachedDb = parsed;
     return cachedDb;
@@ -890,6 +897,33 @@ function saveOtpSettings(settings) {
   const db = readDb();
   db.otpSettings = settings;
   writeDb(db);
+}
+function getAllFolders(ownerId) {
+  const db = readDb();
+  const allFolders = Object.values(db.folders || {});
+  if (ownerId) {
+    return allFolders.filter((f) => f.ownerId === ownerId);
+  }
+  return allFolders;
+}
+function saveFolder(folder) {
+  const db = readDb();
+  if (!db.folders) db.folders = {};
+  db.folders[folder.id] = folder;
+  writeDb(db);
+  return folder;
+}
+function deleteFolder(folderId) {
+  const db = readDb();
+  if (db.folders && db.folders[folderId]) {
+    delete db.folders[folderId];
+    Object.values(db.conversations).forEach((c) => {
+      if (c.folderId === folderId) {
+        c.folderId = void 0;
+      }
+    });
+    writeDb(db);
+  }
 }
 var import_fs2, import_path2, DB_FILE, META_AI_USER, ADMIN_USER, cachedDb;
 var init_db = __esm({
@@ -1683,20 +1717,40 @@ async function startWhatsAppSession(deviceId) {
     sessionsInProgress.delete(deviceId);
   }
 }
+function normalizePhoneNumber(raw) {
+  if (!raw) return "";
+  let clean = raw.replace(/[\s\+\-\(\)]/g, "").trim();
+  if (clean.startsWith("00")) {
+    clean = clean.substring(2);
+  }
+  if (/^201[0125]\d{8}$/.test(clean)) return clean;
+  if (/^9715\d{8}$/.test(clean)) return clean;
+  if (/^9665\d{8}$/.test(clean)) return clean;
+  if (/^965\d{8}$/.test(clean)) return clean;
+  if (/^01[0125]\d{8}$/.test(clean)) {
+    return "20" + clean.substring(1);
+  }
+  if (/^1[0125]\d{8}$/.test(clean)) {
+    return "20" + clean;
+  }
+  if (/^05[024568]\d{7}$/.test(clean)) {
+    return "971" + clean.substring(1);
+  }
+  if (/^05[1379]\d{7}$/.test(clean)) {
+    return "966" + clean.substring(1);
+  }
+  if (/^05\d{8}$/.test(clean)) {
+    return "971" + clean.substring(1);
+  }
+  return clean;
+}
 async function sendBaileysMessage(deviceId, to, text, audioBuffer, pdfBuffer, pdfFilename, imageBuffer) {
   const sock = activeSockets.get(deviceId);
   if (!sock) {
     return { success: false, error: "Device connection is offline or starting up" };
   }
   try {
-    let cleanPhone = to.replace(/[\s\+\-\(\)]/g, "").trim();
-    if (/^01[0125]\d{8}$/.test(cleanPhone)) {
-      cleanPhone = "20" + cleanPhone.slice(1);
-    } else if (/^1[0125]\d{8}$/.test(cleanPhone)) {
-      cleanPhone = "20" + cleanPhone;
-    } else if (/^00201[0125]\d{8}$/.test(cleanPhone)) {
-      cleanPhone = cleanPhone.slice(2);
-    }
+    let cleanPhone = normalizePhoneNumber(to);
     if (!cleanPhone.endsWith("@s.whatsapp.net")) {
       cleanPhone = `${cleanPhone}@s.whatsapp.net`;
     }
@@ -2793,6 +2847,49 @@ app.delete("/api/conversations/:id", (req, res) => {
   });
   res.json({ success: true, message: "Conversation deleted successfully and all messages purged" });
 });
+app.get("/api/folders", (req, res) => {
+  const tenantId = getTenantId(req);
+  const folders = getAllFolders(tenantId);
+  res.json({ folders });
+});
+app.post("/api/folders", (req, res) => {
+  const tenantId = getTenantId(req);
+  const { id, name, color } = req.body;
+  if (!name) {
+    res.status(400).json({ error: "Folder name is required" });
+    return;
+  }
+  const folderId = id || `folder_${Date.now()}`;
+  const folder = {
+    id: folderId,
+    name,
+    color: color || "#00a884",
+    ownerId: tenantId
+  };
+  saveFolder(folder);
+  broadcast({ type: "folder:update", folder });
+  res.json({ success: true, folder });
+});
+app.delete("/api/folders/:id", (req, res) => {
+  const { id } = req.params;
+  deleteFolder(id);
+  broadcast({ type: "folder:delete", folderId: id });
+  res.json({ success: true });
+});
+app.post("/api/conversations/:convId/folder", (req, res) => {
+  const { convId } = req.params;
+  const { folderId } = req.body;
+  const db = readDb();
+  const conv = db.conversations[convId];
+  if (!conv) {
+    res.status(404).json({ error: "Conversation not found" });
+    return;
+  }
+  conv.folderId = folderId || void 0;
+  writeDb(db);
+  broadcast({ type: "conversation:update", conversation: conv });
+  res.json({ success: true, conversation: conv });
+});
 app.post("/api/conversations", (req, res) => {
   const senderId = req.body.senderId || req.body.userId;
   let recipientId = req.body.recipientId || req.body.targetUsername;
@@ -2803,10 +2900,12 @@ app.post("/api/conversations", (req, res) => {
   let recipient = getUser(recipientId) || getUserByUsername2(recipientId);
   if (!recipient) {
     const cleanId = recipientId.trim();
-    const id = cleanId.startsWith("contact_") ? cleanId : `contact_${cleanId.replace(/[^\d]/g, "")}`;
+    const rawNumber = cleanId.replace(/^contact_/, "");
+    const normalizedNumber = normalizePhoneNumber(rawNumber);
+    const id = `contact_${normalizedNumber}`;
     recipient = {
       id,
-      username: cleanId,
+      username: `+${normalizedNumber}`,
       avatarUrl: `https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80`,
       statusText: "WhatsApp Contact",
       isOnline: false,
@@ -3070,6 +3169,27 @@ app.post("/api/users/:id/quick-replies", (req, res) => {
   }
   user.quickReplies = quickReplies;
   saveUser(user);
+  res.json({ success: true, user });
+});
+app.post("/api/users/:id/profile", (req, res) => {
+  const { id } = req.params;
+  const { username, email, password, avatarUrl, requestedPlan, paymentProofUrl } = req.body;
+  const user = getUser(id);
+  if (!user) {
+    res.status(404).json({ error: "User not found" });
+    return;
+  }
+  if (username !== void 0) user.username = username;
+  if (email !== void 0) user.email = email;
+  if (password !== void 0) user.password = password;
+  if (avatarUrl !== void 0) user.avatarUrl = avatarUrl;
+  if (requestedPlan !== void 0) {
+    user.requestedPlan = requestedPlan;
+    user.subscriptionStatus = "inactive";
+  }
+  if (paymentProofUrl !== void 0) user.paymentProofUrl = paymentProofUrl;
+  saveUser(user);
+  broadcast({ type: "user:update", user });
   res.json({ success: true, user });
 });
 app.post("/api/conversations/:convId/voice-settings", (req, res) => {
@@ -4134,6 +4254,7 @@ function getTenantId(req) {
 }
 app.get("/api/devices", (req, res) => {
   const tenantId = getTenantId(req);
+  const db = readDb();
   const devices = getAllDevices(tenantId).map((d) => {
     let modified = false;
     if (!d.apiKey) {
@@ -4158,7 +4279,17 @@ app.get("/api/devices", (req, res) => {
         });
       }
     }
-    return d;
+    const deviceConvIds = new Set(
+      Object.values(db.conversations).filter((c) => c.deviceId === d.id).map((c) => c.id)
+    );
+    const deviceMessages = db.messages.filter((m) => deviceConvIds.has(m.conversationId));
+    const sentCount = deviceMessages.filter((m) => !m.senderId.startsWith("contact_")).length;
+    const receivedCount = deviceMessages.filter((m) => m.senderId.startsWith("contact_")).length;
+    return {
+      ...d,
+      sentCount,
+      receivedCount
+    };
   });
   res.json({ devices });
 });
@@ -5593,7 +5724,7 @@ async function startServer() {
               const textToSend = matchedStage.autoResponseText;
               console.log(`[Flow Automation] Sending auto-response for stage "${matchedStage.name}": "${textToSend}"`);
               setTimeout(async () => {
-                await sendBaileysMessage(deviceId, jid, textToSend);
+                await sendRealWhatsAppMessageDirectly(device, contactPhone, textToSend);
                 const autoMsg = {
                   id: `msg_${Math.random().toString(36).substring(2, 11)}`,
                   conversationId: conv.id,
@@ -5696,7 +5827,7 @@ async function startServer() {
                           const textToSend = matchedStage.autoResponseText;
                           console.log(`[Background Analyst Automation] Sending auto-response for stage "${matchedStage.name}": "${textToSend}"`);
                           setTimeout(async () => {
-                            await sendBaileysMessage(deviceId, jid, textToSend);
+                            await sendRealWhatsAppMessageDirectly(device, contactPhone, textToSend);
                             const autoMsg = {
                               id: `msg_${Math.random().toString(36).substring(2, 11)}`,
                               conversationId: conv.id,
@@ -5867,7 +5998,7 @@ async function startServer() {
           } catch (e) {
           }
         }
-        await sendBaileysMessage(deviceId, jid, takeoverReply);
+        await sendRealWhatsAppMessageDirectly(device, contactPhone, takeoverReply);
         const takeoverMsg = {
           id: `msg_${Math.random().toString(36).substring(2, 11)}`,
           conversationId: conv.id,
@@ -5911,7 +6042,7 @@ async function startServer() {
           } catch (e) {
           }
         }
-        await sendBaileysMessage(deviceId, jid, quotaMsg.content);
+        await sendRealWhatsAppMessageDirectly(device, contactPhone, quotaMsg.content);
         return;
       }
       if (ai) {
@@ -6098,7 +6229,13 @@ Formulate your exceptionally smart and professional response now:`;
         }
       }
       console.log(`[AI Agent - Dispatching Reply] Sending reply via device "${device.name}" to +${contactPhone}. Voice: ${!!responseAudioBuffer}`);
-      const sendResult = await sendBaileysMessage(deviceId, jid, responseText, responseAudioBuffer || void 0);
+      const sendResult = await sendRealWhatsAppMessageDirectly(
+        device,
+        contactPhone,
+        responseText,
+        responseAudioBuffer ? "audio" : "text",
+        responseAudioBuffer ? responseAudioBuffer.toString("base64") : void 0
+      );
       const aiMsg = {
         id: `msg_${Math.random().toString(36).substring(2, 11)}`,
         conversationId: conv.id,

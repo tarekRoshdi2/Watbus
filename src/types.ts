@@ -36,6 +36,7 @@ export interface Conversation {
   label?: string; // CRM labels like 'Lead', 'VIP', 'Pending', etc.
   deviceId?: string; // The ID of the WhatsApp device/account this conversation belongs to
   aiPaused?: boolean; // Explicit field to pause/mute the AI Agent for human takeover
+  folderId?: string; // The custom folder this conversation is categorized under
   voiceSettings?: {
     enabled: boolean;
     accent: string;       // 'eg' | 'sa' | 'lb' | 'msa' | 'en_us' | 'en_uk'
@@ -44,6 +45,19 @@ export interface Conversation {
   adminReport?: {
     content: string;
     updatedAt: string;
+  };
+  aiAnalysis?: {
+    intent?: string;
+    intentEn?: string;
+    confidence?: number;
+    summary?: string;
+    summaryEn?: string;
+    keyNeeds?: string[];
+    keyNeedsEn?: string[];
+    recommendedAction?: string;
+    recommendedActionEn?: string;
+    draftReply?: string;
+    draftReplyEn?: string;
   };
 }
 
@@ -108,6 +122,8 @@ export interface DeviceLink {
   maxDailyLimit?: number;
   lastSentResetDate?: string;
   browserSignature?: [string, string, string];
+  sentCount?: number;
+  receivedCount?: number;
   syncHistory?: boolean;
   knowledgeBaseSources?: Array<{
     id: string;
@@ -198,4 +214,13 @@ export type WsEvent =
   | { type: 'status:new'; statusStory: StatusStory }
   | { type: 'status:view'; statusId: string; viewerId: string }
   | { type: 'campaign:update'; campaign: Campaign }
-  | { type: 'device:update'; device: DeviceLink };
+  | { type: 'device:update'; device: DeviceLink }
+  | { type: 'folder:update'; folder: Folder }
+  | { type: 'folder:delete'; folderId: string };
+
+export interface Folder {
+  id: string;
+  name: string;
+  color?: string; // Color code (badge color)
+  ownerId?: string; // SaaS tenant isolation
+}

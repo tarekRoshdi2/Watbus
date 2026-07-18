@@ -32,7 +32,7 @@ import {
   PhoneOff,
   Loader2
 } from 'lucide-react';
-import { User, Message, Conversation } from '../types.js';
+import { User, Message, Conversation, Folder } from '../types.js';
 import { translations } from '../translations.js';
 
 // Generates a beautiful 100% compliant WAV chime (C5 -> E5 -> G5) to avoid playback errors in sandbox/iframe
@@ -142,6 +142,8 @@ interface ChatAreaProps {
   onDeleteConversation?: (convId: string) => void;
   onBackToList?: () => void;
   lang: 'ar' | 'en';
+  folders?: Folder[];
+  onMoveToFolder?: (convId: string, folderId: string | undefined) => void;
 }
 
 // Visual sound waves for simulated recording
@@ -182,7 +184,9 @@ export default function ChatArea({
   onUpdateVoiceSettings,
   onDeleteConversation,
   onBackToList,
-  lang
+  lang,
+  folders = [],
+  onMoveToFolder
 }: ChatAreaProps) {
   const t = translations[lang];
   const crmLabelsList = [
@@ -797,6 +801,30 @@ export default function ChatArea({
                 </div>
               )}
 
+              {/* Folder Selector Dropdown */}
+              {activeConversation && onMoveToFolder && folders.length > 0 && (
+                <div className="flex items-center gap-1 bg-zinc-200/50 dark:bg-zinc-800/80 px-1.5 py-0.5 rounded-full border border-zinc-200/40 dark:border-zinc-700/50">
+                  <span className="text-[9px] md:text-[10px] text-zinc-500 dark:text-zinc-400 font-medium">{lang === 'ar' ? '📁' : '📁'}</span>
+                  <select
+                     value={activeConversation.folderId || ''}
+                     onChange={(e) => {
+                       const val = e.target.value;
+                       onMoveToFolder(activeConversation.id, val || undefined);
+                     }}
+                     className="text-[9px] md:text-[10px] font-bold bg-transparent text-zinc-700 dark:text-zinc-300 outline-none cursor-pointer hover:text-emerald-500 dark:hover:text-emerald-400 transition-colors"
+                  >
+                    <option value="" className="bg-white dark:bg-zinc-900">
+                      {lang === 'ar' ? 'بلا مجلد' : 'No Folder'}
+                    </option>
+                    {folders.map((f) => (
+                      <option key={f.id} value={f.id} className="bg-white dark:bg-zinc-900">
+                        {f.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
               {/* AI Responder Toggle */}
               {activeConversation && onToggleAi && (
                 <button
@@ -1037,7 +1065,7 @@ export default function ChatArea({
                 )}
 
                 {/* Document/PDF Message */}
-                {msg.type === 'document' && msg.mediaUrl && (
+                {msg.type === 'document' && (
                   <div className="flex items-center gap-3 p-2 bg-black/5 dark:bg-white/5 rounded-lg border border-black/10 dark:border-white/10 min-w-[200px] mb-1">
                     <FileText className="w-8 h-8 text-red-500 flex-shrink-0" />
                     <div className="flex-1 min-w-0">
@@ -1046,13 +1074,17 @@ export default function ChatArea({
                       </p>
                       <span className="text-[10px] text-zinc-500">PDF Document</span>
                     </div>
-                    <a
-                      href={msg.mediaUrl}
-                      download={msg.content || 'document.pdf'}
-                      className="p-1.5 hover:bg-zinc-200 dark:hover:bg-zinc-750 rounded-full text-zinc-600 dark:text-zinc-300"
-                    >
-                      <Download className="w-4 h-4" />
-                    </a>
+                    {msg.mediaUrl ? (
+                      <a
+                        href={msg.mediaUrl}
+                        download={msg.content || 'document.pdf'}
+                        className="p-1.5 hover:bg-zinc-200 dark:hover:bg-zinc-750 rounded-full text-zinc-600 dark:text-zinc-300"
+                      >
+                        <Download className="w-4 h-4" />
+                      </a>
+                    ) : (
+                      <span className="text-[10px] text-zinc-400 font-medium italic select-none">واتساب</span>
+                    )}
                   </div>
                 )}
 

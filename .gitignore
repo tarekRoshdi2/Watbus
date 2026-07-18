@@ -1,7 +1,8 @@
 node_modules/
-whatsapp-sessions/
-db-store.json
-.env
-startup-error.log
-.env.local
-.env.production
+build/
+# dist/ allowed for Hostinger deployment
+coverage/
+.DS_Store
+*.log
+.env*
+!.env.example

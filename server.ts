@@ -93,8 +93,12 @@ import {
   getOtpLogs,
   saveOtpLog,
   getOtpSettings,
-  saveOtpSettings
+  saveOtpSettings,
+  getAllFolders,
+  saveFolder,
+  deleteFolder
 } from './src/db.js';
+import { Folder } from './src/types.js';
 
 import {
   isSupabaseConfigured,
@@ -120,7 +124,8 @@ import {
   resolveLidToPhone,
   sessionsInProgress,
   hasSavedSession,
-  parseSpintax
+  parseSpintax,
+  normalizePhoneNumber
 } from './src/whatsapp.js';
 
 import { downloadMediaMessage } from '@whiskeysockets/baileys';
@@ -1307,6 +1312,54 @@ app.delete('/api/conversations/:id', (req, res) => {
   res.json({ success: true, message: 'Conversation deleted successfully and all messages purged' });
 });
 
+// Custom Chat Folders Endpoints
+app.get('/api/folders', (req, res) => {
+  const tenantId = getTenantId(req);
+  const folders = getAllFolders(tenantId);
+  res.json({ folders });
+});
+
+app.post('/api/folders', (req, res) => {
+  const tenantId = getTenantId(req);
+  const { id, name, color } = req.body;
+  if (!name) {
+    res.status(400).json({ error: 'Folder name is required' });
+    return;
+  }
+  const folderId = id || `folder_${Date.now()}`;
+  const folder: Folder = {
+    id: folderId,
+    name,
+    color: color || '#00a884',
+    ownerId: tenantId
+  };
+  saveFolder(folder);
+  broadcast({ type: 'folder:update', folder });
+  res.json({ success: true, folder });
+});
+
+app.delete('/api/folders/:id', (req, res) => {
+  const { id } = req.params;
+  deleteFolder(id);
+  broadcast({ type: 'folder:delete', folderId: id });
+  res.json({ success: true });
+});
+
+app.post('/api/conversations/:convId/folder', (req, res) => {
+  const { convId } = req.params;
+  const { folderId } = req.body;
+  const db = readDb();
+  const conv = db.conversations[convId];
+  if (!conv) {
+    res.status(404).json({ error: 'Conversation not found' });
+    return;
+  }
+  conv.folderId = folderId || undefined;
+  writeDb(db);
+  broadcast({ type: 'conversation:update', conversation: conv });
+  res.json({ success: true, conversation: conv });
+});
+
 // Start or retrieve conversation
 app.post('/api/conversations', (req, res) => {
   const senderId = req.body.senderId || req.body.userId;
@@ -1323,11 +1376,13 @@ app.post('/api/conversations', (req, res) => {
   if (!recipient) {
     // Check if it looks like a phone number or contact
     const cleanId = recipientId.trim();
-    const id = cleanId.startsWith('contact_') ? cleanId : `contact_${cleanId.replace(/[^\d]/g, '')}`;
+    const rawNumber = cleanId.replace(/^contact_/, '');
+    const normalizedNumber = normalizePhoneNumber(rawNumber);
+    const id = `contact_${normalizedNumber}`;
     
     recipient = {
       id,
-      username: cleanId,
+      username: `+${normalizedNumber}`,
       avatarUrl: `https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80`,
       statusText: 'WhatsApp Contact',
       isOnline: false,
@@ -1647,6 +1702,33 @@ app.post('/api/users/:id/quick-replies', (req, res) => {
   user.quickReplies = quickReplies;
   saveUser(user);
   
+  res.json({ success: true, user });
+});
+
+// Update user's profile settings (details, avatar, password, subscription request)
+app.post('/api/users/:id/profile', (req, res) => {
+  const { id } = req.params;
+  const { username, email, password, avatarUrl, requestedPlan, paymentProofUrl } = req.body;
+
+  const user = getUser(id);
+  if (!user) {
+    res.status(404).json({ error: 'User not found' });
+    return;
+  }
+
+  if (username !== undefined) user.username = username;
+  if (email !== undefined) user.email = email;
+  if (password !== undefined) user.password = password;
+  if (avatarUrl !== undefined) user.avatarUrl = avatarUrl;
+  
+  if (requestedPlan !== undefined) {
+    user.requestedPlan = requestedPlan;
+    user.subscriptionStatus = 'inactive'; // mark as pending review if they request upgrade
+  }
+  if (paymentProofUrl !== undefined) user.paymentProofUrl = paymentProofUrl;
+
+  saveUser(user);
+  broadcast({ type: 'user:update', user });
   res.json({ success: true, user });
 });
 
@@ -2897,6 +2979,7 @@ function getTenantId(req: express.Request): string | undefined {
 // Devices Endpoints
 app.get('/api/devices', (req, res) => {
   const tenantId = getTenantId(req);
+  const db = readDb();
   const devices = getAllDevices(tenantId).map((d) => {
     let modified = false;
     if (!d.apiKey) {
@@ -2929,7 +3012,21 @@ app.get('/api/devices', (req, res) => {
       }
     }
 
-    return d;
+    // Calculate sent and received messages dynamically
+    const deviceConvIds = new Set(
+      Object.values(db.conversations)
+        .filter((c) => c.deviceId === d.id)
+        .map((c) => c.id)
+    );
+    const deviceMessages = db.messages.filter((m) => deviceConvIds.has(m.conversationId));
+    const sentCount = deviceMessages.filter((m) => !m.senderId.startsWith('contact_')).length;
+    const receivedCount = deviceMessages.filter((m) => m.senderId.startsWith('contact_')).length;
+
+    return {
+      ...d,
+      sentCount,
+      receivedCount
+    };
   });
   res.json({ devices });
 });
@@ -4726,7 +4823,7 @@ async function startServer() {
               
               // Delay slightly for natural human feel
               setTimeout(async () => {
-                await sendBaileysMessage(deviceId, jid, textToSend);
+                await sendRealWhatsAppMessageDirectly(device, contactPhone, textToSend);
                 
                 const autoMsg: Message = {
                   id: `msg_${Math.random().toString(36).substring(2, 11)}`,
@@ -4844,7 +4941,7 @@ async function startServer() {
                           
                           // Delay slightly for natural human feel
                           setTimeout(async () => {
-                            await sendBaileysMessage(deviceId, jid, textToSend);
+                            await sendRealWhatsAppMessageDirectly(device, contactPhone, textToSend);
                             
                             const autoMsg: Message = {
                               id: `msg_${Math.random().toString(36).substring(2, 11)}`,
@@ -5030,7 +5127,7 @@ async function startServer() {
           try { await sock.sendPresenceUpdate('paused', jid); } catch (e) {}
         }
 
-        await sendBaileysMessage(deviceId, jid, takeoverReply);
+        await sendRealWhatsAppMessageDirectly(device, contactPhone, takeoverReply);
         
         const takeoverMsg: Message = {
           id: `msg_${Math.random().toString(36).substring(2, 11)}`,
@@ -5083,7 +5180,7 @@ async function startServer() {
           try { await sock.sendPresenceUpdate('paused', jid); } catch (e) {}
         }
 
-        await sendBaileysMessage(deviceId, jid, quotaMsg.content);
+        await sendRealWhatsAppMessageDirectly(device, contactPhone, quotaMsg.content);
         return; // Halt AI execution
       }
       
@@ -5303,7 +5400,13 @@ Formulate your exceptionally smart and professional response now:`;
       }
 
       console.log(`[AI Agent - Dispatching Reply] Sending reply via device "${device.name}" to +${contactPhone}. Voice: ${!!responseAudioBuffer}`);
-      const sendResult = await sendBaileysMessage(deviceId, jid, responseText, responseAudioBuffer || undefined);
+      const sendResult = await sendRealWhatsAppMessageDirectly(
+        device,
+        contactPhone,
+        responseText,
+        responseAudioBuffer ? 'audio' : 'text',
+        responseAudioBuffer ? responseAudioBuffer.toString('base64') : undefined
+      );
       
       // 8. Save and Sync the outgoing AI response to our local database and notify the UI
       const aiMsg: Message = {

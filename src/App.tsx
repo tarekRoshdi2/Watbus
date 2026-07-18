@@ -4,7 +4,7 @@
  */
 
 import { useState, useEffect, useRef } from 'react';
-import { User, Conversation, Message, StatusStory, WsEvent, DeviceLink, Campaign } from './types.js';
+import { User, Conversation, Message, StatusStory, WsEvent, DeviceLink, Campaign, Folder } from './types.js';
 import AuthView from './components/auth/AuthView.js';
 import DemoRegistration from './components/demo/DemoRegistration.js';
 import Sidebar from './components/Sidebar.js';
@@ -117,6 +117,9 @@ export default function App() {
   const [typingStates, setTypingStates] = useState<Record<string, boolean>>({});
   const [devices, setDevices] = useState<DeviceLink[]>([]);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [folders, setFolders] = useState<Folder[]>([]);
+  const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
+  const [showProfileSettings, setShowProfileSettings] = useState<boolean>(false);
 
   // Expanded Image Lightbox State
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
@@ -184,11 +187,14 @@ export default function App() {
   const fetchBusinessData = async () => {
     if (!currentUser) return;
     try {
-      const [devRes, campRes] = await Promise.all([
+      const [devRes, campRes, folderRes] = await Promise.all([
         fetch('/api/devices', {
           headers: { 'x-user-id': currentUser.id }
         }),
         fetch('/api/campaigns', {
+          headers: { 'x-user-id': currentUser.id }
+        }),
+        fetch('/api/folders', {
           headers: { 'x-user-id': currentUser.id }
         })
       ]);
@@ -199,6 +205,10 @@ export default function App() {
       if (campRes.ok) {
         const data = await campRes.json();
         setCampaigns(data.campaigns);
+      }
+      if (folderRes.ok) {
+        const data = await folderRes.json();
+        setFolders(data.folders || []);
       }
     } catch (err) {
       console.warn('Error loading business metadata:', err);
@@ -502,7 +512,7 @@ export default function App() {
     }
   };
 
-  const handleSendMessage = async (content: string, type: 'text' | 'image' | 'audio', mediaData?: string) => {
+  const handleSendMessage = async (content: string, type: 'text' | 'image' | 'audio' | 'document', mediaData?: string) => {
     if (!currentUser || !activeConversationId) return;
 
     playOutgoingSound();
@@ -862,6 +872,72 @@ export default function App() {
     );
   };
 
+  // Folder Action Handlers
+  const handleCreateFolder = async (name: string, color?: string) => {
+    try {
+      const res = await fetch('/api/folders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-user-id': currentUser?.id || '' },
+        body: JSON.stringify({ name, color })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setFolders(prev => [...prev, data.folder]);
+      }
+    } catch (err) {
+      console.error('Failed to create folder:', err);
+    }
+  };
+
+  const handleDeleteFolder = async (folderId: string) => {
+    try {
+      const res = await fetch(`/api/folders/${folderId}`, {
+        method: 'DELETE',
+        headers: { 'x-user-id': currentUser?.id || '' }
+      });
+      if (res.ok) {
+        setFolders(prev => prev.filter(f => f.id !== folderId));
+        setConversations(prev => prev.map(c => c.folderId === folderId ? { ...c, folderId: undefined } : c));
+        if (selectedFolderId === folderId) setSelectedFolderId(null);
+      }
+    } catch (err) {
+      console.error('Failed to delete folder:', err);
+    }
+  };
+
+  const handleMoveToFolder = async (convId: string, folderId: string | undefined) => {
+    try {
+      const res = await fetch(`/api/conversations/${convId}/folder`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ folderId: folderId || null })
+      });
+      if (res.ok) {
+        setConversations(prev => prev.map(c => c.id === convId ? { ...c, folderId } : c));
+      }
+    } catch (err) {
+      console.error('Failed to move conversation to folder:', err);
+    }
+  };
+
+  const handleUpdateProfile = async (updates: Partial<User>) => {
+    if (!currentUser) return;
+    try {
+      const res = await fetch(`/api/users/${currentUser.id}/profile`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates)
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setCurrentUser(data.user);
+        localStorage.setItem('whatsapp_user', JSON.stringify(data.user));
+      }
+    } catch (err) {
+      console.error('Failed to update profile:', err);
+    }
+  };
+
   // Calculate unread tallies per conversation
   const unreadCounts: Record<string, number> = {};
   const latestMessages: Record<string, { content: string; timestamp: string; senderId: string; status: string }> = {};
@@ -1142,12 +1218,17 @@ export default function App() {
             <span className="text-[8px] mt-0.5 font-bold">{lang === 'ar' ? 'EN' : 'عربي'}</span>
           </button>
 
-          <img
-            src={currentUser.avatarUrl}
-            alt="Brand Avatar"
-            className="w-9 h-9 rounded-full object-cover border border-zinc-800 shadow-sm"
-            title={currentUser.username}
-          />
+          <button
+            onClick={() => setShowProfileSettings(true)}
+            className="cursor-pointer hover:ring-2 hover:ring-emerald-500/50 rounded-full transition-all"
+            title={lang === 'ar' ? 'إعدادات الحساب' : 'Account Settings'}
+          >
+            <img
+              src={currentUser.avatarUrl}
+              alt="Brand Avatar"
+              className="w-9 h-9 rounded-full object-cover border border-zinc-800 shadow-sm"
+            />
+          </button>
           <button
             onClick={handleLogout}
             className="text-zinc-500 hover:text-rose-400 p-2 rounded-xl transition-colors cursor-pointer hover:bg-rose-500/5"
@@ -1157,6 +1238,102 @@ export default function App() {
           </button>
         </div>
       </div>
+
+      {/* Profile Settings Overlay Panel */}
+      {showProfileSettings && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => setShowProfileSettings(false)}>
+          <div
+            className="bg-white dark:bg-zinc-900 w-full max-w-md rounded-3xl shadow-2xl border border-zinc-200 dark:border-zinc-800 overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+            dir={lang === 'ar' ? 'rtl' : 'ltr'}
+          >
+            {/* Header */}
+            <div className="bg-gradient-to-l from-[#00a884] to-emerald-600 text-white px-6 py-5">
+              <div className="flex items-center justify-between">
+                <h2 className="font-extrabold text-lg">{lang === 'ar' ? '⚙️ إعدادات الحساب' : '⚙️ Account Settings'}</h2>
+                <button onClick={() => setShowProfileSettings(false)} className="text-white/80 hover:text-white transition-colors cursor-pointer text-xl font-bold">✕</button>
+              </div>
+              <p className="text-emerald-100 text-xs mt-1">{lang === 'ar' ? 'إدارة بياناتك الشخصية وخطتك' : 'Manage your personal details and plan'}</p>
+            </div>
+
+            <div className="p-6 space-y-5 max-h-[70vh] overflow-y-auto">
+              {/* Avatar */}
+              <div className="flex flex-col items-center gap-3">
+                <img src={currentUser.avatarUrl} alt="avatar" className="w-20 h-20 rounded-full object-cover border-4 border-emerald-500/30 shadow-lg" />
+                <div className="text-center">
+                  <label className="text-[10px] font-bold text-zinc-400 uppercase block mb-1">{lang === 'ar' ? 'رابط الصورة الشخصية' : 'Avatar URL'}</label>
+                  <input
+                    type="text"
+                    defaultValue={currentUser.avatarUrl}
+                    onBlur={(e) => { if (e.target.value !== currentUser.avatarUrl) handleUpdateProfile({ avatarUrl: e.target.value }); }}
+                    className="bg-zinc-100 dark:bg-zinc-800 text-xs border border-zinc-200 dark:border-zinc-700 rounded-xl px-3 py-2 w-64 text-center outline-none focus:border-emerald-500 text-zinc-700 dark:text-zinc-300"
+                    placeholder="https://..."
+                  />
+                </div>
+              </div>
+
+              {/* Username */}
+              <div>
+                <label className="text-[10px] font-bold text-zinc-400 uppercase block mb-1">{lang === 'ar' ? 'الاسم' : 'Display Name'}</label>
+                <input
+                  type="text"
+                  defaultValue={currentUser.username}
+                  onBlur={(e) => { if (e.target.value !== currentUser.username) handleUpdateProfile({ username: e.target.value }); }}
+                  className="w-full bg-zinc-100 dark:bg-zinc-800 text-sm border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-2.5 outline-none focus:border-emerald-500 text-zinc-800 dark:text-zinc-200"
+                />
+              </div>
+
+              {/* Email */}
+              <div>
+                <label className="text-[10px] font-bold text-zinc-400 uppercase block mb-1">{lang === 'ar' ? 'البريد الإلكتروني' : 'Email Address'}</label>
+                <input
+                  type="email"
+                  defaultValue={currentUser.email || ''}
+                  onBlur={(e) => { if (e.target.value !== (currentUser.email || '')) handleUpdateProfile({ email: e.target.value }); }}
+                  className="w-full bg-zinc-100 dark:bg-zinc-800 text-sm border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-2.5 outline-none focus:border-emerald-500 text-zinc-800 dark:text-zinc-200"
+                  placeholder="email@example.com"
+                />
+              </div>
+
+              {/* Password */}
+              <div>
+                <label className="text-[10px] font-bold text-zinc-400 uppercase block mb-1">{lang === 'ar' ? 'كلمة المرور الجديدة' : 'New Password'}</label>
+                <input
+                  type="password"
+                  placeholder={lang === 'ar' ? 'اتركه فارغاً إن لم تريد التغيير' : 'Leave blank to keep current'}
+                  onBlur={(e) => { if (e.target.value.trim()) handleUpdateProfile({ password: e.target.value.trim() }); }}
+                  className="w-full bg-zinc-100 dark:bg-zinc-800 text-sm border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-2.5 outline-none focus:border-emerald-500 text-zinc-800 dark:text-zinc-200"
+                />
+              </div>
+
+              {/* Subscription Info */}
+              <div className="bg-zinc-50 dark:bg-zinc-950 rounded-2xl border border-zinc-100 dark:border-zinc-800 p-4 space-y-3">
+                <h4 className="text-xs font-extrabold text-zinc-700 dark:text-zinc-300">{lang === 'ar' ? '📊 خطة الاشتراك' : '📊 Subscription Plan'}</h4>
+                <div className="grid grid-cols-2 gap-3 text-center">
+                  <div className="bg-white dark:bg-zinc-900 rounded-xl p-3 border border-zinc-200 dark:border-zinc-800">
+                    <p className="text-[10px] text-zinc-400 font-bold uppercase">{lang === 'ar' ? 'الخطة' : 'Plan'}</p>
+                    <p className="text-sm font-black text-emerald-500 mt-0.5">{currentUser.subscriptionPlan?.toUpperCase() || 'STARTER'}</p>
+                  </div>
+                  <div className="bg-white dark:bg-zinc-900 rounded-xl p-3 border border-zinc-200 dark:border-zinc-800">
+                    <p className="text-[10px] text-zinc-400 font-bold uppercase">{lang === 'ar' ? 'الحالة' : 'Status'}</p>
+                    <p className={`text-sm font-black mt-0.5 ${currentUser.subscriptionStatus === 'active' ? 'text-emerald-500' : currentUser.subscriptionStatus === 'trial' ? 'text-amber-500' : 'text-zinc-400'}`}>
+                      {currentUser.subscriptionStatus === 'active' ? (lang === 'ar' ? 'نشط' : 'Active') : currentUser.subscriptionStatus === 'trial' ? (lang === 'ar' ? 'تجريبي' : 'Trial') : (lang === 'ar' ? 'غير نشط' : 'Inactive')}
+                    </p>
+                  </div>
+                  <div className="bg-white dark:bg-zinc-900 rounded-xl p-3 border border-zinc-200 dark:border-zinc-800">
+                    <p className="text-[10px] text-zinc-400 font-bold uppercase">{lang === 'ar' ? 'رسائل AI' : 'AI Messages'}</p>
+                    <p className="text-sm font-black text-indigo-500 mt-0.5">{currentUser.aiMessagesUsed} / {currentUser.aiMessagesLimit}</p>
+                  </div>
+                  <div className="bg-white dark:bg-zinc-900 rounded-xl p-3 border border-zinc-200 dark:border-zinc-800">
+                    <p className="text-[10px] text-zinc-400 font-bold uppercase">{lang === 'ar' ? 'التكلفة' : 'Cost'}</p>
+                    <p className="text-sm font-black text-fuchsia-500 mt-0.5">${currentUser.costInDollars?.toFixed(2) || '0.00'}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 2. DYNAMIC WORKSPACE ROUTER RENDERING BLOCKS */}
       <div className="flex-1 flex h-full overflow-hidden">
@@ -1179,6 +1356,11 @@ export default function App() {
               onAddNewContact={handleAddNewContact}
               devices={devices}
               lang={lang}
+              folders={folders}
+              selectedFolderId={selectedFolderId}
+              onSelectFolder={setSelectedFolderId}
+              onCreateFolder={handleCreateFolder}
+              onDeleteFolder={handleDeleteFolder}
             />
 
             {/* Right Chat Column */}
@@ -1209,6 +1391,8 @@ export default function App() {
                   onDeleteConversation={handleDeleteConversation}
                   onBackToList={() => setActiveConversationId(null)}
                   lang={lang}
+                  folders={folders}
+                  onMoveToFolder={handleMoveToFolder}
                 />
               ) : (
                 /* High-quality introduction screen mimicking WhatsApp Web */

@@ -5,7 +5,7 @@
 
 import fs from 'fs';
 import path from 'path';
-import { User, Conversation, Message, StatusStory, DeviceLink, Campaign, CatalogItem, OtpLog, OtpSettings } from './types.js';
+import { User, Conversation, Message, StatusStory, DeviceLink, Campaign, CatalogItem, OtpLog, OtpSettings, Folder } from './types.js';
 import { backupDbToSupabase } from './supabase.js';
 
 
@@ -22,6 +22,7 @@ interface DbSchema {
   demoLeads: DemoLead[];
   otpLogs?: OtpLog[];
   otpSettings?: OtpSettings;
+  folders?: Record<string, Folder>;
 }
 
 export interface DemoLead {
@@ -80,7 +81,8 @@ function getInitialDb(): DbSchema {
     otpLogs: [],
     otpSettings: {
       template: 'مرحباً بك في ChatCore. رمز التحقق الخاص بك هو: {otp}. يرجى إدخاله في الموقع لتفعيل حسابك.'
-    }
+    },
+    folders: {}
   };
 }
 
@@ -123,6 +125,9 @@ export function readDb(): DbSchema {
       parsed.otpSettings = {
         template: 'مرحباً بك في ChatCore. رمز التحقق الخاص بك هو: {otp}. يرجى إدخاله في الموقع لتفعيل حسابك.'
       };
+    }
+    if (!parsed.folders) {
+      parsed.folders = {};
     }
     
     cachedDb = parsed as DbSchema;
@@ -696,4 +701,39 @@ export function saveOtpSettings(settings: OtpSettings): void {
   db.otpSettings = settings;
   writeDb(db);
 }
+
+// Folder Actions
+export function getAllFolders(ownerId?: string): Folder[] {
+  const db = readDb();
+  const allFolders = Object.values(db.folders || {});
+  if (ownerId) {
+    return allFolders.filter(f => f.ownerId === ownerId);
+  }
+  return allFolders;
+}
+
+export function saveFolder(folder: Folder): Folder {
+  const db = readDb();
+  if (!db.folders) db.folders = {};
+  db.folders[folder.id] = folder;
+  writeDb(db);
+  return folder;
+}
+
+export function deleteFolder(folderId: string): void {
+  const db = readDb();
+  if (db.folders && db.folders[folderId]) {
+    delete db.folders[folderId];
+    
+    // Clean up conversations belonging to this folder
+    Object.values(db.conversations).forEach(c => {
+      if (c.folderId === folderId) {
+        c.folderId = undefined;
+      }
+    });
+    
+    writeDb(db);
+  }
+}
+
 

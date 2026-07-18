@@ -660,6 +660,36 @@ ALTER TABLE crm_backups DISABLE ROW LEVEL SECURITY;`}
                     </div>
                   </div>
 
+                  {/* Connection Details & Statistics Bar */}
+                  <div className="grid grid-cols-3 gap-2 text-center my-3 bg-zinc-50/50 dark:bg-zinc-950/50 p-3 rounded-2xl border border-zinc-100 dark:border-zinc-800/40">
+                    <div className="space-y-0.5 border-l border-zinc-200 dark:border-zinc-800/60">
+                      <p className="text-[9px] text-zinc-400 font-bold uppercase tracking-wider">
+                        {lang === 'ar' ? 'حالة الخط' : 'Line Status'}
+                      </p>
+                      <p className={`text-xs font-black ${isLinked ? 'text-emerald-500' : 'text-zinc-400'}`}>
+                        {isLinked 
+                          ? (lang === 'ar' ? 'نشط ومتصل' : 'Active') 
+                          : (lang === 'ar' ? 'غير متصل' : 'Offline')}
+                      </p>
+                    </div>
+                    <div className="space-y-0.5 border-l border-zinc-200 dark:border-zinc-800/60">
+                      <p className="text-[9px] text-zinc-400 font-bold uppercase tracking-wider">
+                        {lang === 'ar' ? 'الرسائل المرسلة' : 'Sent'}
+                      </p>
+                      <p className="text-xs font-black text-indigo-500 dark:text-indigo-400">
+                        {device.sentCount || 0}
+                      </p>
+                    </div>
+                    <div className="space-y-0.5">
+                      <p className="text-[9px] text-zinc-400 font-bold uppercase tracking-wider">
+                        {lang === 'ar' ? 'الرسائل المستلمة' : 'Received'}
+                      </p>
+                      <p className="text-xs font-black text-fuchsia-500 dark:text-fuchsia-400">
+                        {device.receivedCount || 0}
+                      </p>
+                    </div>
+                  </div>
+
                   {/* Integration Specs */}
                   <div className="bg-zinc-50 dark:bg-zinc-950 p-4 rounded-2xl border border-zinc-100 dark:border-zinc-800/40 text-xs space-y-2 rtl:text-right ltr:text-left">
                     {device.method === 'qr' && (
@@ -715,6 +745,10 @@ ALTER TABLE crm_backups DISABLE ROW LEVEL SECURITY;`}
                         <p><strong>API Endpoint:</strong> {device.apiEndpoint || 'Default'}</p>
                       </div>
                     )}
+                    <div className="pt-2 mt-2 border-t border-zinc-250/50 dark:border-zinc-800/50 text-[10px] text-zinc-400 dark:text-zinc-500 flex justify-between items-center">
+                      <span>{lang === 'ar' ? 'معرّف الجهاز (ID):' : 'Device ID:'}</span>
+                      <span className="font-mono">{device.id}</span>
+                    </div>
                   </div>
 
                   {/* AI Agent Status Block */}
@@ -739,6 +773,92 @@ ALTER TABLE crm_backups DISABLE ROW LEVEL SECURITY;`}
                       </p>
                     </div>
                     <Cpu className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" />
+                  </div>
+
+                  {/* Connection Stats & Traffic Block */}
+                  <div className="bg-zinc-50 dark:bg-zinc-950 p-4 rounded-2xl border border-zinc-150 dark:border-zinc-800/40 text-xs space-y-3 rtl:text-right ltr:text-left mt-3">
+                    <div className="flex items-center justify-between border-b border-zinc-150 dark:border-zinc-850 pb-2 flex-row-reverse">
+                      <h4 className="font-extrabold text-zinc-700 dark:text-zinc-300 flex items-center gap-1.5">
+                        <Smartphone className="w-4 h-4 text-[#00a884]" />
+                        <span>{lang === 'ar' ? 'إحصائيات الاتصال والنشاط للرقم' : 'Connection & Traffic Stats'}</span>
+                      </h4>
+                      <span className="text-[10px] text-zinc-400">
+                        {lang === 'ar' ? 'تحديث لحظي' : 'Real-time sync'}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3.5 text-right">
+                      {/* Connection Status */}
+                      <div className="space-y-1">
+                        <span className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider block">
+                          {lang === 'ar' ? 'حالة الاتصال' : 'Gateway Status'}
+                        </span>
+                        <div className="flex items-center gap-1.5 justify-end rtl:flex-row ltr:flex-row-reverse">
+                          <span className={`w-2.5 h-2.5 rounded-full ${
+                            ['connected', 'ready', 'authenticated'].includes(device.status)
+                              ? 'bg-emerald-500 shadow-[0_0_8px_#10b981] animate-pulse'
+                              : ['linking', 'connecting'].includes(device.status)
+                              ? 'bg-amber-500 animate-pulse'
+                              : 'bg-rose-500'
+                          }`} />
+                          <span className="font-bold text-zinc-700 dark:text-zinc-300">
+                            {['connected', 'ready', 'authenticated'].includes(device.status)
+                              ? (lang === 'ar' ? 'متصل ونشط' : 'Online & Active')
+                              : ['linking', 'connecting'].includes(device.status)
+                              ? (lang === 'ar' ? 'جاري الاتصال...' : 'Connecting...')
+                              : (lang === 'ar' ? 'غير متصل' : 'Offline')}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Connection Type */}
+                      <div className="space-y-1">
+                        <span className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider block">
+                          {lang === 'ar' ? 'نوع ربط الرقم' : 'Connection Type'}
+                        </span>
+                        <span className="font-bold text-zinc-700 dark:text-zinc-300 block">
+                          {device.method === 'qr' ? 'Baileys (QR)' : 
+                           device.method === 'ultramsg' ? 'Ultramsg API' : 
+                           device.method === 'greenapi' ? 'GreenAPI' : 'Meta Cloud API'}
+                        </span>
+                      </div>
+
+                      {/* Total Sent */}
+                      <div className="space-y-1">
+                        <span className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider block">
+                          {lang === 'ar' ? 'إجمالي الإرسال' : 'Total Sent'}
+                        </span>
+                        <span className="font-extrabold text-sm text-emerald-600 dark:text-emerald-400 block">
+                          {device.sentCount || 0} {lang === 'ar' ? 'رسالة' : 'msgs'}
+                        </span>
+                      </div>
+
+                      {/* Total Received */}
+                      <div className="space-y-1">
+                        <span className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider block">
+                          {lang === 'ar' ? 'إجمالي الاستقبال' : 'Total Received'}
+                        </span>
+                        <span className="font-extrabold text-sm text-blue-600 dark:text-blue-400 block">
+                          {device.receivedCount || 0} {lang === 'ar' ? 'رسالة' : 'msgs'}
+                        </span>
+                      </div>
+
+                      {/* Daily Quota Limit */}
+                      <div className="space-y-1 col-span-2 border-t border-zinc-150 dark:border-zinc-850 pt-2.5">
+                        <div className="flex items-center justify-between text-[10px] font-bold text-zinc-400 dark:text-zinc-500 uppercase flex-row-reverse mb-1">
+                          <span>{lang === 'ar' ? 'معدل استهلاك الحصة اليومية' : 'Daily Sending Limit'}</span>
+                          <span className="text-zinc-650 dark:text-zinc-300 font-mono">
+                            {device.dailySentCount || 0} / {device.maxDailyLimit || 250}
+                          </span>
+                        </div>
+                        <div className="w-full bg-zinc-200 dark:bg-zinc-800 rounded-full h-1.5 overflow-hidden">
+                          <div 
+                            className="bg-[#00a884] h-1.5 rounded-full transition-all duration-500"
+                            style={{ width: `${Math.min(100, Math.round(((device.dailySentCount || 0) / (device.maxDailyLimit || 250)) * 100))}%` }}
+                          />
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 </div>
 
