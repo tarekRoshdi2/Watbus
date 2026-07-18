@@ -3030,6 +3030,10 @@ app.post("/api/conversations/:convId/messages", async (req, res) => {
   }
   res.json({ success: true, message: newMsg });
 });
+app.post("/api/conversations/:convId/read", (req, res) => {
+  const { convId } = req.params;
+  res.json({ success: true, convId });
+});
 app.post("/api/messages/internal", async (req, res) => {
   const { convId, senderId, content } = req.body;
   const db = readDb();

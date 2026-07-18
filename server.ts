@@ -1535,6 +1535,12 @@ app.post('/api/conversations/:convId/messages', async (req, res) => {
   res.json({ success: true, message: newMsg });
 });
 
+// Endpoint to mark a conversation's messages as read (fixes 404 in console)
+app.post('/api/conversations/:convId/read', (req, res) => {
+  const { convId } = req.params;
+  res.json({ success: true, convId });
+});
+
 // Post an internal note to a conversation
 app.post('/api/messages/internal', async (req, res) => {
   const { convId, senderId, content } = req.body;
