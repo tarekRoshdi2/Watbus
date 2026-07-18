@@ -3,6 +3,5 @@ whatsapp-sessions/
 db-store.json
 .env
 startup-error.log
-dist/
 .env.local
 .env.production
