@@ -104,7 +104,8 @@ import {
   authenticateUser,
   createUser,
   getUserByUsername as getSupabaseUserByUsername,
-  updateUser as updateSupabaseUser
+  updateUser as updateSupabaseUser,
+  backupDbToSupabase
 } from './src/supabase.js';
 
 
@@ -557,6 +558,26 @@ app.post('/api/expocore/webhook', async (req, res) => {
     }
     console.log(`[ExpoCore Webhook] Message sent successfully to ${cleanPhone} via device ${targetDevice.id}`);
     
+    // Save to CRM Conversation so agents can see the ticket details in chat area
+    const contactId = `contact_${cleanPhone}`;
+    const realUsers = getAllUsers().filter((u) => u.id !== 'meta-ai' && !u.id.startsWith('contact_'));
+    const ownerId = targetDevice.ownerId || realUsers[0]?.id || 'user_default';
+    const conv = getOrCreateConversation(ownerId, contactId, targetDevice.id);
+
+    const webhookMsg: Message = {
+      id: `msg_webhook_${Date.now()}`,
+      conversationId: conv.id,
+      senderId: ownerId,
+      recipientId: contactId,
+      content: messageToSend,
+      type: pdfBuffer ? 'document' : 'text',
+      mediaUrl: pdfBase64 ? `data:application/pdf;base64,${pdfBase64}` : undefined,
+      status: 'delivered',
+      timestamp: new Date().toISOString()
+    };
+    saveMessage(webhookMsg);
+    broadcast({ type: 'message:new', message: webhookMsg });
+
     // Optional: Log it in Watbus CRM if needed
     saveOtpLog({
       id: `expocore_log_${Math.random().toString(36).substring(2, 11)}`,
@@ -1402,7 +1423,7 @@ app.post('/api/conversations/:convId/messages', async (req, res) => {
     const qrDevice = activeDevices.find((d) => d.id === conv.deviceId) || activeDevices.find((d) => d.method === 'qr') || activeDevices[0];
     if (qrDevice) {
       console.log(`Routing manual Web UI message via real device "${qrDevice.name}" (id: ${qrDevice.id}) to +${targetPhone}`);
-      sendRealWhatsAppMessage(qrDevice, targetPhone, content).then((resWa) => {
+      sendRealWhatsAppMessage(qrDevice, targetPhone, content, false, type, mediaData).then((resWa) => {
         if (!resWa.success) {
           console.error(`Failed to send real WhatsApp message to +${targetPhone}:`, resWa.error);
           updateMessageStatus(newMsg.id, 'failed');
@@ -3608,6 +3629,8 @@ interface QueueItem {
   to: string;
   text: string;
   isBulk: boolean;
+  mediaType?: 'text' | 'image' | 'audio' | 'document';
+  mediaData?: string;
   resolve: (value: { success: boolean; error?: string }) => void;
   reject: (reason: any) => void;
 }
@@ -3616,7 +3639,14 @@ class OutgoingMessageQueue {
   private queue: QueueItem[] = [];
   private processing = false;
 
-  async enqueue(device: DeviceLink, to: string, text: string, isBulk: boolean): Promise<{ success: boolean; error?: string }> {
+  async enqueue(
+    device: DeviceLink, 
+    to: string, 
+    text: string, 
+    isBulk: boolean,
+    mediaType?: 'text' | 'image' | 'audio' | 'document',
+    mediaData?: string
+  ): Promise<{ success: boolean; error?: string }> {
     return new Promise((resolve, reject) => {
       this.queue.push({
         id: Math.random().toString(36).substring(7),
@@ -3624,6 +3654,8 @@ class OutgoingMessageQueue {
         to,
         text,
         isBulk,
+        mediaType,
+        mediaData,
         resolve,
         reject
       });
@@ -3680,7 +3712,7 @@ class OutgoingMessageQueue {
 
       try {
         console.log(`[Queue] Processing message for +${item.to} (Bulk: ${item.isBulk})`);
-        const result = await sendRealWhatsAppMessageDirectly(dbDevice, item.to, item.text);
+        const result = await sendRealWhatsAppMessageDirectly(dbDevice, item.to, item.text, item.mediaType, item.mediaData);
         
         // If sent successfully, increment daily sent count and save to DB (persisting to db-store.json & central Supabase)
         if (result.success) {
@@ -3715,11 +3747,46 @@ class OutgoingMessageQueue {
 const outgoingQueue = new OutgoingMessageQueue();
 
 // Helper to send real WhatsApp messages using configured APIs directly
-async function sendRealWhatsAppMessageDirectly(device: DeviceLink, to: string, text: string): Promise<{ success: boolean; error?: string }> {
+async function sendRealWhatsAppMessageDirectly(
+  device: DeviceLink, 
+  to: string, 
+  text: string,
+  mediaType?: 'text' | 'image' | 'audio' | 'document',
+  mediaData?: string
+): Promise<{ success: boolean; error?: string }> {
   const cleanPhone = to.replace(/[\s\+\-\(\)]/g, '').trim();
   
   try {
     if (device.method === 'ultramsg') {
+      if (mediaType === 'image' && mediaData) {
+        const endpoint = device.apiEndpoint || `https://api.ultramsg.com/${device.instanceId}/messages/image`;
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({
+            token: device.token || '',
+            to: cleanPhone,
+            image: mediaData,
+            caption: text
+          })
+        });
+        return response.ok ? { success: true } : { success: false, error: `Ultramsg Image: ${response.statusText}` };
+      } else if (mediaType === 'document' && mediaData) {
+        const endpoint = device.apiEndpoint || `https://api.ultramsg.com/${device.instanceId}/messages/document`;
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({
+            token: device.token || '',
+            to: cleanPhone,
+            document: mediaData,
+            filename: 'document.pdf',
+            caption: text
+          })
+        });
+        return response.ok ? { success: true } : { success: false, error: `Ultramsg Document: ${response.statusText}` };
+      }
+
       const endpoint = device.apiEndpoint || `https://api.ultramsg.com/${device.instanceId}/messages/chat`;
       const response = await fetch(endpoint, {
         method: 'POST',
@@ -3753,7 +3820,33 @@ async function sendRealWhatsAppMessageDirectly(device: DeviceLink, to: string, t
         return { success: false, error: `Green-API: ${errText.substring(0, 100) || response.statusText}` };
       }
     } else if (device.method === 'qr') {
-      const result = await sendBaileysMessage(device.id, to, text);
+      let audioBuffer: Buffer | undefined = undefined;
+      let pdfBuffer: Buffer | undefined = undefined;
+      let imageBuffer: Buffer | undefined = undefined;
+
+      if (mediaType && mediaData) {
+        let base64Content = mediaData;
+        if (mediaData.startsWith('data:')) {
+          const matches = mediaData.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+          if (matches && matches.length === 3) {
+            base64Content = matches[2];
+          }
+        }
+        try {
+          const buffer = Buffer.from(base64Content, 'base64');
+          if (mediaType === 'image') {
+            imageBuffer = buffer;
+          } else if (mediaType === 'audio') {
+            audioBuffer = buffer;
+          } else if (mediaType === 'document') {
+            pdfBuffer = buffer;
+          }
+        } catch (err) {
+          console.error('Failed to parse base64 media data:', err);
+        }
+      }
+
+      const result = await sendBaileysMessage(device.id, to, text, audioBuffer, pdfBuffer, 'document.pdf', imageBuffer);
       return result;
     } else if (device.method === 'cloud_api') {
       const phoneId = device.phoneId;
@@ -3792,9 +3885,16 @@ async function sendRealWhatsAppMessageDirectly(device: DeviceLink, to: string, t
 }
 
 // Helper to send real WhatsApp messages using configured APIs (routed through sequential queue)
-async function sendRealWhatsAppMessage(device: DeviceLink, to: string, text: string, isBulk = false): Promise<{ success: boolean; error?: string }> {
+async function sendRealWhatsAppMessage(
+  device: DeviceLink, 
+  to: string, 
+  text: string, 
+  isBulk = false,
+  mediaType?: 'text' | 'image' | 'audio' | 'document',
+  mediaData?: string
+): Promise<{ success: boolean; error?: string }> {
   const parsedText = parseSpintax(text);
-  return outgoingQueue.enqueue(device, to, parsedText, isBulk);
+  return outgoingQueue.enqueue(device, to, parsedText, isBulk, mediaType, mediaData);
 }
 
 // Simulation logic
@@ -4468,23 +4568,82 @@ Conversation History (Last 20 messages for context):
   }));
 }
 
+/**
+ * Automatically clean unused/orphaned session folders in whatsapp-sessions
+ */
+function cleanOrphanedSessions() {
+  const sessionsDir = path.join(process.cwd(), 'whatsapp-sessions');
+  if (!fs.existsSync(sessionsDir)) return;
+
+  try {
+    const folders = fs.readdirSync(sessionsDir);
+    const devices = getAllDevices();
+    const activeDeviceIds = new Set(devices.map(d => d.id));
+
+    console.log(`[Session Cleaner] Scanning for orphaned session folders in ${sessionsDir}...`);
+    let cleanedCount = 0;
+
+    for (const folder of folders) {
+      if (!activeDeviceIds.has(folder)) {
+        const folderPath = path.join(sessionsDir, folder);
+        const stats = fs.statSync(folderPath);
+        if (stats.isDirectory()) {
+          console.log(`[Session Cleaner] Found orphaned session folder: "${folder}". Deleting...`);
+          fs.rmSync(folderPath, { recursive: true, force: true });
+          cleanedCount++;
+        }
+      }
+    }
+
+    if (cleanedCount > 0) {
+      console.log(`[Session Cleaner] Cleaned ${cleanedCount} orphaned session folder(s).`);
+    } else {
+      console.log(`[Session Cleaner] Scan complete. No orphaned folders found.`);
+    }
+  } catch (err) {
+    console.error('[Session Cleaner] Failed to run session cleanup:', err);
+  }
+}
+
 // Vite integration & Production assets serving
 async function startServer() {
   // If Supabase is configured, restore the database from Supabase on startup
   if (isSupabaseConfigured()) {
     console.log('[Supabase Startup] Checking for central database backup in Supabase...');
     try {
-      const restoredData = await restoreDbFromSupabase();
-      if (restoredData) {
+      const restored = await restoreDbFromSupabase();
+      if (restored) {
         const dbFile = path.join(process.cwd(), 'db-store.json');
-        fs.writeFileSync(dbFile, JSON.stringify(restoredData, null, 2), 'utf-8');
-        resetDbCache();
-        console.log('[Supabase Startup] Successfully restored central database locally from Supabase.');
+        let shouldRestore = true;
+
+        if (fs.existsSync(dbFile)) {
+          const localMtime = fs.statSync(dbFile).mtime.getTime();
+          const supabaseTime = new Date(restored.updated_at).getTime();
+
+          // If local file is newer by more than 5 seconds, skip restore and sync local instead to prevent data loss
+          if (localMtime > supabaseTime + 5000) {
+            console.log(`[Supabase Startup] Local database (modified: ${new Date(localMtime).toISOString()}) is newer than Supabase backup (modified: ${restored.updated_at}). Skipping restore to prevent data loss. Syncing local database up to Supabase...`);
+            shouldRestore = false;
+            
+            // Sync local DB up to Supabase
+            const localDb = readDb();
+            await backupDbToSupabase(localDb);
+          }
+        }
+
+        if (shouldRestore) {
+          fs.writeFileSync(dbFile, JSON.stringify(restored.data, null, 2), 'utf-8');
+          resetDbCache();
+          console.log('[Supabase Startup] Successfully restored central database locally from Supabase.');
+        }
       }
     } catch (err) {
       console.error('[Supabase Startup] Failed to restore database:', err);
     }
   }
+
+  // Run orphaned session cleaner to free up disk space on startup
+  cleanOrphanedSessions();
 
   // Wire up WhatsApp gateway real-time broadcast pushes
   setBroadcastHandler(broadcast);
@@ -4597,6 +4756,140 @@ async function startServer() {
             }
           }
         }
+      }
+
+      // Background AI CRM Analysis using Gemini to update insights and classify stage semantically
+      if (ai && !conv.aiPaused) {
+        (async () => {
+          try {
+            const recentMsgs = getMessagesForConversation(conv.id);
+            const chatContext = recentMsgs.slice(-15).map(m => {
+              const role = m.senderId.startsWith('contact_') ? 'Customer' : 'Agent';
+              return `${role}: ${m.content}`;
+            }).join('\n');
+
+            const convFlowStages = customStages || DEFAULT_FLOW_STAGES;
+            const stagesDescription = convFlowStages.map(s => `- ID: "${s.id}", Name: "${s.name}" (English: "${s.nameEn}"), Keywords: [${s.keywords.join(', ')}], Description: "${s.description || ''}"`).join('\n');
+            
+            const prompt = `You are an expert Arabic CRM Analyst. Analyze this chat history and return a clean JSON object containing accurate insights.
+            The company has a custom customer journey flow with the following stages:
+            ${stagesDescription}
+
+            Please classify the customer's current state into ONE of the stage IDs listed above.
+            The response MUST be in raw JSON matching this TypeScript type:
+            {
+              "intent": "The primary intent in Arabic (max 10 words)",
+              "intentEn": "The primary intent in English (max 10 words)",
+              "stage": "ONE of the stage IDs listed above that fits the customer's state best",
+              "confidence": 95,
+              "summary": "A concise summary of their situation and sentiment in Arabic (1-2 sentences)",
+              "summaryEn": "A concise summary of their situation and sentiment in English (1-2 sentences)",
+              "keyNeeds": ["Need 1 in Arabic", "Need 2 in Arabic"],
+              "keyNeedsEn": ["Need 1 in English", "Need 2 in English"],
+              "recommendedAction": "Highly specific next steps for the salesperson in Arabic",
+              "recommendedActionEn": "Highly specific next steps for the salesperson in English",
+              "draftReply": "A personalized, professional draft reply to close the deal or help the client in Arabic",
+              "draftReplyEn": "A personalized, professional draft reply to close the deal or help the client in English"
+            }
+
+            Here is the recent WhatsApp chat history:
+            ${chatContext}
+
+            Return ONLY valid JSON. Do not include markdown code block syntax.`;
+
+            console.log(`[Background Analyst] Initiating auto-analysis for conversation ${conv.id} (+${contactPhone})...`);
+            const response = await callGeminiWithRetry({
+              model: 'gemini-3.5-flash',
+              contents: prompt,
+              config: {
+                responseMimeType: 'application/json'
+              }
+            });
+
+            if (response && response.text) {
+              const parsed = JSON.parse(response.text.trim());
+              if (parsed && parsed.intent) {
+                const finalAiAnalysis = {
+                  intent: parsed.intent,
+                  intentEn: parsed.intentEn || parsed.intent,
+                  confidence: parsed.confidence || 95,
+                  summary: parsed.summary,
+                  summaryEn: parsed.summaryEn || parsed.summary,
+                  keyNeeds: parsed.keyNeeds || [],
+                  keyNeedsEn: parsed.keyNeedsEn || [],
+                  recommendedAction: parsed.recommendedAction,
+                  recommendedActionEn: parsed.recommendedActionEn || parsed.recommendedAction,
+                  draftReply: parsed.draftReply,
+                  draftReplyEn: parsed.draftReplyEn || parsed.draftReply
+                };
+
+                const localDb = readDb();
+                const freshConv = localDb.conversations[conv.id];
+                if (freshConv) {
+                  freshConv.aiAnalysis = finalAiAnalysis;
+                  if (parsed.stage && convFlowStages.some(s => s.id === parsed.stage)) {
+                    if (freshConv.label !== parsed.stage) {
+                      const previousStageId = freshConv.label;
+                      const nextStageId = parsed.stage;
+                      console.log(`[Background Analyst] Stage changed for +${contactPhone} via AI: "${previousStageId}" -> "${nextStageId}"`);
+                      freshConv.label = nextStageId;
+
+                      // Trigger stage automations if configured
+                      const matchedStage = convFlowStages.find(s => s.id === nextStageId);
+                      if (matchedStage) {
+                        // A. Send Auto-Response text
+                        if (matchedStage.autoResponseText && matchedStage.autoResponseText.trim()) {
+                          const textToSend = matchedStage.autoResponseText;
+                          console.log(`[Background Analyst Automation] Sending auto-response for stage "${matchedStage.name}": "${textToSend}"`);
+                          
+                          // Delay slightly for natural human feel
+                          setTimeout(async () => {
+                            await sendBaileysMessage(deviceId, jid, textToSend);
+                            
+                            const autoMsg: Message = {
+                              id: `msg_${Math.random().toString(36).substring(2, 11)}`,
+                              conversationId: conv.id,
+                              senderId: ownerId,
+                              recipientId: contactId,
+                              content: textToSend,
+                              type: 'text',
+                              status: 'delivered',
+                              timestamp: new Date().toISOString()
+                            };
+                            saveMessage(autoMsg);
+                            broadcast({ type: 'message:new', message: autoMsg });
+                          }, 2000);
+                        }
+
+                        // B. Notify Sales Agents via Alert Broadcast
+                        if (matchedStage.notifyOnEnter) {
+                          broadcast({
+                            type: 'flow:stage_alert',
+                            deviceId,
+                            contactName: pushName || contactPhone,
+                            contactPhone,
+                            stageName: matchedStage.name,
+                            stageColor: matchedStage.color
+                          });
+                        }
+                      }
+                    }
+                  }
+                  localDb.conversations[conv.id] = freshConv;
+                  writeDb(localDb);
+
+                  // Broadcast update to client UI
+                  broadcast({
+                    type: 'conversation:update',
+                    conversation: freshConv
+                  });
+                }
+              }
+            }
+          } catch (analysisErr) {
+            console.error('[Background Analyst] Failed running background auto-analysis:', analysisErr);
+          }
+        })();
       }
 
       // 3. Check if the AI agent is active for this device

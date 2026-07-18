@@ -252,7 +252,7 @@ async function restoreDbFromSupabase() {
     return null;
   }
   try {
-    const { data, error } = await client.from("crm_backups").select("data").eq("id", "db-store").single();
+    const { data, error } = await client.from("crm_backups").select("data, updated_at").eq("id", "db-store").single();
     if (error) {
       if (error.code === "PGRST116") {
         console.log("[Supabase DB Restore] No previous central database backup found in Supabase.");
@@ -266,7 +266,7 @@ async function restoreDbFromSupabase() {
     }
     if (data && data.data) {
       console.log("[Supabase DB Restore] Successfully fetched central database backup from Supabase.");
-      return data.data;
+      return { data: data.data, updated_at: data.updated_at };
     }
     return null;
   } catch (err) {
@@ -1135,7 +1135,7 @@ function getMessageText(messageObj) {
   }
   if (cleanObj.audioMessage) return "[Voice Message/\u0631\u0633\u0627\u0644\u0629 \u0635\u0648\u062A\u064A\u0629]";
   if (cleanObj.documentMessage) {
-    return cleanObj.documentMessage.caption || "[Document/\u0645\u0633\u062A\u0646\u062F]";
+    return cleanObj.documentMessage.fileName || cleanObj.documentMessage.caption || "[Document/\u0645\u0633\u062A\u0646\u062F]";
   }
   if (cleanObj.stickerMessage) return "[Sticker/\u0645\u0644\u0635\u0642]";
   if (cleanObj.locationMessage) return "[Location/\u0645\u0648\u0642\u0639]";
@@ -1210,6 +1210,7 @@ function syncIncomingBaileysMessage(sock, jid, pushName, messageContent, fromMe,
   let type = "text";
   if (messageContent?.imageMessage) type = "image";
   if (messageContent?.audioMessage) type = "audio";
+  if (messageContent?.documentMessage) type = "document";
   const dateStr = new Date(timestamp * 1e3).toISOString();
   for (const realUser of realUsers) {
     const conv = getOrCreateConversation(realUser.id, contactUser.id, deviceId);
@@ -1682,7 +1683,7 @@ async function startWhatsAppSession(deviceId) {
     sessionsInProgress.delete(deviceId);
   }
 }
-async function sendBaileysMessage(deviceId, to, text, audioBuffer, pdfBuffer, pdfFilename) {
+async function sendBaileysMessage(deviceId, to, text, audioBuffer, pdfBuffer, pdfFilename, imageBuffer) {
   const sock = activeSockets.get(deviceId);
   if (!sock) {
     return { success: false, error: "Device connection is offline or starting up" };
@@ -1732,6 +1733,21 @@ async function sendBaileysMessage(deviceId, to, text, audioBuffer, pdfBuffer, pd
         document: pdfBuffer,
         mimetype: "application/pdf",
         fileName: pdfFilename || "ticket.pdf",
+        caption: text
+      });
+    } else if (imageBuffer) {
+      try {
+        const [result] = await sock.onWhatsApp(cleanPhone);
+        if (!result || !result.exists) {
+          console.warn(`[Baileys Send] Number ${cleanPhone} is not registered on WhatsApp!`);
+          return { success: false, error: "Target phone number is not registered on WhatsApp" };
+        }
+        cleanPhone = result.jid;
+      } catch (checkErr) {
+        console.warn(`[Baileys Send] Failed to verify number on WhatsApp, attempting anyway:`, checkErr);
+      }
+      await sock.sendMessage(cleanPhone, {
+        image: imageBuffer,
         caption: text
       });
     } else {
@@ -2164,6 +2180,23 @@ app.post("/api/expocore/webhook", async (req, res) => {
       return;
     }
     console.log(`[ExpoCore Webhook] Message sent successfully to ${cleanPhone} via device ${targetDevice.id}`);
+    const contactId = `contact_${cleanPhone}`;
+    const realUsers = getAllUsers().filter((u) => u.id !== "meta-ai" && !u.id.startsWith("contact_"));
+    const ownerId = targetDevice.ownerId || realUsers[0]?.id || "user_default";
+    const conv = getOrCreateConversation(ownerId, contactId, targetDevice.id);
+    const webhookMsg = {
+      id: `msg_webhook_${Date.now()}`,
+      conversationId: conv.id,
+      senderId: ownerId,
+      recipientId: contactId,
+      content: messageToSend,
+      type: pdfBuffer ? "document" : "text",
+      mediaUrl: pdfBase64 ? `data:application/pdf;base64,${pdfBase64}` : void 0,
+      status: "delivered",
+      timestamp: (/* @__PURE__ */ new Date()).toISOString()
+    };
+    saveMessage(webhookMsg);
+    broadcast({ type: "message:new", message: webhookMsg });
     saveOtpLog({
       id: `expocore_log_${Math.random().toString(36).substring(2, 11)}`,
       phone: cleanPhone,
@@ -2850,7 +2883,7 @@ app.post("/api/conversations/:convId/messages", async (req, res) => {
     const qrDevice = activeDevices.find((d) => d.id === conv.deviceId) || activeDevices.find((d) => d.method === "qr") || activeDevices[0];
     if (qrDevice) {
       console.log(`Routing manual Web UI message via real device "${qrDevice.name}" (id: ${qrDevice.id}) to +${targetPhone}`);
-      sendRealWhatsAppMessage(qrDevice, targetPhone, content).then((resWa) => {
+      sendRealWhatsAppMessage(qrDevice, targetPhone, content, false, type, mediaData).then((resWa) => {
         if (!resWa.success) {
           console.error(`Failed to send real WhatsApp message to +${targetPhone}:`, resWa.error);
           updateMessageStatus(newMsg.id, "failed");
@@ -4705,7 +4738,7 @@ var OutgoingMessageQueue = class {
     this.queue = [];
     this.processing = false;
   }
-  async enqueue(device, to, text, isBulk) {
+  async enqueue(device, to, text, isBulk, mediaType, mediaData) {
     return new Promise((resolve, reject) => {
       this.queue.push({
         id: Math.random().toString(36).substring(7),
@@ -4713,6 +4746,8 @@ var OutgoingMessageQueue = class {
         to,
         text,
         isBulk,
+        mediaType,
+        mediaData,
         resolve,
         reject
       });
@@ -4758,7 +4793,7 @@ var OutgoingMessageQueue = class {
       }
       try {
         console.log(`[Queue] Processing message for +${item.to} (Bulk: ${item.isBulk})`);
-        const result = await sendRealWhatsAppMessageDirectly(dbDevice, item.to, item.text);
+        const result = await sendRealWhatsAppMessageDirectly(dbDevice, item.to, item.text, item.mediaType, item.mediaData);
         if (result.success) {
           dbDevice.dailySentCount = (dbDevice.dailySentCount || 0) + 1;
           saveDevice(dbDevice);
@@ -4784,10 +4819,38 @@ var OutgoingMessageQueue = class {
   }
 };
 var outgoingQueue = new OutgoingMessageQueue();
-async function sendRealWhatsAppMessageDirectly(device, to, text) {
+async function sendRealWhatsAppMessageDirectly(device, to, text, mediaType, mediaData) {
   const cleanPhone = to.replace(/[\s\+\-\(\)]/g, "").trim();
   try {
     if (device.method === "ultramsg") {
+      if (mediaType === "image" && mediaData) {
+        const endpoint2 = device.apiEndpoint || `https://api.ultramsg.com/${device.instanceId}/messages/image`;
+        const response2 = await fetch(endpoint2, {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({
+            token: device.token || "",
+            to: cleanPhone,
+            image: mediaData,
+            caption: text
+          })
+        });
+        return response2.ok ? { success: true } : { success: false, error: `Ultramsg Image: ${response2.statusText}` };
+      } else if (mediaType === "document" && mediaData) {
+        const endpoint2 = device.apiEndpoint || `https://api.ultramsg.com/${device.instanceId}/messages/document`;
+        const response2 = await fetch(endpoint2, {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({
+            token: device.token || "",
+            to: cleanPhone,
+            document: mediaData,
+            filename: "document.pdf",
+            caption: text
+          })
+        });
+        return response2.ok ? { success: true } : { success: false, error: `Ultramsg Document: ${response2.statusText}` };
+      }
       const endpoint = device.apiEndpoint || `https://api.ultramsg.com/${device.instanceId}/messages/chat`;
       const response = await fetch(endpoint, {
         method: "POST",
@@ -4821,7 +4884,31 @@ async function sendRealWhatsAppMessageDirectly(device, to, text) {
         return { success: false, error: `Green-API: ${errText.substring(0, 100) || response.statusText}` };
       }
     } else if (device.method === "qr") {
-      const result = await sendBaileysMessage(device.id, to, text);
+      let audioBuffer = void 0;
+      let pdfBuffer = void 0;
+      let imageBuffer = void 0;
+      if (mediaType && mediaData) {
+        let base64Content = mediaData;
+        if (mediaData.startsWith("data:")) {
+          const matches = mediaData.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+          if (matches && matches.length === 3) {
+            base64Content = matches[2];
+          }
+        }
+        try {
+          const buffer = Buffer.from(base64Content, "base64");
+          if (mediaType === "image") {
+            imageBuffer = buffer;
+          } else if (mediaType === "audio") {
+            audioBuffer = buffer;
+          } else if (mediaType === "document") {
+            pdfBuffer = buffer;
+          }
+        } catch (err) {
+          console.error("Failed to parse base64 media data:", err);
+        }
+      }
+      const result = await sendBaileysMessage(device.id, to, text, audioBuffer, pdfBuffer, "document.pdf", imageBuffer);
       return result;
     } else if (device.method === "cloud_api") {
       const phoneId = device.phoneId;
@@ -4856,9 +4943,9 @@ async function sendRealWhatsAppMessageDirectly(device, to, text) {
     return { success: false, error: err.message || "API Connection timeout" };
   }
 }
-async function sendRealWhatsAppMessage(device, to, text, isBulk = false) {
+async function sendRealWhatsAppMessage(device, to, text, isBulk = false, mediaType, mediaData) {
   const parsedText = parseSpintax(text);
-  return outgoingQueue.enqueue(device, to, parsedText, isBulk);
+  return outgoingQueue.enqueue(device, to, parsedText, isBulk, mediaType, mediaData);
 }
 async function runCampaignSimulation(campaignId) {
   const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -5392,21 +5479,64 @@ Conversation History (Last 20 messages for context):
     message: aiMsg
   }));
 }
+function cleanOrphanedSessions() {
+  const sessionsDir = import_path4.default.join(process.cwd(), "whatsapp-sessions");
+  if (!import_fs4.default.existsSync(sessionsDir)) return;
+  try {
+    const folders = import_fs4.default.readdirSync(sessionsDir);
+    const devices = getAllDevices();
+    const activeDeviceIds = new Set(devices.map((d) => d.id));
+    console.log(`[Session Cleaner] Scanning for orphaned session folders in ${sessionsDir}...`);
+    let cleanedCount = 0;
+    for (const folder of folders) {
+      if (!activeDeviceIds.has(folder)) {
+        const folderPath = import_path4.default.join(sessionsDir, folder);
+        const stats = import_fs4.default.statSync(folderPath);
+        if (stats.isDirectory()) {
+          console.log(`[Session Cleaner] Found orphaned session folder: "${folder}". Deleting...`);
+          import_fs4.default.rmSync(folderPath, { recursive: true, force: true });
+          cleanedCount++;
+        }
+      }
+    }
+    if (cleanedCount > 0) {
+      console.log(`[Session Cleaner] Cleaned ${cleanedCount} orphaned session folder(s).`);
+    } else {
+      console.log(`[Session Cleaner] Scan complete. No orphaned folders found.`);
+    }
+  } catch (err) {
+    console.error("[Session Cleaner] Failed to run session cleanup:", err);
+  }
+}
 async function startServer() {
   if (isSupabaseConfigured()) {
     console.log("[Supabase Startup] Checking for central database backup in Supabase...");
     try {
-      const restoredData = await restoreDbFromSupabase();
-      if (restoredData) {
+      const restored = await restoreDbFromSupabase();
+      if (restored) {
         const dbFile = import_path4.default.join(process.cwd(), "db-store.json");
-        import_fs4.default.writeFileSync(dbFile, JSON.stringify(restoredData, null, 2), "utf-8");
-        resetDbCache();
-        console.log("[Supabase Startup] Successfully restored central database locally from Supabase.");
+        let shouldRestore = true;
+        if (import_fs4.default.existsSync(dbFile)) {
+          const localMtime = import_fs4.default.statSync(dbFile).mtime.getTime();
+          const supabaseTime = new Date(restored.updated_at).getTime();
+          if (localMtime > supabaseTime + 5e3) {
+            console.log(`[Supabase Startup] Local database (modified: ${new Date(localMtime).toISOString()}) is newer than Supabase backup (modified: ${restored.updated_at}). Skipping restore to prevent data loss. Syncing local database up to Supabase...`);
+            shouldRestore = false;
+            const localDb = readDb();
+            await backupDbToSupabase(localDb);
+          }
+        }
+        if (shouldRestore) {
+          import_fs4.default.writeFileSync(dbFile, JSON.stringify(restored.data, null, 2), "utf-8");
+          resetDbCache();
+          console.log("[Supabase Startup] Successfully restored central database locally from Supabase.");
+        }
       }
     } catch (err) {
       console.error("[Supabase Startup] Failed to restore database:", err);
     }
   }
+  cleanOrphanedSessions();
   setBroadcastHandler(broadcast);
   setIncomingMessageHandler(async (deviceId, sock, jid, pushName, messageContent, fromMe, timestamp, messageId) => {
     try {
@@ -5490,6 +5620,123 @@ async function startServer() {
             }
           }
         }
+      }
+      if (ai && !conv.aiPaused) {
+        (async () => {
+          try {
+            const recentMsgs = getMessagesForConversation(conv.id);
+            const chatContext = recentMsgs.slice(-15).map((m) => {
+              const role = m.senderId.startsWith("contact_") ? "Customer" : "Agent";
+              return `${role}: ${m.content}`;
+            }).join("\n");
+            const convFlowStages = customStages || DEFAULT_FLOW_STAGES;
+            const stagesDescription = convFlowStages.map((s) => `- ID: "${s.id}", Name: "${s.name}" (English: "${s.nameEn}"), Keywords: [${s.keywords.join(", ")}], Description: "${s.description || ""}"`).join("\n");
+            const prompt = `You are an expert Arabic CRM Analyst. Analyze this chat history and return a clean JSON object containing accurate insights.
+            The company has a custom customer journey flow with the following stages:
+            ${stagesDescription}
+
+            Please classify the customer's current state into ONE of the stage IDs listed above.
+            The response MUST be in raw JSON matching this TypeScript type:
+            {
+              "intent": "The primary intent in Arabic (max 10 words)",
+              "intentEn": "The primary intent in English (max 10 words)",
+              "stage": "ONE of the stage IDs listed above that fits the customer's state best",
+              "confidence": 95,
+              "summary": "A concise summary of their situation and sentiment in Arabic (1-2 sentences)",
+              "summaryEn": "A concise summary of their situation and sentiment in English (1-2 sentences)",
+              "keyNeeds": ["Need 1 in Arabic", "Need 2 in Arabic"],
+              "keyNeedsEn": ["Need 1 in English", "Need 2 in English"],
+              "recommendedAction": "Highly specific next steps for the salesperson in Arabic",
+              "recommendedActionEn": "Highly specific next steps for the salesperson in English",
+              "draftReply": "A personalized, professional draft reply to close the deal or help the client in Arabic",
+              "draftReplyEn": "A personalized, professional draft reply to close the deal or help the client in English"
+            }
+
+            Here is the recent WhatsApp chat history:
+            ${chatContext}
+
+            Return ONLY valid JSON. Do not include markdown code block syntax.`;
+            console.log(`[Background Analyst] Initiating auto-analysis for conversation ${conv.id} (+${contactPhone})...`);
+            const response = await callGeminiWithRetry({
+              model: "gemini-3.5-flash",
+              contents: prompt,
+              config: {
+                responseMimeType: "application/json"
+              }
+            });
+            if (response && response.text) {
+              const parsed = JSON.parse(response.text.trim());
+              if (parsed && parsed.intent) {
+                const finalAiAnalysis = {
+                  intent: parsed.intent,
+                  intentEn: parsed.intentEn || parsed.intent,
+                  confidence: parsed.confidence || 95,
+                  summary: parsed.summary,
+                  summaryEn: parsed.summaryEn || parsed.summary,
+                  keyNeeds: parsed.keyNeeds || [],
+                  keyNeedsEn: parsed.keyNeedsEn || [],
+                  recommendedAction: parsed.recommendedAction,
+                  recommendedActionEn: parsed.recommendedActionEn || parsed.recommendedAction,
+                  draftReply: parsed.draftReply,
+                  draftReplyEn: parsed.draftReplyEn || parsed.draftReply
+                };
+                const localDb = readDb();
+                const freshConv = localDb.conversations[conv.id];
+                if (freshConv) {
+                  freshConv.aiAnalysis = finalAiAnalysis;
+                  if (parsed.stage && convFlowStages.some((s) => s.id === parsed.stage)) {
+                    if (freshConv.label !== parsed.stage) {
+                      const previousStageId2 = freshConv.label;
+                      const nextStageId = parsed.stage;
+                      console.log(`[Background Analyst] Stage changed for +${contactPhone} via AI: "${previousStageId2}" -> "${nextStageId}"`);
+                      freshConv.label = nextStageId;
+                      const matchedStage = convFlowStages.find((s) => s.id === nextStageId);
+                      if (matchedStage) {
+                        if (matchedStage.autoResponseText && matchedStage.autoResponseText.trim()) {
+                          const textToSend = matchedStage.autoResponseText;
+                          console.log(`[Background Analyst Automation] Sending auto-response for stage "${matchedStage.name}": "${textToSend}"`);
+                          setTimeout(async () => {
+                            await sendBaileysMessage(deviceId, jid, textToSend);
+                            const autoMsg = {
+                              id: `msg_${Math.random().toString(36).substring(2, 11)}`,
+                              conversationId: conv.id,
+                              senderId: ownerId,
+                              recipientId: contactId,
+                              content: textToSend,
+                              type: "text",
+                              status: "delivered",
+                              timestamp: (/* @__PURE__ */ new Date()).toISOString()
+                            };
+                            saveMessage(autoMsg);
+                            broadcast({ type: "message:new", message: autoMsg });
+                          }, 2e3);
+                        }
+                        if (matchedStage.notifyOnEnter) {
+                          broadcast({
+                            type: "flow:stage_alert",
+                            deviceId,
+                            contactName: pushName || contactPhone,
+                            contactPhone,
+                            stageName: matchedStage.name,
+                            stageColor: matchedStage.color
+                          });
+                        }
+                      }
+                    }
+                  }
+                  localDb.conversations[conv.id] = freshConv;
+                  writeDb(localDb);
+                  broadcast({
+                    type: "conversation:update",
+                    conversation: freshConv
+                  });
+                }
+              }
+            }
+          } catch (analysisErr) {
+            console.error("[Background Analyst] Failed running background auto-analysis:", analysisErr);
+          }
+        })();
       }
       if (!device.aiAgentEnabled) {
         console.log(`[AI Agent DEBUG] AI Agent disabled for device ${deviceId}.`);

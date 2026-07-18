@@ -50,7 +50,6 @@ interface ExpoCoreAgentProps {
 
 export default function ExpoCoreAgent({ currentUser, lang }: ExpoCoreAgentProps) {
   const isArabic = lang === 'ar';
-  const logContainerRef = useRef<HTMLDivElement>(null);
 
   // --- Live Dynamic ExpoCore Database ---
   const [eventDetails, setEventDetails] = useState<EventDetails>(() => {
@@ -140,56 +139,18 @@ export default function ExpoCoreAgent({ currentUser, lang }: ExpoCoreAgentProps)
   }, []);
 
   useEffect(() => {
-    let active = true;
-    const fetchLogs = () => {
-      fetch('/api/admin/otp-config')
-        .then(res => res.ok ? res.json() : { logs: [] })
-        .then(data => {
-          if (!active) return;
-          if (data.logs && Array.isArray(data.logs)) {
-            // Sort by timestamp ascending so newest is at the bottom
-            const sortedLogs = [...data.logs].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
-            
-            const formattedLogs = sortedLogs.map(log => {
-              const dateStr = new Date(log.timestamp).toLocaleTimeString();
-              const prefix = log.otp === 'marketing' || log.otp.startsWith('TEST') ? '📥 Webhook' : '🔑 OTP';
-              const direction = log.status === 'sent' ? '🟢 Sent' : '🔴 Failed';
-              const errorText = log.error ? ` | Error: ${log.error}` : '';
-              return `[${dateStr}] ${prefix} -> To: +${log.phone} | Device: ${log.deviceName || 'Default'} | Status: ${direction}${errorText}`;
-            });
-
-            const initialLogs = [
-              isArabic 
-                ? `[${new Date().toLocaleTimeString()}] 🟢 تم تأسيس الاتصال ومزامنة مفتاح API بنجاح`
-                : `[${new Date().toLocaleTimeString()}] 🟢 Connection handshake initialized with api_key successfully`,
-              isArabic
-                ? `[${new Date().toLocaleTimeString()}] 🔒 تشفير التوقيع: SHA-256 صالح ومكتمل`
-                : `[${new Date().toLocaleTimeString()}] 🔒 Signature verified: SHA-256 signature is valid`,
-              isArabic
-                ? `[${new Date().toLocaleTimeString()}] 📡 منفذ الـ Webhook العام نشط وجاهز لاستقبال البيانات`
-                : `[${new Date().toLocaleTimeString()}] 📡 Webhook reception endpoint active & listening for registrations`
-            ];
-
-            setSyncLogs([...initialLogs, ...formattedLogs]);
-          }
-        })
-        .catch(err => console.warn('Failed to fetch real OTP/webhook logs', err));
-    };
-
-    fetchLogs();
-    const interval = setInterval(fetchLogs, 3000);
-    return () => {
-      active = false;
-      clearInterval(interval);
-    };
+    setSyncLogs([
+      isArabic 
+        ? `[${new Date().toLocaleTimeString()}] 🟢 تم تأسيس الاتصال ومزامنة مفتاح API بنجاح`
+        : `[${new Date().toLocaleTimeString()}] 🟢 Connection handshake initialized with api_key successfully`,
+      isArabic
+        ? `[${new Date().toLocaleTimeString()}] 🔒 تشفير التوقيع: SHA-256 صالح ومكتمل`
+        : `[${new Date().toLocaleTimeString()}] 🔒 Signature verified: SHA-256 signature is valid`,
+      isArabic
+        ? `[${new Date().toLocaleTimeString()}] 📡 منفذ الـ Webhook العام نشط وجاهز لاستقبال البيانات`
+        : `[${new Date().toLocaleTimeString()}] 📡 Webhook reception endpoint active & listening for registrations`
+    ]);
   }, [lang]);
-
-  // Scroll to bottom whenever new logs are added
-  useEffect(() => {
-    if (logContainerRef.current) {
-      logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
-    }
-  }, [syncLogs]);
 
   // Persistence triggers
   useEffect(() => {
@@ -664,7 +625,7 @@ export default function ExpoCoreAgent({ currentUser, lang }: ExpoCoreAgentProps)
               </span>
             </div>
             
-            <div ref={logContainerRef} className="bg-[#0c0c0c] rounded-xl p-4 font-mono text-[11px] text-zinc-300 border border-zinc-800 h-[220px] overflow-y-auto space-y-2 scrollbar-thin">
+            <div className="bg-[#0c0c0c] rounded-xl p-4 font-mono text-[11px] text-zinc-300 border border-zinc-800 h-[220px] overflow-y-auto space-y-2 scrollbar-thin">
               {syncLogs.length > 0 ? (
                 syncLogs.map((log, idx) => (
                   <div key={idx} className="leading-relaxed animate-fadeIn break-words">

@@ -47,7 +47,7 @@ export interface Conversation {
   };
 }
 
-export type MessageType = 'text' | 'image' | 'audio';
+export type MessageType = 'text' | 'image' | 'audio' | 'document';
 export type MessageStatus = 'sent' | 'delivered' | 'read' | 'failed';
 
 export interface Message {

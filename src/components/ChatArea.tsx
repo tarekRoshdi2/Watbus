@@ -133,7 +133,7 @@ interface ChatAreaProps {
   activeConversation?: Conversation;
   messages: Message[];
   isTyping: boolean;
-  onSendMessage: (content: string, type: 'text' | 'image' | 'audio', mediaUrl?: string) => void;
+  onSendMessage: (content: string, type: 'text' | 'image' | 'audio' | 'document', mediaUrl?: string) => void;
   onSendTyping: (isTyping: boolean) => void;
   onMarkRead: () => void;
   onUpdateLabel?: (convId: string, label?: string) => void;
@@ -437,6 +437,19 @@ export default function ChatArea({
       const reader = new FileReader();
       reader.onloadend = () => {
         onSendMessage('Sent a photo', 'image', reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+    setShowAttachMenu(false);
+  };
+
+  // PDF Attach Handler
+  const handlePdfAttach = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        onSendMessage(file.name || 'document.pdf', 'document', reader.result as string);
       };
       reader.readAsDataURL(file);
     }
@@ -1023,6 +1036,26 @@ export default function ChatArea({
                   </div>
                 )}
 
+                {/* Document/PDF Message */}
+                {msg.type === 'document' && msg.mediaUrl && (
+                  <div className="flex items-center gap-3 p-2 bg-black/5 dark:bg-white/5 rounded-lg border border-black/10 dark:border-white/10 min-w-[200px] mb-1">
+                    <FileText className="w-8 h-8 text-red-500 flex-shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-bold truncate text-zinc-800 dark:text-zinc-200">
+                        {msg.content || 'document.pdf'}
+                      </p>
+                      <span className="text-[10px] text-zinc-500">PDF Document</span>
+                    </div>
+                    <a
+                      href={msg.mediaUrl}
+                      download={msg.content || 'document.pdf'}
+                      className="p-1.5 hover:bg-zinc-200 dark:hover:bg-zinc-750 rounded-full text-zinc-600 dark:text-zinc-300"
+                    >
+                      <Download className="w-4 h-4" />
+                    </a>
+                  </div>
+                )}
+
                 {/* Text Content */}
                 {msg.type === 'text' && (() => {
                   const isArabic = /[\u0600-\u06FF]/.test(msg.content);
@@ -1145,6 +1178,21 @@ export default function ChatArea({
             >
               <Image className="w-4 h-4 text-sky-500" />
               {lang === 'ar' ? 'مشاركة صورة' : 'Share Photo'}
+            </label>
+
+            <input
+              type="file"
+              accept="application/pdf"
+              onChange={handlePdfAttach}
+              className="hidden"
+              id="file-pdf-attach"
+            />
+            <label
+              htmlFor="file-pdf-attach"
+              className="px-4 py-2 hover:bg-zinc-50 dark:hover:bg-zinc-700 flex items-center gap-2.5 text-sm font-medium text-zinc-600 dark:text-zinc-300 cursor-pointer border-t border-zinc-100 dark:border-zinc-700/50"
+            >
+              <FileText className="w-4 h-4 text-red-500" />
+              {lang === 'ar' ? 'مشاركة ملف PDF' : 'Share PDF'}
             </label>
           </div>
         )}

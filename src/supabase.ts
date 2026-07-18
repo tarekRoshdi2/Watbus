@@ -286,7 +286,7 @@ export async function backupDbToSupabase(dbData: any): Promise<boolean> {
  * Restores the central CRM database from Supabase.
  * Returns the parsed database object or null if not configured or not found.
  */
-export async function restoreDbFromSupabase(): Promise<any | null> {
+export async function restoreDbFromSupabase(): Promise<{ data: any; updated_at: string } | null> {
   const client = getSupabaseClient();
   if (!client) {
     return null;
@@ -295,7 +295,7 @@ export async function restoreDbFromSupabase(): Promise<any | null> {
   try {
     const { data, error } = await client
       .from('crm_backups')
-      .select('data')
+      .select('data, updated_at')
       .eq('id', 'db-store')
       .single();
 
@@ -313,7 +313,7 @@ export async function restoreDbFromSupabase(): Promise<any | null> {
 
     if (data && data.data) {
       console.log('[Supabase DB Restore] Successfully fetched central database backup from Supabase.');
-      return data.data;
+      return { data: data.data, updated_at: data.updated_at };
     }
 
     return null;

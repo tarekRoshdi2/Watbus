@@ -265,7 +265,7 @@ function getMessageText(messageObj: any): string {
   }
   if (cleanObj.audioMessage) return '[Voice Message/رسالة صوتية]';
   if (cleanObj.documentMessage) {
-    return cleanObj.documentMessage.caption || '[Document/مستند]';
+    return cleanObj.documentMessage.fileName || cleanObj.documentMessage.caption || '[Document/مستند]';
   }
   if (cleanObj.stickerMessage) return '[Sticker/ملصق]';
   if (cleanObj.locationMessage) return '[Location/موقع]';
@@ -357,9 +357,10 @@ function syncIncomingBaileysMessage(sock: any, jid: string, pushName: string | u
     console.log(`[DEBUG] Incoming message received for contact: ${contactUser.username}`);
   }
 
-  let type: 'text' | 'image' | 'audio' = 'text';
+  let type: 'text' | 'image' | 'audio' | 'document' = 'text';
   if (messageContent?.imageMessage) type = 'image';
   if (messageContent?.audioMessage) type = 'audio';
+  if (messageContent?.documentMessage) type = 'document';
 
   const dateStr = new Date(timestamp * 1000).toISOString();
 
@@ -977,7 +978,8 @@ export async function sendBaileysMessage(
   text: string, 
   audioBuffer?: Buffer,
   pdfBuffer?: Buffer,
-  pdfFilename?: string
+  pdfFilename?: string,
+  imageBuffer?: Buffer
 ): Promise<{ success: boolean; error?: string }> {
   const sock = activeSockets.get(deviceId);
   if (!sock) {
@@ -1035,6 +1037,23 @@ export async function sendBaileysMessage(
         document: pdfBuffer,
         mimetype: 'application/pdf',
         fileName: pdfFilename || 'ticket.pdf',
+        caption: text
+      });
+    } else if (imageBuffer) {
+      // Validate that the number is actually registered on WhatsApp
+      try {
+        const [result] = await sock.onWhatsApp(cleanPhone);
+        if (!result || !result.exists) {
+          console.warn(`[Baileys Send] Number ${cleanPhone} is not registered on WhatsApp!`);
+          return { success: false, error: 'Target phone number is not registered on WhatsApp' };
+        }
+        cleanPhone = result.jid;
+      } catch (checkErr) {
+        console.warn(`[Baileys Send] Failed to verify number on WhatsApp, attempting anyway:`, checkErr);
+      }
+
+      await sock.sendMessage(cleanPhone, {
+        image: imageBuffer,
         caption: text
       });
     } else {
