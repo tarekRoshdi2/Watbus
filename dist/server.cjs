@@ -1518,7 +1518,7 @@ async function startWhatsAppSession(deviceId) {
       }
       if (qr) {
         console.log(`QR Code generated for device ${deviceId}`);
-        const qrImage = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&color=00a884&data=${encodeURIComponent(qr)}`;
+        const qrImage = `https://quickchart.io/qr?size=300&margin=1&text=${encodeURIComponent(qr)}`;
         device2.qrCodeUrl = qrImage;
         device2.status = "linking";
         saveDevice(device2);

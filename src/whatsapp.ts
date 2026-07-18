@@ -710,8 +710,8 @@ export async function startWhatsAppSession(deviceId: string) {
 
       if (qr) {
         console.log(`QR Code generated for device ${deviceId}`);
-        // Generate a real scanable QR image
-        const qrImage = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&color=00a884&data=${encodeURIComponent(qr)}`;
+        // Generate a real scanable QR image with global CDN fallback
+        const qrImage = `https://quickchart.io/qr?size=300&margin=1&text=${encodeURIComponent(qr)}`;
         device.qrCodeUrl = qrImage;
         device.status = 'linking';
         saveDevice(device);

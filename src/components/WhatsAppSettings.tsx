@@ -715,6 +715,16 @@ ALTER TABLE crm_backups DISABLE ROW LEVEL SECURITY;`}
                                     alt="WhatsApp Web QR Code"
                                     className="w-full h-full object-contain relative z-0"
                                     referrerPolicy="no-referrer"
+                                    onError={(e) => {
+                                      const target = e.target as HTMLImageElement;
+                                      if (device.qrCodeUrl?.includes('data=')) {
+                                        const data = device.qrCodeUrl.split('data=')[1];
+                                        target.src = `https://quickchart.io/qr?size=300&text=${data}`;
+                                      } else if (device.qrCodeUrl?.includes('text=')) {
+                                        const text = device.qrCodeUrl.split('text=')[1];
+                                        target.src = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&color=00a884&data=${text}`;
+                                      }
+                                    }}
                                   />
                                 </>
                               ) : (
