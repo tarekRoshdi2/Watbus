@@ -73,17 +73,19 @@ export default function Sidebar({
     return userStories.some((s) => !s.viewers.includes(currentUser.id));
   };
 
-  const filteredConversations = conversations
+  const filteredConversations = (conversations || [])
     .filter((c) => {
-      const matchesSearch = c.recipient.username.toLowerCase().includes(searchText.toLowerCase());
+      if (!c) return false;
+      const recipientName = c.recipient?.username || '';
+      const matchesSearch = recipientName.toLowerCase().includes((searchText || '').toLowerCase());
       const matchesLabel = selectedLabelFilter === 'All' || c.label === selectedLabelFilter;
       const matchesDevice = selectedDeviceId === 'all' || c.deviceId === selectedDeviceId;
       const matchesFolder = selectedFolderId === null || c.folderId === selectedFolderId;
       return matchesSearch && matchesLabel && matchesDevice && matchesFolder;
     })
     .sort((a, b) => {
-      const timeA = latestMessages[a.id]?.timestamp || a.updatedAt || a.createdAt;
-      const timeB = latestMessages[b.id]?.timestamp || b.updatedAt || b.createdAt;
+      const timeA = latestMessages[a.id]?.timestamp || a.updatedAt || a.createdAt || 0;
+      const timeB = latestMessages[b.id]?.timestamp || b.updatedAt || b.createdAt || 0;
       return new Date(timeB).getTime() - new Date(timeA).getTime();
     });
 
@@ -318,11 +320,15 @@ export default function Sidebar({
       {/* Scrollable Conversation Stack */}
       <div className="flex-1 overflow-y-auto divide-y divide-zinc-100 dark:divide-zinc-800/60 bg-white dark:bg-zinc-900">
         {filteredConversations.map((c) => {
+          if (!c) return null;
+          const recipientName = c.recipient?.username || 'WhatsApp Contact';
+          const avatarUrl = c.recipient?.avatarUrl || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80';
+          const recipientId = c.recipient?.id || c.id;
           const isActive = c.id === activeConversationId;
           const unread = unreadCounts[c.id] || 0;
           const lastMsg = latestMessages[c.id];
-          const hasStatus = contactHasStatus(c.recipient.id);
-          const hasUnviewedStatus = contactHasUnviewedStatus(c.recipient.id);
+          const hasStatus = recipientId ? contactHasStatus(recipientId) : false;
+          const hasUnviewedStatus = recipientId ? contactHasUnviewedStatus(recipientId) : false;
           const deviceAssigned = devices.find(d => d.id === c.deviceId);
 
           return (
@@ -345,14 +351,14 @@ export default function Sidebar({
                   }`}
                 >
                   <img
-                    src={c.recipient.avatarUrl}
-                    alt={c.recipient.username}
+                    src={avatarUrl}
+                    alt={recipientName}
                     referrerPolicy="no-referrer"
                     className="w-full h-full rounded-full object-cover bg-zinc-100"
                   />
                 </div>
                 {/* Online Indicator Bubble */}
-                {c.recipient.isOnline && (
+                {c.recipient?.isOnline && (
                   <span className="absolute bottom-0 right-0 w-3 h-3 bg-emerald-500 border-2 border-white dark:border-zinc-900 rounded-full" />
                 )}
               </div>
@@ -379,7 +385,7 @@ export default function Sidebar({
                       </span>
                     )}
                     <span className="font-bold text-zinc-800 dark:text-zinc-200 text-sm truncate">
-                      {c.recipient.username}
+                      {recipientName}
                     </span>
                   </div>
                 </div>

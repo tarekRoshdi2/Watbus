@@ -545,28 +545,11 @@ export async function startWhatsAppSession(deviceId: string) {
     }
   }
 
-  // Retrieve or generate a persistent browser signature for this device to avoid fingerprint bans
-  let browserSignature: [string, string, string];
-  if (device && device.browserSignature && Array.isArray(device.browserSignature) && device.browserSignature.length === 3) {
-    browserSignature = device.browserSignature as [string, string, string];
-    console.log(`[WhatsApp Session] Using persistent browser fingerprint for device ${deviceId}:`, browserSignature);
-  } else {
-    const browsers = [
-      ['Windows', 'Chrome', '124.0.0'],
-      ['macOS', 'Chrome', '124.0.0'],
-      ['Windows', 'Firefox', '125.0'],
-      ['macOS', 'Firefox', '125.0'],
-      ['macOS', 'Safari', '17.4'],
-      ['Windows', 'Edge', '123.0']
-    ];
-    const selectedBrowser = browsers[Math.floor(Math.random() * browsers.length)];
-    browserSignature = [selectedBrowser[0], selectedBrowser[1], selectedBrowser[2]];
-    
-    if (device) {
-      device.browserSignature = browserSignature;
-      saveDevice(device);
-      console.log(`[WhatsApp Session] Generated and persisted new browser fingerprint for device ${deviceId}:`, browserSignature);
-    }
+  // Always use a fixed, 100% stable browser fingerprint to prevent WhatsApp 440 session conflicts
+  const browserSignature: [string, string, string] = ['ChatCore Engine', 'Chrome', '125.0.0'];
+  if (device) {
+    device.browserSignature = browserSignature;
+    saveDevice(device);
   }
 
   // Clear any existing reconnect timeouts
@@ -664,17 +647,13 @@ export async function startWhatsAppSession(deviceId: string) {
       syncFullHistory: false,
       shouldSyncHistoryMessage: () => false,
       linkPreviewImageUpload: false,
-      agent,
-      // --- Stability Settings ---
-      // Keep the TCP connection alive with periodic pings to prevent server-side timeout
-      keepAliveIntervalMs: 25000, // 25 second keepalive ping
-      // Retry failed message deliveries with a small delay instead of immediately
+      markOnlineOnConnect: true,
+      connectTimeoutMs: 60000,
+      defaultQueryTimeoutMs: 60000,
+      keepAliveIntervalMs: 15000, // 15 second keepalive ping to prevent Hostinger/Proxy timeouts
       retryRequestDelayMs: 2000,
-      // Maximum number of message retries before giving up
       maxMsgRetryCount: 5,
-      // Emulate a real browser to avoid WhatsApp flagging the connection as a bot
       browser: browserSignature,
-      // Do not generate high-res link previews to reduce bandwidth and avoid disconnects
       generateHighQualityLinkPreview: false,
     });
 

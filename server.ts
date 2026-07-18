@@ -1427,10 +1427,18 @@ app.post('/api/conversations/:convId/messages', async (req, res) => {
   const { senderId, content, type, mediaData } = req.body;
 
   const db = readDb();
-  const conv = db.conversations[convId];
+  let conv = db.conversations[convId];
   if (!conv) {
-    res.status(404).json({ error: 'Conversation not found' });
-    return;
+    console.warn(`[API Message Recovery] Conversation ${convId} not found in DB. Auto-recovering conversation...`);
+    const parts = convId.split('_');
+    if (parts.length >= 3) {
+      const p1 = parts[1];
+      const p2 = parts.slice(2).join('_');
+      conv = getOrCreateConversation(p1, p2);
+    } else {
+      const fallbackTarget = req.body.recipientId || 'contact_default';
+      conv = getOrCreateConversation(senderId || 'admin', fallbackTarget);
+    }
   }
 
   let recipientId = conv.participantIds.find((id) => id !== senderId) || '';

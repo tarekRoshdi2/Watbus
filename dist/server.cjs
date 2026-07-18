@@ -1377,26 +1377,10 @@ async function startWhatsAppSession(deviceId) {
       console.error(`[WhatsApp Session] Failed to initialize proxy agent for ${proxyUrl}:`, proxyErr);
     }
   }
-  let browserSignature;
-  if (device && device.browserSignature && Array.isArray(device.browserSignature) && device.browserSignature.length === 3) {
-    browserSignature = device.browserSignature;
-    console.log(`[WhatsApp Session] Using persistent browser fingerprint for device ${deviceId}:`, browserSignature);
-  } else {
-    const browsers = [
-      ["Windows", "Chrome", "124.0.0"],
-      ["macOS", "Chrome", "124.0.0"],
-      ["Windows", "Firefox", "125.0"],
-      ["macOS", "Firefox", "125.0"],
-      ["macOS", "Safari", "17.4"],
-      ["Windows", "Edge", "123.0"]
-    ];
-    const selectedBrowser = browsers[Math.floor(Math.random() * browsers.length)];
-    browserSignature = [selectedBrowser[0], selectedBrowser[1], selectedBrowser[2]];
-    if (device) {
-      device.browserSignature = browserSignature;
-      saveDevice(device);
-      console.log(`[WhatsApp Session] Generated and persisted new browser fingerprint for device ${deviceId}:`, browserSignature);
-    }
+  const browserSignature = ["ChatCore Engine", "Chrome", "125.0.0"];
+  if (device) {
+    device.browserSignature = browserSignature;
+    saveDevice(device);
   }
   const existingTimeout = activeReconnectTimeouts.get(deviceId);
   if (existingTimeout) {
@@ -1478,18 +1462,14 @@ async function startWhatsAppSession(deviceId) {
       syncFullHistory: false,
       shouldSyncHistoryMessage: () => false,
       linkPreviewImageUpload: false,
-      agent,
-      // --- Stability Settings ---
-      // Keep the TCP connection alive with periodic pings to prevent server-side timeout
-      keepAliveIntervalMs: 25e3,
-      // 25 second keepalive ping
-      // Retry failed message deliveries with a small delay instead of immediately
+      markOnlineOnConnect: true,
+      connectTimeoutMs: 6e4,
+      defaultQueryTimeoutMs: 6e4,
+      keepAliveIntervalMs: 15e3,
+      // 15 second keepalive ping to prevent Hostinger/Proxy timeouts
       retryRequestDelayMs: 2e3,
-      // Maximum number of message retries before giving up
       maxMsgRetryCount: 5,
-      // Emulate a real browser to avoid WhatsApp flagging the connection as a bot
       browser: browserSignature,
-      // Do not generate high-res link previews to reduce bandwidth and avoid disconnects
       generateHighQualityLinkPreview: false
     });
     activeSockets.set(deviceId, sock);
@@ -2960,10 +2940,18 @@ app.post("/api/conversations/:convId/messages", async (req, res) => {
   const { convId } = req.params;
   const { senderId, content, type, mediaData } = req.body;
   const db = readDb();
-  const conv = db.conversations[convId];
+  let conv = db.conversations[convId];
   if (!conv) {
-    res.status(404).json({ error: "Conversation not found" });
-    return;
+    console.warn(`[API Message Recovery] Conversation ${convId} not found in DB. Auto-recovering conversation...`);
+    const parts = convId.split("_");
+    if (parts.length >= 3) {
+      const p1 = parts[1];
+      const p2 = parts.slice(2).join("_");
+      conv = getOrCreateConversation(p1, p2);
+    } else {
+      const fallbackTarget = req.body.recipientId || "contact_default";
+      conv = getOrCreateConversation(senderId || "admin", fallbackTarget);
+    }
   }
   let recipientId = conv.participantIds.find((id) => id !== senderId) || "";
   if (senderId === "meta-ai" || !senderId.startsWith("contact_")) {
