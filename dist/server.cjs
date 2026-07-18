@@ -2978,13 +2978,13 @@ app.post("/api/conversations/:convId/messages", async (req, res) => {
   }
   if (recipientId.startsWith("contact_")) {
     const targetPhone = recipientId.replace("contact_", "");
-    const activeDevices = getAllDevices().filter((d) => ["connected", "ready", "authenticated"].includes(d.status));
-    const qrDevice = activeDevices.find((d) => d.id === conv.deviceId) || activeDevices.find((d) => d.method === "qr") || activeDevices[0];
-    if (qrDevice) {
-      console.log(`Routing manual Web UI message via real device "${qrDevice.name}" (id: ${qrDevice.id}) to +${targetPhone}`);
-      sendRealWhatsAppMessage(qrDevice, targetPhone, content, false, type, mediaData).then((resWa) => {
+    const allDevices = getAllDevices();
+    const targetDevice = (conv.deviceId ? allDevices.find((d) => d.id === conv.deviceId) : null) || allDevices.find((d) => activeSockets.has(d.id)) || allDevices.find((d) => ["connected", "ready", "authenticated"].includes(d.status)) || allDevices[0];
+    if (targetDevice) {
+      console.log(`[Message Route] Sending Web UI message via device "${targetDevice.name}" (id: ${targetDevice.id}) to +${targetPhone}`);
+      sendRealWhatsAppMessage(targetDevice, targetPhone, content, false, type, mediaData).then((resWa) => {
         if (!resWa.success) {
-          console.error(`Failed to send real WhatsApp message to +${targetPhone}:`, resWa.error);
+          console.error(`[Message Route Failed] Failed to send real WhatsApp message to +${targetPhone}:`, resWa.error);
           updateMessageStatus(newMsg.id, "failed");
           broadcast({
             type: "message:receipt",
@@ -2993,7 +2993,7 @@ app.post("/api/conversations/:convId/messages", async (req, res) => {
             conversationId: convId
           });
         } else {
-          console.log(`Successfully sent real WhatsApp message to +${targetPhone}`);
+          console.log(`[Message Route Success] Successfully delivered WhatsApp message to +${targetPhone}`);
           updateMessageStatus(newMsg.id, "delivered");
           broadcast({
             type: "message:receipt",
