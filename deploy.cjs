@@ -12,7 +12,6 @@ const zipFile = path.join(githubDir, 'Watbus-Ready.zip');
 const ignoreList = [
   'node_modules',
   '.git',
-  'dist',
   'whatsapp-sessions',
   'github',
   '.gemini',

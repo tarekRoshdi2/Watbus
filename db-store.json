@@ -16,11 +16,11 @@
       "id": "admin-tarek",
       "role": "admin",
       "email": "tarekroshdi@gmail.com",
-      "isOnline": true,
+      "isOnline": false,
       "password": "Tarek@2026",
       "username": "Tarek Roshdi",
-      "avatarUrl": "https://pps.whatsapp.net/v/t61.24694-24/747126771_1038422479116934_1152221218606645899_n.jpg?ccb=11-4&oh=01_Q5Aa5AEL_025kn4l5oas5wS_7VRXJxhbYvS2X8cthHs8MaW5Sg&oe=6A6C929E&_nc_sid=5e03e0&_nc_cat=108",
-      "lastSeenAt": "2026-07-21T13:29:45.458Z",
+      "avatarUrl": "https://pps.whatsapp.net/v/t61.24694-24/747126771_1038422479116934_1152221218606645899_n.jpg?ccb=11-4&oh=01_Q5Aa5AGsQ0-TN3Yzio5bf_IG_b5tHkvxfwWGqUNAbGgEkBvgzw&oe=6A6BB19E&_nc_sid=5e03e0&_nc_cat=108",
+      "lastSeenAt": "2026-07-20T23:24:33.034Z",
       "statusText": "System Administrator",
       "costInDollars": 0,
       "aiMessagesUsed": 38,
@@ -73,21 +73,6 @@
       "totalTokensUsed": 0,
       "subscriptionPlan": "starter",
       "subscriptionStatus": "inactive"
-    },
-    "contact_201228394334": {
-      "id": "contact_201228394334",
-      "username": "+201228394334",
-      "avatarUrl": "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80",
-      "statusText": "WhatsApp Contact",
-      "isOnline": false,
-      "lastSeenAt": "2026-07-21T13:29:10.047Z",
-      "subscriptionStatus": "inactive",
-      "totalTokensUsed": 0,
-      "costInDollars": 0,
-      "aiMessagesUsed": 0,
-      "aiMessagesLimit": 0,
-      "role": "user",
-      "subscriptionPlan": "starter"
     }
   },
   "catalog": [],
@@ -100,6 +85,7 @@
       "status": "connected",
       "aiModel": "gemini-3.5-flash",
       "ownerId": "admin-tarek",
+      "linkedAt": "2026-07-20T23:23:48.741Z",
       "flowStages": [
         {
           "id": "awareness",
@@ -178,22 +164,21 @@
       "webhookUrl": "https://your-api.com/whatsapp/webhook",
       "aiAgentName": "",
       "aiVoiceTone": "professional",
+      "phoneNumber": "+971555980556",
       "syncHistory": true,
       "aiStopKeyword": "",
       "aiTemperature": 0.8,
       "aiAgentEnabled": true,
       "aiVoiceEnabled": false,
-      "dailySentCount": 3,
+      "dailySentCount": 52,
       "aiKnowledgeBase": "",
       "browserSignature": [
         "ChatCore Engine",
         "Chrome",
         "125.0.0"
       ],
-      "lastSentResetDate": "2026-07-21",
-      "aiAgentInstructions": "",
-      "phoneNumber": "+971555980556",
-      "linkedAt": "2026-07-21T13:25:57.010Z"
+      "lastSentResetDate": "2026-07-20",
+      "aiAgentInstructions": ""
     }
   },
   "folders": {},
@@ -1168,36 +1153,6 @@
       "timestamp": "2026-07-20T23:11:40.008Z",
       "recipientId": "contact_201225378152",
       "conversationId": "conv_djji39qrf"
-    },
-    {
-      "id": "msg_7r9yjwknf",
-      "conversationId": "conv_9vgehiffd",
-      "senderId": "admin-tarek",
-      "recipientId": "contact_201115822923",
-      "content": "ز",
-      "type": "text",
-      "status": "delivered",
-      "timestamp": "2026-07-21T13:28:07.423Z"
-    },
-    {
-      "id": "3EB03C7AA794EF4D4A8911",
-      "conversationId": "conv_djji39qrf",
-      "senderId": "admin-tarek",
-      "recipientId": "contact_201225378152",
-      "content": "أهلاً هاله! 👋\n\nلدينا خبر حماسي نود مشاركته معك اليوم! 🚀\n\nيسعدنا أن نعلن عن إطلاق *شات كور (ChatCore)*، الحل الأمثل لنقل تجربة خدمة العملاء لديك إلى مستوى جديد تماماً! ✨\n\nلماذا *شات كور*؟\n✅ تحكم كامل في محادثاتك في مكان واحد.\n✅ استجابة فورية ترفع من رضا عملائك.\n✅ تصميم ذكي وسهل للاستخدام اليومي.\n\nهل تود التعرف أكثر على كيف يمكن لـ *شات كور* أن يطور عملك؟ 💡\n\nيسعدني أن أرسل لك تفاصيل أكثر أو تحديد موعد سريع لعرض توضيحي.\n\nبانتظار ردك! 😊",
-      "type": "text",
-      "status": "read",
-      "timestamp": "2026-07-21T13:29:01.000Z"
-    },
-    {
-      "id": "3EB033908AEA41E15A09E4",
-      "conversationId": "conv_209tk44qn",
-      "senderId": "admin-tarek",
-      "recipientId": "contact_201228394334",
-      "content": "أهلاً احمد غريب! 👋\n\nلدينا خبر حماسي نود مشاركته معك اليوم! 🚀\n\nيسعدنا أن نعلن عن إطلاق *شات كور (ChatCore)*، الحل الأمثل لنقل تجربة خدمة العملاء لديك إلى مستوى جديد تماماً! ✨\n\nلماذا *شات كور*؟\n✅ تحكم كامل في محادثاتك في مكان واحد.\n✅ استجابة فورية ترفع من رضا عملائك.\n✅ تصميم ذكي وسهل للاستخدام اليومي.\n\nهل تود التعرف أكثر على كيف يمكن لـ *شات كور* أن يطور عملك؟ 💡\n\nيسعدني أن أرسل لك تفاصيل أكثر أو تحديد موعد سريع لعرض توضيحي.\n\nبانتظار ردك! 😊",
-      "type": "text",
-      "status": "read",
-      "timestamp": "2026-07-21T13:29:07.000Z"
     }
   ],
   "statuses": [],
@@ -1214,38 +1169,28 @@
         "[2:19:55 AM] [⏸] All linked WhatsApp accounts have reached their daily sending limits. Campaign paused automatically.",
         "[2:21:22 AM] Starting marketing queue...",
         "[2:21:22 AM] Starting outreach campaign with dynamic load distribution and device failover.",
-        "[2:21:23 AM] [⏸] All linked WhatsApp accounts have reached their daily sending limits. Campaign paused automatically.",
-        "[4:28:56 PM] Starting marketing queue...",
-        "[4:28:56 PM] Starting outreach campaign with dynamic load distribution and device failover.",
-        "[4:28:58 PM] [1/2] Dispatching template via \"ChatCore\" to هاله (+201225378152)...",
-        "[4:29:01 PM] Executing live HTTP callback dispatch to +201225378152...",
-        "[4:29:01 PM] [✔] Delivered to +201225378152. Remote status: DELIVERED.",
-        "[4:29:04 PM] [2/2] Dispatching template via \"ChatCore\" to احمد غريب (+201228394334)...",
-        "[4:29:07 PM] Executing live HTTP callback dispatch to +201228394334...",
-        "[4:29:09 PM] [✔] Delivered to +201228394334. Remote status: DELIVERED.",
-        "[4:29:13 PM] Bulk dispatch campaign successfully completed!"
+        "[2:21:23 AM] [⏸] All linked WhatsApp accounts have reached their daily sending limits. Campaign paused automatically."
       ],
       "name": "00",
       "delay": 6,
-      "status": "completed",
+      "status": "paused",
       "ownerId": "admin-tarek",
       "targets": [
         {
           "name": "هاله",
           "phone": "201225378152",
-          "status": "sent"
+          "status": "pending"
         },
         {
           "name": "احمد غريب",
           "phone": "201228394334",
-          "status": "sent"
+          "status": "pending"
         }
       ],
       "deviceId": "dev_wpaax10r2",
-      "progress": 100,
+      "progress": 0,
       "createdAt": "2026-07-20T23:19:23.719Z",
-      "templateText": "أهلاً {name}! 👋\n\nلدينا خبر حماسي نود مشاركته معك اليوم! 🚀\n\nيسعدنا أن نعلن عن إطلاق *شات كور (ChatCore)*، الحل الأمثل لنقل تجربة خدمة العملاء لديك إلى مستوى جديد تماماً! ✨\n\nلماذا *شات كور*؟\n✅ تحكم كامل في محادثاتك في مكان واحد.\n✅ استجابة فورية ترفع من رضا عملائك.\n✅ تصميم ذكي وسهل للاستخدام اليومي.\n\nهل تود التعرف أكثر على كيف يمكن لـ *شات كور* أن يطور عملك؟ 💡\n\nيسعدني أن أرسل لك تفاصيل أكثر أو تحديد موعد سريع لعرض توضيحي.\n\nبانتظار ردك! 😊",
-      "completedAt": "2026-07-21T13:29:13.007Z"
+      "templateText": "أهلاً {name}! 👋\n\nلدينا خبر حماسي نود مشاركته معك اليوم! 🚀\n\nيسعدنا أن نعلن عن إطلاق *شات كور (ChatCore)*، الحل الأمثل لنقل تجربة خدمة العملاء لديك إلى مستوى جديد تماماً! ✨\n\nلماذا *شات كور*؟\n✅ تحكم كامل في محادثاتك في مكان واحد.\n✅ استجابة فورية ترفع من رضا عملائك.\n✅ تصميم ذكي وسهل للاستخدام اليومي.\n\nهل تود التعرف أكثر على كيف يمكن لـ *شات كور* أن يطور عملك؟ 💡\n\nيسعدني أن أرسل لك تفاصيل أكثر أو تحديد موعد سريع لعرض توضيحي.\n\nبانتظار ردك! 😊"
     }
   },
   "demoLeads": [],
@@ -1259,22 +1204,18 @@
       "aiPaused": false,
       "deviceId": "dev_wpaax10r2",
       "createdAt": "2026-07-20T16:23:02.538Z",
-      "updatedAt": "2026-07-21T13:28:07.423Z",
+      "updatedAt": "2026-07-20T23:00:29.403Z",
       "participantIds": [
         "admin-tarek",
         "contact_201115822923"
-      ],
-      "adminReport": {
-        "content": "[ADMIN_REPORT]\n\n### ملخص المحادثة:\nقام العميل بالتواصل مع الوكيل الذكي لطلب مساعدة تقنية في صياغة 8 برومبتات (Prompts) لتصاميم إبداعية خاصة بهوية \"أدفين\". حدد العميل متطلبات تقنية دقيقة تشمل: (نسبة عرض 1:1، استخدام خط Cairo، مراعاة منطقة الأمان Safe Zone بمقدار 120px، وتوزيع المحتوى النصي داخل الصور). استمرت المحادثة في حلقة تكرارية حيث أصر الوكيل الذكي على طلب \"الاسم الكريم\" للعميل لتحويله إلى فريق بشري، بينما كان العميل يكتفي بردود مقتضبة أو علامات استفهام، حتى انتهت المحادثة بتزويد العميل بحرف \"ز\".\n\n### نية العميل (User Intent):\nطلب خدمة إبداعية/تقنية (صياغة برومبتات لتصاميم تيك توك).\n\n### الحالة المزاجية (Sentiment):\nمحايد إلى محبط (بسبب تكرار الوكيل الذكي لنفس الطلب وعدم البدء في تنفيذ المهمة).\n\n### الإجراء الذي تم اتخاذه (Action Taken):\nقام الوكيل الذكي بتوثيق كافة المتطلبات التقنية للعميل، وحاول باستمرار ربط العميل بفريق بشري متخصص عبر طلب الاسم الكريم، مع تقديم اعتذارات متكررة عن التأخير.\n\n### النقاط المفتوحة / التوصيات (Pending Items / Recommendations):\n*   **توصية فورية:** يجب على أحد أعضاء فريق التصميم البشري التدخل فوراً والتواصل مع العميل (الذي بدأ اسمه بحرف \"ز\") لتنفيذ البرومبتات المطلوبة، حيث أن العميل قد أظهر صبرًا محدودًا تجاه الردود الآلية المتكررة.\n*   **تحسين الأداء:** يوصى بمراجعة منطق \"الوكيل الذكي\" في التعامل مع العملاء الذين يرفضون الإفصاح عن بياناتهم الشخصية؛ يجب أن يكون لدى الوكيل خيار تنفيذ المهام التقنية البسيطة (مثل صياغة النصوص) مباشرة دون إيقاف العملية في انتظار \"الاسم الكريم\".",
-        "updatedAt": "2026-07-21T13:28:33.442Z"
-      }
+      ]
     },
     "conv_djji39qrf": {
       "id": "conv_djji39qrf",
       "label": "awareness",
       "deviceId": "dev_wpaax10r2",
       "createdAt": "2026-07-20T22:42:37.748Z",
-      "updatedAt": "2026-07-21T13:29:01.809Z",
+      "updatedAt": "2026-07-20T23:11:40.008Z",
       "participantIds": [
         "admin-tarek",
         "contact_201225378152"
@@ -1288,25 +1229,6 @@
         "dev_wpaax10r2",
         "contact_201115822923"
       ]
-    },
-    "conv_fpm7fi4ok": {
-      "id": "conv_fpm7fi4ok",
-      "participantIds": [
-        "dev_wpaax10r2",
-        "contact_201225378152"
-      ],
-      "createdAt": "2026-07-21T13:29:01.437Z",
-      "updatedAt": "2026-07-21T13:29:01.437Z"
-    },
-    "conv_209tk44qn": {
-      "id": "conv_209tk44qn",
-      "participantIds": [
-        "admin-tarek",
-        "contact_201228394334"
-      ],
-      "createdAt": "2026-07-21T13:29:10.048Z",
-      "updatedAt": "2026-07-21T13:29:10.048Z",
-      "deviceId": "dev_wpaax10r2"
     }
   }
 }

@@ -1990,7 +1990,8 @@ var publicRoutes = [
   "/api/catalog"
 ];
 app.use("/api", (req, res, next) => {
-  if (publicRoutes.some((route) => req.path === route || req.path.startsWith(route))) {
+  const currentPath = req.originalUrl.split("?")[0];
+  if (publicRoutes.some((route) => currentPath === route || currentPath.startsWith(route + "/"))) {
     return next();
   }
   const authHeader = req.headers.authorization;
