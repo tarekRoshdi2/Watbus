@@ -769,7 +769,14 @@ export default function ChatArea({
             className="w-9 h-9 md:w-10 md:h-10 rounded-full object-cover border border-zinc-200 dark:border-zinc-700"
           />
           <div className="rtl:text-right ltr:text-left">
-            <h2 className="font-semibold text-sm md:text-base text-zinc-800 dark:text-zinc-100">{activeContact?.username || 'WhatsApp Contact'}</h2>
+            <div className="flex items-center gap-2">
+              <h2 className="font-semibold text-sm md:text-base text-zinc-800 dark:text-zinc-100">{activeContact?.username || 'WhatsApp Contact'}</h2>
+              {activeConversation && (
+                <span className="text-[10px] font-mono font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 px-2 py-0.5 rounded-md border border-emerald-500/20">
+                  #CT-{activeConversation.id.substring(0, 6).toUpperCase()}
+                </span>
+              )}
+            </div>
             <div className="flex items-center gap-2 md:gap-3 text-[11px] md:text-xs mt-0.5 flex-wrap">
               {isTyping ? (
                 <span className="text-emerald-500 font-medium animate-pulse">{lang === 'ar' ? 'جاري الكتابة...' : 'typing...'}</span>

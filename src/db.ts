@@ -30,6 +30,11 @@ export interface DemoLead {
   username: string;
   phone: string;
   createdAt: string;
+  leadSource?: 'whatsapp' | 'web';
+  status?: 'new' | 'contacted' | 'qualified' | 'converted';
+  notes?: string;
+  score?: number;
+  extractedNeeds?: string[];
 }
 
 // Meta AI Special Seed User
@@ -760,6 +765,23 @@ export function deleteFolder(folderId: string): void {
     
     writeDb(db);
   }
+}
+
+export function getLeads(): DemoLead[] {
+  const db = readDb();
+  return db.demoLeads || [];
+}
+
+export function saveLead(lead: DemoLead): void {
+  const db = readDb();
+  if (!db.demoLeads) db.demoLeads = [];
+  const existingIdx = db.demoLeads.findIndex(l => l.id === lead.id || l.phone === lead.phone);
+  if (existingIdx >= 0) {
+    db.demoLeads[existingIdx] = { ...db.demoLeads[existingIdx], ...lead };
+  } else {
+    db.demoLeads.push(lead);
+  }
+  writeDb(db);
 }
 
 

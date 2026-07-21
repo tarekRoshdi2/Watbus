@@ -61,7 +61,7 @@ export interface Conversation {
   };
 }
 
-export type MessageType = 'text' | 'image' | 'audio' | 'document';
+export type MessageType = 'text' | 'image' | 'audio' | 'document' | 'interactive';
 export type MessageStatus = 'sent' | 'delivered' | 'read' | 'failed';
 
 export interface Message {
@@ -72,6 +72,7 @@ export interface Message {
   content: string;
   type: MessageType;
   mediaUrl?: string; // Base64 or local URL
+  interactiveData?: any; // Data for interactive buttons/lists
   status: MessageStatus;
   timestamp: string;
   isInternalNote?: boolean;

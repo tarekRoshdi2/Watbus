@@ -99,9 +99,18 @@ import {
   saveOtpSettings,
   getAllFolders,
   saveFolder,
-  deleteFolder
+  deleteFolder,
+  saveLead,
+  getLeads
 } from './src/db.js';
 import { Folder } from './src/types.js';
+import { RouterAgent } from './src/agents/RouterAgent.js';
+import { RagAgent } from './src/agents/RagAgent.js';
+import { VoiceAgent } from './src/agents/VoiceAgent.js';
+
+const routerAgent = new RouterAgent();
+const ragAgent = new RagAgent();
+const voiceAgent = new VoiceAgent();
 
 import {
   isSupabaseConfigured,
@@ -1467,7 +1476,7 @@ app.get('/api/conversations/:convId/messages', (req, res) => {
 // Post a manual message to a conversation
 app.post('/api/conversations/:convId/messages', async (req, res) => {
   const { convId } = req.params;
-  const { senderId, content, type, mediaData } = req.body;
+  const { senderId, content, type, mediaData, interactiveData } = req.body;
 
   const db = readDb();
   let conv = db.conversations[convId];
@@ -1503,6 +1512,7 @@ app.post('/api/conversations/:convId/messages', async (req, res) => {
     content,
     type,
     mediaUrl: mediaData,
+    interactiveData,
     status: 'sent',
     timestamp: new Date().toISOString()
   };
@@ -1533,7 +1543,7 @@ app.post('/api/conversations/:convId/messages', async (req, res) => {
 
     if (targetDevice) {
       console.log(`[Message Route] Sending Web UI message via device "${targetDevice.name}" (id: ${targetDevice.id}) to +${targetPhone}`);
-      sendRealWhatsAppMessage(targetDevice, targetPhone, content, false, type, mediaData).then((resWa) => {
+      sendRealWhatsAppMessageDirectly(targetDevice, targetPhone, content, type, mediaData, interactiveData).then((resWa) => {
         if (!resWa.success) {
           console.error(`[Message Route Failed] Failed to send real WhatsApp message to +${targetPhone}:`, resWa.error);
           updateMessageStatus(newMsg.id, 'failed');
@@ -3101,9 +3111,6 @@ app.post('/api/devices', (req, res) => {
 
   const tenantId = getTenantId(req);
   const user = tenantId ? getUser(tenantId) : undefined;
-  if (user?.subscriptionPlan === 'starter' && method !== 'qr') {
-    return res.status(403).json({ error: 'عذراً، ربط הـ API والـ Gateways متوفر فقط في باقة المحترفين والشركات. يرجى الترقية.' });
-  }
 
   const id = `dev_${Math.random().toString(36).substring(2, 11)}`;
   const displayPhone = phoneNumber ? String(phoneNumber).trim() : '+201012345678';
@@ -3924,13 +3931,57 @@ async function sendRealWhatsAppMessageDirectly(
   device: DeviceLink, 
   to: string, 
   text: string,
-  mediaType?: 'text' | 'image' | 'audio' | 'document',
-  mediaData?: string
+  mediaType?: 'text' | 'image' | 'audio' | 'document' | 'interactive',
+  mediaData?: string,
+  interactiveData?: any
 ): Promise<{ success: boolean; error?: string; messageId?: string }> {
   const cleanPhone = to.replace(/[\s\+\-\(\)]/g, '').trim();
   
   try {
-    if (device.method === 'ultramsg') {
+    if (device.method === 'cloud_api') {
+      const endpoint = `https://graph.facebook.com/v20.0/${device.phoneId}/messages`;
+      
+      let payload: any = {
+        messaging_product: 'whatsapp',
+        to: cleanPhone,
+      };
+
+      if (mediaType === 'interactive' && interactiveData) {
+        payload.type = 'interactive';
+        payload.interactive = interactiveData;
+      } else if (mediaType === 'image' && mediaData) {
+        payload.type = 'image';
+        // For Meta API, you must provide a link or uploaded media ID. Assuming mediaData is a URL for now.
+        payload.image = { link: mediaData, caption: text };
+      } else if (mediaType === 'document' && mediaData) {
+        payload.type = 'document';
+        payload.document = { link: mediaData, caption: text };
+      } else if (mediaType === 'audio' && mediaData) {
+        payload.type = 'audio';
+        payload.audio = { link: mediaData };
+      } else {
+        payload.type = 'text';
+        payload.text = { body: text };
+      }
+
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${device.token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload)
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        return { success: true, messageId: data.messages?.[0]?.id };
+      } else {
+        const errText = await response.text();
+        console.error('[Meta API Error]', errText);
+        return { success: false, error: `Meta API: ${errText.substring(0, 100)}` };
+      }
+    } else if (device.method === 'ultramsg') {
       if (mediaType === 'image' && mediaData) {
         const endpoint = device.apiEndpoint || `https://api.ultramsg.com/${device.instanceId}/messages/image`;
         const response = await fetch(endpoint, {
@@ -5213,7 +5264,6 @@ function cleanOrphanedSessions() {
           await new Promise(resolve => setTimeout(resolve, humanDelay));
           try { await sock.sendPresenceUpdate('paused', jid); } catch (e) {}
         }
-
         await sendRealWhatsAppMessageDirectly(device, contactPhone, quotaMsg.content);
         return; // Halt AI execution
       }
@@ -5233,11 +5283,6 @@ function cleanOrphanedSessions() {
 
           // Compute dynamic contextual time & date for high-fidelity responses
           const now = new Date();
-          const currentTimeStr = now.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' });
-          const currentDayStr = now.toLocaleDateString('ar-EG', { weekday: 'long' });
-          const isMorning = now.getHours() < 12;
-          const currentPeriodStr = isMorning ? 'صباح الخير واليمن والبركات' : 'مساء الخير والمسرات';
-
           // Emotional intelligence and sentiment check
           let sentimentInstruction = '';
           const userMsgLower = (userMessageText || '').trim().toLowerCase();
@@ -5265,6 +5310,12 @@ function cleanOrphanedSessions() {
 - CRITICAL STAGE-SPECIFIC INSTRUCTION: The customer is currently in the journey stage "${activeStage.name}" (${activeStage.nameEn}). You MUST strictly prioritize and adhere to these guidelines for this stage: ${activeStage.stageAiInstructions}`;
             }
           }
+
+          // Compute dynamic contextual time & date for high-fidelity responses
+          const currentTimeStr = now.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' });
+          const currentDayStr = now.toLocaleDateString('ar-EG', { weekday: 'long' });
+          const isMorning = now.getHours() < 12;
+          const currentPeriodStr = isMorning ? 'صباح الخير واليمن والبركات' : 'مساء الخير والمسرات';
 
           const systemPrompt = `You are an elite, highly intelligent corporate AI customer support agent named "${device.aiAgentName || 'WhatsApp Smart Agent'}", representing our premium brand on WhatsApp.
 Your absolute goal is to deliver impeccable, friendly, accurate, and prestigious support to our customers.
@@ -5329,6 +5380,42 @@ Formulate your exceptionally smart and professional response now:`;
           }
           if (modelName === 'gemini-3.5-pro') {
             modelName = 'gemini-3.1-pro-preview';
+          }
+
+
+          // Multi-Agent Ecosystem Pipeline
+          try {
+            console.log(`[Multi-Agent Router] Classifying intent for message: "${userMessageText.substring(0, 50)} "...`);
+            const routeResult = await routerAgent.classifyIntent(userMessageText, !!messageContent.imageMessage, !!messageContent.audioMessage);
+            console.log(`[Multi-Agent Router] Decision: Intent=${routeResult.intent}, Suggested Agent=${routeResult.suggestedAgent}`);
+
+            // Lead Generation Auto-Capture
+            saveLead({
+              id: `lead_${contactPhone}`,
+              username: pushName || `+${contactPhone}`,
+              phone: contactPhone,
+              createdAt: new Date().toISOString(),
+              leadSource: 'whatsapp',
+              status: 'new',
+              notes: `Intent: ${routeResult.intent}`
+            });
+
+            // Vision / RAG Catalog Query handling
+            if (messageContent.imageMessage && contentsPayload?.parts?.[0]?.inlineData?.data) {
+              console.log(`[Multi-Agent] Routing image to RagAgent (Computer Vision)...`);
+              const visionRes = await ragAgent.analyzeProductImage(contentsPayload.parts[0].inlineData.data, contentsPayload.parts[0].inlineData.mimeType, readDb().catalog || []);
+              if (visionRes.reply) {
+                responseText = visionRes.reply;
+              }
+            } else if (routeResult.suggestedAgent === 'rag' || routeResult.intent === 'catalog_inquiry') {
+              console.log(`[Multi-Agent] Querying RagAgent (RAG Catalog Sync)...`);
+              const ragReply = await ragAgent.queryCatalog(userMessageText, readDb().catalog || [], formattedHistory);
+              if (ragReply) {
+                responseText = ragReply;
+              }
+            }
+          } catch (agentErr) {
+            console.error('[Multi-Agent Pipeline Error]', agentErr);
           }
 
           console.log(`[AI Agent] Formulating response using model "${modelName}"...`);
@@ -5488,33 +5575,66 @@ app.post('/api/webhooks/meta', async (req, res) => {
     if (body.object === 'whatsapp_business_account') {
       for (const entry of body.entry) {
         for (const change of entry.changes) {
-          if (change.value && change.value.messages) {
-            const phoneNumberId = change.value.metadata.phone_number_id;
-            // Find device with this phoneId
+          if (change.value) {
+            const phoneNumberId = change.value.metadata?.phone_number_id;
+            if (!phoneNumberId) continue;
+            
+            // Find device with this phoneId (with robust string coercion and fallback)
             const devices = getAllDevices();
-            const device = devices.find(d => d.method === 'cloud_api' && d.phoneId === phoneNumberId);
+            const device = devices.find(d => d.method === 'cloud_api' && String(d.phoneId || '').trim() === String(phoneNumberId).trim())
+              || devices.find(d => d.method === 'cloud_api');
             if (device) {
-              for (const msg of change.value.messages) {
-                const contactPhone = msg.from;
-                const jid = `${contactPhone}@s.whatsapp.net`;
-                const pushName = change.value.contacts?.[0]?.profile?.name || contactPhone;
-                const timestamp = parseInt(msg.timestamp) * 1000;
-                const messageId = msg.id;
-                
-                let messageContent: any = {};
-                if (msg.type === 'text') {
-                  messageContent = { conversation: msg.text.body };
-                } else if (msg.type === 'image') {
-                  messageContent = { imageMessage: { caption: msg.image?.caption || '' } };
-                } else if (msg.type === 'audio') {
-                  messageContent = { audioMessage: { mimetype: 'audio/ogg' } };
-                } else {
-                  messageContent = { conversation: `[Unsupported Meta Message Type: ${msg.type}]` };
+              if (change.value.messages) {
+                for (const msg of change.value.messages) {
+                  const contactPhone = msg.from;
+                  const jid = `${contactPhone}@s.whatsapp.net`;
+                  const pushName = change.value.contacts?.[0]?.profile?.name || contactPhone;
+                  const timestamp = parseInt(msg.timestamp) * 1000;
+                  const messageId = msg.id;
+                  
+                  let messageContent: any = {};
+                  if (msg.type === 'text') {
+                    messageContent = { conversation: msg.text.body };
+                  } else if (msg.type === 'image') {
+                    messageContent = { imageMessage: { caption: msg.image?.caption || '' } };
+                  } else if (msg.type === 'audio') {
+                    messageContent = { audioMessage: { mimetype: 'audio/ogg' } };
+                  } else if (msg.type === 'interactive') {
+                     // For interactive list/button responses
+                     if (msg.interactive.type === 'button_reply') {
+                       messageContent = { conversation: msg.interactive.button_reply.title };
+                     } else if (msg.interactive.type === 'list_reply') {
+                       messageContent = { conversation: msg.interactive.list_reply.title };
+                     }
+                  } else {
+                    messageContent = { conversation: `[Unsupported Meta Message Type: ${msg.type}]` };
+                  }
+                  
+                  // Route to global incoming handler
+                  await globalIncomingHandler(device.id, null, jid, pushName, messageContent, false, timestamp, messageId);
                 }
-                
-                // Route to global incoming handler
-                await globalIncomingHandler(device.id, null, jid, pushName, messageContent, false, timestamp, messageId);
               }
+
+              // Handle message statuses (delivered, read)
+              if (change.value.statuses) {
+                for (const statusObj of change.value.statuses) {
+                  const messageId = statusObj.id;
+                  const status = statusObj.status; // sent, delivered, read, failed
+                  updateMessageStatus(messageId, status);
+                  // Find conversationId for the message
+                  const allMsgs = readDb().messages || [];
+                  const msg = allMsgs.find(m => m.id === messageId);
+                  if (msg) {
+                    broadcast({
+                      type: 'message:receipt',
+                      messageId,
+                      status,
+                      conversationId: msg.conversationId
+                    });
+                  }
+                }
+              }
+
             } else {
               console.warn(`[Meta Webhook] No cloud_api device found for phoneId ${phoneNumberId}`);
             }

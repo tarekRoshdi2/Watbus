@@ -1165,19 +1165,9 @@ ALTER TABLE crm_backups DISABLE ROW LEVEL SECURITY;`}
                     className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 py-2.5 text-xs outline-none focus:border-[#00a884] focus:bg-white dark:focus:bg-zinc-950 font-bold rtl:text-right ltr:text-left"
                   >
                     <option value="qr">{lang === 'ar' ? 'ربط الرمز السريع (Baileys QR Scan)' : 'QR Code Scanner (Baileys Session)'}</option>
-                    {(!currentUser?.subscriptionPlan || currentUser?.subscriptionPlan === 'starter') ? (
-                      <>
-                        <option value="locked_cloud_api" disabled>🔒 Meta Cloud API (Pro/Enterprise)</option>
-                        <option value="locked_ultramsg" disabled>🔒 Ultramsg Gateway (Pro/Enterprise)</option>
-                        <option value="locked_greenapi" disabled>🔒 Green-API Gateway (Pro/Enterprise)</option>
-                      </>
-                    ) : (
-                      <>
-                        <option value="cloud_api">Meta Cloud API (Official)</option>
-                        <option value="ultramsg">Ultramsg Gateway</option>
-                        <option value="greenapi">Green-API Gateway</option>
-                      </>
-                    )}
+                    <option value="cloud_api">{lang === 'ar' ? 'ربط Meta Cloud API (Official API)' : 'Meta Cloud API (Official API)'}</option>
+                    <option value="ultramsg">{lang === 'ar' ? 'ربط بوابات Ultramsg Gateway' : 'Ultramsg Gateway'}</option>
+                    <option value="greenapi">{lang === 'ar' ? 'ربط بوابات Green-API Gateway' : 'Green-API Gateway'}</option>
                   </select>
                   {newMethod === 'qr' && (
                     <div className="flex items-center gap-2 pt-2.5 rtl:flex-row-reverse text-right select-none">
@@ -1193,12 +1183,7 @@ ALTER TABLE crm_backups DISABLE ROW LEVEL SECURITY;`}
                       </label>
                     </div>
                   )}
-                  {(!currentUser?.subscriptionPlan || currentUser?.subscriptionPlan === 'starter') && newMethod !== 'qr' && (
-                    <div className="mt-2 text-[10px] text-amber-600 bg-amber-50 dark:bg-amber-950/30 p-2 rounded-lg flex items-center gap-1.5 border border-amber-200/50 dark:border-amber-900/50">
-                      <Lock className="w-3 h-3" />
-                      <span>{lang === 'ar' ? 'هذه الميزة متوفرة في باقة المحترفين والشركات. قم بالترقية الآن!' : 'This feature is available in Pro and Enterprise plans. Upgrade now!'}</span>
-                    </div>
-                  )}
+                  
                 </div>
 
                 {/* Optional Cloud API & gate settings */}

@@ -362,6 +362,7 @@ __export(db_exports, {
   getAllFolders: () => getAllFolders,
   getAllUsers: () => getAllUsers,
   getConversationsForUser: () => getConversationsForUser,
+  getLeads: () => getLeads,
   getMessagesForConversation: () => getMessagesForConversation,
   getOrCreateConversation: () => getOrCreateConversation,
   getOtpLogs: () => getOtpLogs,
@@ -378,6 +379,7 @@ __export(db_exports, {
   saveConversation: () => saveConversation,
   saveDevice: () => saveDevice,
   saveFolder: () => saveFolder,
+  saveLead: () => saveLead,
   saveMessage: () => saveMessage,
   saveOtpLog: () => saveOtpLog,
   saveOtpSettings: () => saveOtpSettings,
@@ -941,6 +943,21 @@ function deleteFolder(folderId) {
     writeDb(db);
   }
 }
+function getLeads() {
+  const db = readDb();
+  return db.demoLeads || [];
+}
+function saveLead(lead) {
+  const db = readDb();
+  if (!db.demoLeads) db.demoLeads = [];
+  const existingIdx = db.demoLeads.findIndex((l) => l.id === lead.id || l.phone === lead.phone);
+  if (existingIdx >= 0) {
+    db.demoLeads[existingIdx] = { ...db.demoLeads[existingIdx], ...lead };
+  } else {
+    db.demoLeads.push(lead);
+  }
+  writeDb(db);
+}
 var import_fs2, import_path2, DB_FILE, META_AI_USER, ADMIN_USER, cachedDb, writeTimeout, isWriting, pendingWrite;
 var init_db = __esm({
   "src/db.ts"() {
@@ -1000,9 +1017,259 @@ var import_ws = require("ws");
 var import_path4 = __toESM(require("path"), 1);
 var import_fs4 = __toESM(require("fs"), 1);
 var import_dotenv = __toESM(require("dotenv"), 1);
-var import_genai = require("@google/genai");
+var import_genai4 = require("@google/genai");
 var import_jsonwebtoken = __toESM(require("jsonwebtoken"), 1);
 init_db();
+
+// src/agents/RouterAgent.ts
+var import_genai = require("@google/genai");
+var RouterAgent = class {
+  constructor() {
+    this.ai = null;
+    const apiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
+    if (apiKey) {
+      this.ai = new import_genai.GoogleGenAI({ apiKey });
+    }
+  }
+  /**
+   * Classifies the customer message and returns routing decision
+   */
+  async classifyIntent(messageText, hasImage = false, hasAudio = false) {
+    if (hasAudio) {
+      return {
+        intent: "general_faq",
+        confidence: 0.95,
+        reasoning: "Voice message received, routing to VoiceAgent",
+        suggestedAgent: "voice"
+      };
+    }
+    if (hasImage) {
+      return {
+        intent: "catalog_inquiry",
+        confidence: 0.95,
+        reasoning: "Image attached (Computer Vision required), routing to RagAgent",
+        suggestedAgent: "rag"
+      };
+    }
+    if (!this.ai || !messageText.trim()) {
+      return {
+        intent: "general_faq",
+        confidence: 0.5,
+        reasoning: "Fallback classification",
+        suggestedAgent: "rag"
+      };
+    }
+    try {
+      const response = await this.ai.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents: `You are an AI Routing Agent for an e-commerce WhatsApp business.
+Classify the following customer message into EXACTLY ONE of these categories:
+- general_faq (greeting, policy, location, working hours)
+- catalog_inquiry (product prices, stock, sizes, colors, recommendation)
+- order_support (delivery status, returns, refunds, order tracking)
+- human_handoff (asking for human agent, angry complaint, complex issue)
+
+Return JSON ONLY in this format:
+{
+  "intent": "general_faq" | "catalog_inquiry" | "order_support" | "human_handoff",
+  "confidence": number between 0 and 1,
+  "reasoning": "brief explanation"
+}
+
+Customer Message: "${messageText}"`
+      });
+      const text = response.text || "";
+      const cleanJson = text.replace(/```json/g, "").replace(/```/g, "").trim();
+      const parsed = JSON.parse(cleanJson);
+      let suggestedAgent = "rag";
+      if (parsed.intent === "human_handoff") {
+        suggestedAgent = "human";
+      }
+      return {
+        intent: parsed.intent || "general_faq",
+        confidence: parsed.confidence || 0.8,
+        reasoning: parsed.reasoning || "Classified by Gemini AI",
+        suggestedAgent
+      };
+    } catch (err) {
+      console.error("[RouterAgent Error]", err);
+      return {
+        intent: "catalog_inquiry",
+        confidence: 0.6,
+        reasoning: "Classification fallback due to error",
+        suggestedAgent: "rag"
+      };
+    }
+  }
+};
+
+// src/agents/RagAgent.ts
+var import_genai2 = require("@google/genai");
+var RagAgent = class {
+  constructor() {
+    this.ai = null;
+    const apiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
+    if (apiKey) {
+      this.ai = new import_genai2.GoogleGenAI({ apiKey });
+    }
+  }
+  /**
+   * Analyzes an image sent by the customer (Computer Vision)
+   */
+  async analyzeProductImage(base64Image, mimeType = "image/jpeg", catalog) {
+    if (!this.ai) {
+      return {
+        reply: "\u0639\u0630\u0631\u0627\u064B\u060C \u062E\u062F\u0645\u0629 \u062A\u062D\u0644\u064A\u0644 \u0627\u0644\u0635\u0648\u0631 \u063A\u064A\u0631 \u0645\u062A\u0648\u0641\u0631\u0629 \u062D\u0627\u0644\u064A\u0627\u064B. \u064A\u0645\u0643\u0646\u0643 \u062A\u0632\u0648\u064A\u062F\u0646\u0627 \u0628\u0627\u0633\u0645 \u0627\u0644\u0645\u0646\u062A\u062C \u0627\u0644\u0645\u0637\u0644\u0648\u0628.",
+        matchedProducts: []
+      };
+    }
+    try {
+      const cleanBase64 = base64Image.replace(/^data:image\/\w+;base64,/, "");
+      const catalogSummary = catalog.map((c) => `- ID: ${c.id}, Name: ${c.name}, Price: ${c.price} EGP, Description: ${c.description}`).join("\n");
+      const response = await this.ai.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents: [
+          {
+            inlineData: {
+              data: cleanBase64,
+              mimeType
+            }
+          },
+          `You are an AI Sales Agent with Computer Vision capabilities for an Egyptian clothing/e-commerce store.
+Analyze this product image sent by the customer (identify clothing type, color, style, fabric, or size details).
+
+Available Store Catalog:
+${catalogSummary || "No items in catalog currently."}
+
+Task:
+1. Describe the product in the image concisely in Arabic.
+2. Check if any catalog item matches this product.
+3. Formulate a polite, highly persuasive Arabic response informing the customer about price, available sizes, and how to order.
+
+Return JSON ONLY:
+{
+  "detectedSpecs": {
+    "category": string,
+    "color": string,
+    "size": string
+  },
+  "reply": "Arabic message for WhatsApp customer",
+  "matchedCatalogIds": string[]
+}`
+        ]
+      });
+      const text = response.text || "";
+      const cleanJson = text.replace(/```json/g, "").replace(/```/g, "").trim();
+      const parsed = JSON.parse(cleanJson);
+      const matchedProducts = catalog.filter((item) => (parsed.matchedCatalogIds || []).includes(item.id));
+      return {
+        reply: parsed.reply || "\u0644\u0642\u062F \u0642\u0645\u0646\u0627 \u0628\u062A\u062D\u0644\u064A\u0644 \u0627\u0644\u0635\u0648\u0631\u0629 \u0628\u0646\u062C\u0627\u062D!",
+        matchedProducts,
+        detectedSpecs: parsed.detectedSpecs
+      };
+    } catch (err) {
+      console.error("[RagAgent Vision Error]", err);
+      return {
+        reply: "\u062A\u0645 \u0627\u0633\u062A\u0644\u0627\u0645 \u0627\u0644\u0635\u0648\u0631\u0629 \u0628\u0646\u062C\u0627\u062D! \u064A\u0628\u062F\u0648 \u0623\u0646\u0643 \u062A\u0628\u062D\u062B \u0639\u0646 \u0645\u0646\u062A\u062C \u0645\u0634\u0627\u0628\u0647. \u0647\u0644 \u062A\u0648\u062F \u0645\u0639\u0631\u0641\u0629 \u0627\u0644\u0645\u0642\u0627\u0633\u0627\u062A \u0627\u0644\u0645\u062A\u0648\u0641\u0631\u0629 \u0648\u0627\u0644\u0623\u0633\u0639\u0627\u0631\u061F",
+        matchedProducts: []
+      };
+    }
+  }
+  /**
+   * RAG Query over Catalog and Store Data
+   */
+  async queryCatalog(customerMessage, catalog, conversationHistory = "") {
+    if (!this.ai) {
+      return "\u0623\u0647\u0644\u0627\u064B \u0628\u0643! \u064A\u0645\u0643\u0646\u0643 \u062A\u0635\u0641\u062D \u0627\u0644\u0645\u0646\u062A\u062C\u0627\u062A \u0627\u0644\u0645\u062A\u0648\u0641\u0631\u0629 \u0645\u0646 \u062E\u0644\u0627\u0644 \u0627\u0644\u0643\u062A\u0627\u0644\u0648\u062C \u0627\u0644\u062E\u0627\u0635 \u0628\u0646\u0627.";
+    }
+    try {
+      const catalogSummary = catalog.map((c) => `- ${c.name} (${c.price} \u062C.\u0645): ${c.description}`).join("\n");
+      const response = await this.ai.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents: `You are a Smart E-commerce Sales Agent (RagAgent) for a WhatsApp store in Egypt.
+Answer the customer query in natural Egyptian/Arabic business tone using ONLY the following store catalog and context.
+
+Store Catalog:
+${catalogSummary || "\u0644\u0627 \u062A\u0648\u062C\u062F \u0645\u0646\u062A\u062C\u0627\u062A \u0645\u0633\u062C\u0644\u0629 \u062D\u0627\u0644\u064A\u0627\u064B."}
+
+Recent Conversation History:
+${conversationHistory || "\u0644\u0627 \u064A\u0648\u062C\u062F \u0633\u064A\u0627\u0642 \u0633\u0627\u0628\u0642."}
+
+Customer Query: "${customerMessage}"
+
+Rules:
+- Be polite, helpful, and concise (ideal for WhatsApp).
+- Include product names, prices in EGP, and call to action to buy.
+- If item is not found, offer to assist or ask for image.`
+      });
+      return response.text || "\u0623\u0647\u0644\u0627\u064B \u0628\u0643! \u0643\u064A\u0641 \u064A\u0645\u0643\u0646\u0646\u064A \u0645\u0633\u0627\u0639\u062F\u062A\u0643 \u0627\u0644\u064A\u0648\u0645 \u0641\u064A \u062A\u0635\u0641\u062D \u0645\u0646\u062A\u062C\u0627\u062A\u0646\u0627\u061F";
+    } catch (err) {
+      console.error("[RagAgent Query Error]", err);
+      return "\u0623\u0647\u0644\u0627\u064B \u0628\u0643! \u0646\u062D\u0646 \u0645\u062A\u0648\u0627\u062C\u062F\u0648\u0646 \u0644\u0645\u0633\u0627\u0639\u062F\u062A\u0643. \u062A\u0641\u0636\u0644 \u0628\u0627\u0644\u0633\u0624\u0627\u0644 \u0639\u0646 \u0623\u064A \u0645\u0646\u062A\u062C.";
+    }
+  }
+};
+
+// src/agents/VoiceAgent.ts
+var import_genai3 = require("@google/genai");
+var VoiceAgent = class {
+  constructor() {
+    this.ai = null;
+    const apiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
+    if (apiKey) {
+      this.ai = new import_genai3.GoogleGenAI({ apiKey });
+    }
+  }
+  /**
+   * Processes incoming voice message (STT using Gemini Audio capabilities)
+   */
+  async processVoiceMessage(base64Audio, mimeType = "audio/ogg") {
+    if (!this.ai) {
+      return {
+        transcription: "[\u0631\u0633\u0627\u0644\u0629 \u0635\u0648\u062A\u064A\u0629]",
+        responseReply: "\u0639\u0630\u0631\u0627\u064B\u060C \u0644\u0645 \u0646\u062A\u0645\u0643\u0646 \u0645\u0646 \u0645\u0639\u0627\u0644\u062C\u0629 \u0627\u0644\u0631\u0633\u0627\u0644\u0629 \u0627\u0644\u0635\u0648\u062A\u064A\u0629 \u0641\u064A \u0627\u0644\u0648\u0642\u062A \u0627\u0644\u062D\u0627\u0644\u064A. \u0647\u0644 \u064A\u0645\u0643\u0646\u0643 \u0625\u0631\u0633\u0627\u0644\u0647\u0627 \u0643\u062A\u0627\u0628\u0629\u061F"
+      };
+    }
+    try {
+      const cleanBase64 = base64Audio.replace(/^data:audio\/\w+;base64,/, "");
+      const response = await this.ai.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents: [
+          {
+            inlineData: {
+              data: cleanBase64,
+              mimeType
+            }
+          },
+          `You are an AI Audio Processing Agent.
+1. Transcribe the spoken audio message accurately into Arabic script.
+2. Formulate a short, polite Arabic text reply answering the customer's request.
+
+Return JSON ONLY:
+{
+  "transcription": "Text transcription of the audio",
+  "responseReply": "Short polite Arabic response"
+}`
+        ]
+      });
+      const text = response.text || "";
+      const cleanJson = text.replace(/```json/g, "").replace(/```/g, "").trim();
+      const parsed = JSON.parse(cleanJson);
+      return {
+        transcription: parsed.transcription || "[\u062A\u0645 \u062A\u062D\u0648\u064A\u0644 \u0627\u0644\u0635\u0648\u062A \u0625\u0644\u0649 \u0646\u0635]",
+        responseReply: parsed.responseReply || "\u0634\u0643\u0631\u0627\u064B \u0644\u0631\u0633\u0627\u0644\u062A\u0643 \u0627\u0644\u0635\u0648\u062A\u064A\u0629! \u0643\u064A\u0641 \u064A\u0645\u0643\u0646\u0646\u0627 \u0645\u0633\u0627\u0639\u062F\u062A\u0643 \u0623\u0643\u062B\u0631\u061F"
+      };
+    } catch (err) {
+      console.error("[VoiceAgent Error]", err);
+      return {
+        transcription: "[\u0631\u0633\u0627\u0644\u0629 \u0635\u0648\u062A\u064A\u0629]",
+        responseReply: "\u0634\u0643\u0631\u0627\u064B \u0644\u062A\u0648\u0627\u0635\u0644\u0643 \u0645\u0639\u0646\u0627 \u0639\u0628\u0631 \u0627\u0644\u0631\u0633\u0627\u0644\u0629 \u0627\u0644\u0635\u0648\u062A\u064A\u0629! \u0633\u064A\u0642\u0648\u0645 \u0623\u062D\u062F \u0645\u0645\u062B\u0644\u064A \u0627\u0644\u062E\u062F\u0645\u0629 \u0628\u0627\u0644\u0631\u062F \u0639\u0644\u064A\u0643 \u0642\u0631\u064A\u0628\u0627\u064B."
+      };
+    }
+  }
+};
+
+// server.ts
 init_supabase();
 
 // src/whatsapp.ts
@@ -1953,6 +2220,9 @@ process.on("unhandledRejection", (reason) => {
   }
 });
 import_dotenv.default.config();
+var routerAgent = new RouterAgent();
+var ragAgent = new RagAgent();
+var voiceAgent = new VoiceAgent();
 var PORT = Number(process.env.PORT) || 3e3;
 var app = (0, import_express.default)();
 app.use(import_express.default.json({ limit: "50mb" }));
@@ -2039,7 +2309,7 @@ var autoPairCooldowns = /* @__PURE__ */ new Map();
 var ai = null;
 if (process.env.GEMINI_API_KEY) {
   try {
-    ai = new import_genai.GoogleGenAI({
+    ai = new import_genai4.GoogleGenAI({
       apiKey: process.env.GEMINI_API_KEY,
       httpOptions: {
         headers: {
@@ -3022,7 +3292,7 @@ app.get("/api/conversations/:convId/messages", (req, res) => {
 });
 app.post("/api/conversations/:convId/messages", async (req, res) => {
   const { convId } = req.params;
-  const { senderId, content, type, mediaData } = req.body;
+  const { senderId, content, type, mediaData, interactiveData } = req.body;
   const db = readDb();
   let conv = db.conversations[convId];
   if (!conv) {
@@ -3052,6 +3322,7 @@ app.post("/api/conversations/:convId/messages", async (req, res) => {
     content,
     type,
     mediaUrl: mediaData,
+    interactiveData,
     status: "sent",
     timestamp: (/* @__PURE__ */ new Date()).toISOString()
   };
@@ -3071,7 +3342,7 @@ app.post("/api/conversations/:convId/messages", async (req, res) => {
     const targetDevice = (conv.deviceId ? allDevices.find((d) => d.id === conv.deviceId) : null) || allDevices.find((d) => activeSockets.has(d.id)) || allDevices.find((d) => ["connected", "ready", "authenticated"].includes(d.status)) || allDevices[0];
     if (targetDevice) {
       console.log(`[Message Route] Sending Web UI message via device "${targetDevice.name}" (id: ${targetDevice.id}) to +${targetPhone}`);
-      sendRealWhatsAppMessage(targetDevice, targetPhone, content, false, type, mediaData).then((resWa) => {
+      sendRealWhatsAppMessageDirectly(targetDevice, targetPhone, content, type, mediaData, interactiveData).then((resWa) => {
         if (!resWa.success) {
           console.error(`[Message Route Failed] Failed to send real WhatsApp message to +${targetPhone}:`, resWa.error);
           updateMessageStatus(newMsg.id, "failed");
@@ -3158,7 +3429,7 @@ app.post("/api/conversations/:convId/summarize", async (req, res) => {
       res.status(500).json({ error: "GEMINI_API_KEY is not configured" });
       return;
     }
-    const genAI = new import_genai.GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+    const genAI = new import_genai4.GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
     const conversationText = messages.filter((m) => !m.isInternalNote).map((m) => {
       const role = m.senderId.startsWith("contact_") ? "Customer" : "Agent";
       return `${role}: ${m.content}`;
@@ -4394,9 +4665,6 @@ app.post("/api/devices", (req, res) => {
   }
   const tenantId = getTenantId(req);
   const user = tenantId ? getUser(tenantId) : void 0;
-  if (user?.subscriptionPlan === "starter" && method !== "qr") {
-    return res.status(403).json({ error: "\u0639\u0630\u0631\u0627\u064B\u060C \u0631\u0628\u0637 \u05D4\u0640 API \u0648\u0627\u0644\u0640 Gateways \u0645\u062A\u0648\u0641\u0631 \u0641\u0642\u0637 \u0641\u064A \u0628\u0627\u0642\u0629 \u0627\u0644\u0645\u062D\u062A\u0631\u0641\u064A\u0646 \u0648\u0627\u0644\u0634\u0631\u0643\u0627\u062A. \u064A\u0631\u062C\u0649 \u0627\u0644\u062A\u0631\u0642\u064A\u0629." });
-  }
   const id = `dev_${Math.random().toString(36).substring(2, 11)}`;
   const displayPhone = phoneNumber ? String(phoneNumber).trim() : "+201012345678";
   const isDirectConnection = method === "cloud_api" || method === "ultramsg" || method === "greenapi";
@@ -5056,10 +5324,48 @@ var OutgoingMessageQueue = class {
   }
 };
 var outgoingQueue = new OutgoingMessageQueue();
-async function sendRealWhatsAppMessageDirectly(device, to, text, mediaType, mediaData) {
+async function sendRealWhatsAppMessageDirectly(device, to, text, mediaType, mediaData, interactiveData) {
   const cleanPhone = to.replace(/[\s\+\-\(\)]/g, "").trim();
   try {
-    if (device.method === "ultramsg") {
+    if (device.method === "cloud_api") {
+      const endpoint = `https://graph.facebook.com/v20.0/${device.phoneId}/messages`;
+      let payload = {
+        messaging_product: "whatsapp",
+        to: cleanPhone
+      };
+      if (mediaType === "interactive" && interactiveData) {
+        payload.type = "interactive";
+        payload.interactive = interactiveData;
+      } else if (mediaType === "image" && mediaData) {
+        payload.type = "image";
+        payload.image = { link: mediaData, caption: text };
+      } else if (mediaType === "document" && mediaData) {
+        payload.type = "document";
+        payload.document = { link: mediaData, caption: text };
+      } else if (mediaType === "audio" && mediaData) {
+        payload.type = "audio";
+        payload.audio = { link: mediaData };
+      } else {
+        payload.type = "text";
+        payload.text = { body: text };
+      }
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${device.token}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(payload)
+      });
+      if (response.ok) {
+        const data = await response.json();
+        return { success: true, messageId: data.messages?.[0]?.id };
+      } else {
+        const errText = await response.text();
+        console.error("[Meta API Error]", errText);
+        return { success: false, error: `Meta API: ${errText.substring(0, 100)}` };
+      }
+    } else if (device.method === "ultramsg") {
       if (mediaType === "image" && mediaData) {
         const endpoint2 = device.apiEndpoint || `https://api.ultramsg.com/${device.instanceId}/messages/image`;
         const response2 = await fetch(endpoint2, {
@@ -6134,10 +6440,6 @@ async function globalIncomingHandler(deviceId, sock, jid, pushName, messageConte
           }).join("\n");
         }
         const now = /* @__PURE__ */ new Date();
-        const currentTimeStr = now.toLocaleTimeString("ar-EG", { hour: "2-digit", minute: "2-digit" });
-        const currentDayStr = now.toLocaleDateString("ar-EG", { weekday: "long" });
-        const isMorning = now.getHours() < 12;
-        const currentPeriodStr = isMorning ? "\u0635\u0628\u0627\u062D \u0627\u0644\u062E\u064A\u0631 \u0648\u0627\u0644\u064A\u0645\u0646 \u0648\u0627\u0644\u0628\u0631\u0643\u0627\u062A" : "\u0645\u0633\u0627\u0621 \u0627\u0644\u062E\u064A\u0631 \u0648\u0627\u0644\u0645\u0633\u0631\u0627\u062A";
         let sentimentInstruction = "";
         const userMsgLower = (userMessageText || "").trim().toLowerCase();
         const hasNegativeSentiment = /مشكلة|عطل|سيء|بطيء|شكوى|غاضب|استرجاع|فلوسي|نصاب|رداءة|خراب|bad|worst|angry|broken|issue|problem|error|scam|refund|slow/i.test(userMsgLower);
@@ -6157,6 +6459,10 @@ ${source.content}`).join("\n\n");
 - CRITICAL STAGE-SPECIFIC INSTRUCTION: The customer is currently in the journey stage "${activeStage.name}" (${activeStage.nameEn}). You MUST strictly prioritize and adhere to these guidelines for this stage: ${activeStage.stageAiInstructions}`;
           }
         }
+        const currentTimeStr = now.toLocaleTimeString("ar-EG", { hour: "2-digit", minute: "2-digit" });
+        const currentDayStr = now.toLocaleDateString("ar-EG", { weekday: "long" });
+        const isMorning = now.getHours() < 12;
+        const currentPeriodStr = isMorning ? "\u0635\u0628\u0627\u062D \u0627\u0644\u062E\u064A\u0631 \u0648\u0627\u0644\u064A\u0645\u0646 \u0648\u0627\u0644\u0628\u0631\u0643\u0627\u062A" : "\u0645\u0633\u0627\u0621 \u0627\u0644\u062E\u064A\u0631 \u0648\u0627\u0644\u0645\u0633\u0631\u0627\u062A";
         const systemPrompt = `You are an elite, highly intelligent corporate AI customer support agent named "${device.aiAgentName || "WhatsApp Smart Agent"}", representing our premium brand on WhatsApp.
 Your absolute goal is to deliver impeccable, friendly, accurate, and prestigious support to our customers.
 
@@ -6218,6 +6524,35 @@ Formulate your exceptionally smart and professional response now:`;
         }
         if (modelName === "gemini-3.5-pro") {
           modelName = "gemini-3.1-pro-preview";
+        }
+        try {
+          console.log(`[Multi-Agent Router] Classifying intent for message: "${userMessageText.substring(0, 50)} "...`);
+          const routeResult = await routerAgent.classifyIntent(userMessageText, !!messageContent.imageMessage, !!messageContent.audioMessage);
+          console.log(`[Multi-Agent Router] Decision: Intent=${routeResult.intent}, Suggested Agent=${routeResult.suggestedAgent}`);
+          saveLead({
+            id: `lead_${contactPhone}`,
+            username: pushName || `+${contactPhone}`,
+            phone: contactPhone,
+            createdAt: (/* @__PURE__ */ new Date()).toISOString(),
+            leadSource: "whatsapp",
+            status: "new",
+            notes: `Intent: ${routeResult.intent}`
+          });
+          if (messageContent.imageMessage && contentsPayload?.parts?.[0]?.inlineData?.data) {
+            console.log(`[Multi-Agent] Routing image to RagAgent (Computer Vision)...`);
+            const visionRes = await ragAgent.analyzeProductImage(contentsPayload.parts[0].inlineData.data, contentsPayload.parts[0].inlineData.mimeType, readDb().catalog || []);
+            if (visionRes.reply) {
+              responseText = visionRes.reply;
+            }
+          } else if (routeResult.suggestedAgent === "rag" || routeResult.intent === "catalog_inquiry") {
+            console.log(`[Multi-Agent] Querying RagAgent (RAG Catalog Sync)...`);
+            const ragReply = await ragAgent.queryCatalog(userMessageText, readDb().catalog || [], formattedHistory);
+            if (ragReply) {
+              responseText = ragReply;
+            }
+          }
+        } catch (agentErr) {
+          console.error("[Multi-Agent Pipeline Error]", agentErr);
         }
         console.log(`[AI Agent] Formulating response using model "${modelName}"...`);
         const response = await callGeminiWithRetry({
@@ -6350,28 +6685,54 @@ app.post("/api/webhooks/meta", async (req, res) => {
     if (body.object === "whatsapp_business_account") {
       for (const entry of body.entry) {
         for (const change of entry.changes) {
-          if (change.value && change.value.messages) {
-            const phoneNumberId = change.value.metadata.phone_number_id;
+          if (change.value) {
+            const phoneNumberId = change.value.metadata?.phone_number_id;
+            if (!phoneNumberId) continue;
             const devices = getAllDevices();
-            const device = devices.find((d) => d.method === "cloud_api" && d.phoneId === phoneNumberId);
+            const device = devices.find((d) => d.method === "cloud_api" && String(d.phoneId || "").trim() === String(phoneNumberId).trim()) || devices.find((d) => d.method === "cloud_api");
             if (device) {
-              for (const msg of change.value.messages) {
-                const contactPhone = msg.from;
-                const jid = `${contactPhone}@s.whatsapp.net`;
-                const pushName = change.value.contacts?.[0]?.profile?.name || contactPhone;
-                const timestamp = parseInt(msg.timestamp) * 1e3;
-                const messageId = msg.id;
-                let messageContent = {};
-                if (msg.type === "text") {
-                  messageContent = { conversation: msg.text.body };
-                } else if (msg.type === "image") {
-                  messageContent = { imageMessage: { caption: msg.image?.caption || "" } };
-                } else if (msg.type === "audio") {
-                  messageContent = { audioMessage: { mimetype: "audio/ogg" } };
-                } else {
-                  messageContent = { conversation: `[Unsupported Meta Message Type: ${msg.type}]` };
+              if (change.value.messages) {
+                for (const msg of change.value.messages) {
+                  const contactPhone = msg.from;
+                  const jid = `${contactPhone}@s.whatsapp.net`;
+                  const pushName = change.value.contacts?.[0]?.profile?.name || contactPhone;
+                  const timestamp = parseInt(msg.timestamp) * 1e3;
+                  const messageId = msg.id;
+                  let messageContent = {};
+                  if (msg.type === "text") {
+                    messageContent = { conversation: msg.text.body };
+                  } else if (msg.type === "image") {
+                    messageContent = { imageMessage: { caption: msg.image?.caption || "" } };
+                  } else if (msg.type === "audio") {
+                    messageContent = { audioMessage: { mimetype: "audio/ogg" } };
+                  } else if (msg.type === "interactive") {
+                    if (msg.interactive.type === "button_reply") {
+                      messageContent = { conversation: msg.interactive.button_reply.title };
+                    } else if (msg.interactive.type === "list_reply") {
+                      messageContent = { conversation: msg.interactive.list_reply.title };
+                    }
+                  } else {
+                    messageContent = { conversation: `[Unsupported Meta Message Type: ${msg.type}]` };
+                  }
+                  await globalIncomingHandler(device.id, null, jid, pushName, messageContent, false, timestamp, messageId);
                 }
-                await globalIncomingHandler(device.id, null, jid, pushName, messageContent, false, timestamp, messageId);
+              }
+              if (change.value.statuses) {
+                for (const statusObj of change.value.statuses) {
+                  const messageId = statusObj.id;
+                  const status = statusObj.status;
+                  updateMessageStatus(messageId, status);
+                  const allMsgs = readDb().messages || [];
+                  const msg = allMsgs.find((m) => m.id === messageId);
+                  if (msg) {
+                    broadcast({
+                      type: "message:receipt",
+                      messageId,
+                      status,
+                      conversationId: msg.conversationId
+                    });
+                  }
+                }
               }
             } else {
               console.warn(`[Meta Webhook] No cloud_api device found for phoneId ${phoneNumberId}`);
