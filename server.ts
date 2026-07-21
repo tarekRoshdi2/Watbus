@@ -185,8 +185,9 @@ const publicRoutes = [
 ];
 
 app.use('/api', (req, res, next) => {
+  const currentPath = req.originalUrl.split('?')[0];
   // Allow public routes
-  if (publicRoutes.some(route => req.path === route || req.path.startsWith(route))) {
+  if (publicRoutes.some(route => currentPath === route || currentPath.startsWith(route + '/'))) {
     return next();
   }
 
