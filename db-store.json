@@ -16,18 +16,33 @@
       "id": "admin-tarek",
       "role": "admin",
       "email": "tarekroshdi@gmail.com",
-      "isOnline": false,
+      "isOnline": true,
       "password": "Tarek@2026",
       "username": "Tarek Roshdi",
-      "avatarUrl": "https://pps.whatsapp.net/v/t61.24694-24/747126771_1038422479116934_1152221218606645899_n.jpg?ccb=11-4&oh=01_Q5Aa5AGsQ0-TN3Yzio5bf_IG_b5tHkvxfwWGqUNAbGgEkBvgzw&oe=6A6BB19E&_nc_sid=5e03e0&_nc_cat=108",
-      "lastSeenAt": "2026-07-20T23:24:33.034Z",
+      "avatarUrl": "https://pps.whatsapp.net/v/t61.24694-24/747126771_1038422479116934_1152221218606645899_n.jpg?ccb=11-4&oh=01_Q5Aa5AGWFoG_5Goh20qre3yFcXlNedyK0VvFbltvX6rgnaGfAQ&oe=6A6D031E&_nc_sid=5e03e0&_nc_cat=108",
+      "lastSeenAt": "2026-07-21T23:51:34.121Z",
       "statusText": "System Administrator",
       "costInDollars": 0,
-      "aiMessagesUsed": 38,
+      "aiMessagesUsed": 46,
       "aiMessagesLimit": 2500,
       "totalTokensUsed": 0,
       "subscriptionPlan": "starter",
       "subscriptionStatus": "active"
+    },
+    "contact_201055700696": {
+      "id": "contact_201055700696",
+      "role": "user",
+      "isOnline": false,
+      "username": "geg",
+      "avatarUrl": "https://images.unsplash.com/photo-1580489944761-15a19d654956?auto=format&fit=crop&w=150&q=80",
+      "lastSeenAt": "2026-07-21T20:42:30.154Z",
+      "statusText": "WhatsApp Contact",
+      "costInDollars": 0,
+      "aiMessagesUsed": 0,
+      "aiMessagesLimit": 0,
+      "totalTokensUsed": 0,
+      "subscriptionPlan": "starter",
+      "subscriptionStatus": "inactive"
     },
     "contact_201115822923": {
       "id": "contact_201115822923",
@@ -59,6 +74,36 @@
       "subscriptionPlan": "starter",
       "subscriptionStatus": "inactive"
     },
+    "contact_201228394334": {
+      "id": "contact_201228394334",
+      "role": "user",
+      "isOnline": false,
+      "username": "~Ahmed Gharib",
+      "avatarUrl": "https://images.unsplash.com/photo-1633332755192-727a05c4013d?auto=format&fit=crop&w=150&q=80",
+      "lastSeenAt": "2026-07-21T14:33:53.992Z",
+      "statusText": "WhatsApp Contact",
+      "costInDollars": 0,
+      "aiMessagesUsed": 0,
+      "aiMessagesLimit": 0,
+      "totalTokensUsed": 0,
+      "subscriptionPlan": "starter",
+      "subscriptionStatus": "inactive"
+    },
+    "contact_447974905044": {
+      "id": "contact_447974905044",
+      "role": "user",
+      "isOnline": false,
+      "username": "+447974905044",
+      "avatarUrl": "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80",
+      "lastSeenAt": "2026-07-21T23:06:46.244Z",
+      "statusText": "WhatsApp Contact",
+      "costInDollars": 0,
+      "aiMessagesUsed": 0,
+      "aiMessagesLimit": 0,
+      "totalTokensUsed": 0,
+      "subscriptionPlan": "starter",
+      "subscriptionStatus": "inactive"
+    },
     "contact_971555980556": {
       "id": "contact_971555980556",
       "role": "user",
@@ -77,108 +122,20 @@
   },
   "catalog": [],
   "devices": {
-    "dev_wpaax10r2": {
-      "id": "dev_wpaax10r2",
+    "dev_n6x22gxu5": {
+      "id": "dev_n6x22gxu5",
       "name": "ChatCore",
-      "apiKey": "waba_sec_wpaax10r2_khybuvut",
-      "method": "qr",
+      "method": "cloud_api",
       "status": "connected",
-      "aiModel": "gemini-3.5-flash",
-      "ownerId": "admin-tarek",
-      "linkedAt": "2026-07-20T23:23:48.741Z",
-      "flowStages": [
-        {
-          "id": "awareness",
-          "name": "وعي عام",
-          "color": "#6366f1",
-          "nameEn": "Awareness",
-          "keywords": [
-            "تفاصيل",
-            "باقة",
-            "ممكن",
-            "شرح",
-            "فيديو",
-            "برنامج",
-            "توضيح"
-          ]
-        },
-        {
-          "id": "consideration",
-          "name": "اهتمام ومقارنة",
-          "color": "#3b82f6",
-          "nameEn": "Consideration",
-          "keywords": [
-            "تفاصيل",
-            "باقة",
-            "ممكن",
-            "شرح",
-            "فيديو",
-            "برنامج",
-            "توضيح"
-          ]
-        },
-        {
-          "id": "intent",
-          "name": "نية جادة",
-          "color": "#a855f7",
-          "nameEn": "Intent",
-          "keywords": [
-            "رقم الحساب",
-            "بكم الاشتراك",
-            "سعر الباقة",
-            "رابط الدفع",
-            "طريقة الدفع",
-            "خصم"
-          ]
-        },
-        {
-          "id": "action",
-          "name": "تفعيل واشتراك",
-          "color": "#10b981",
-          "nameEn": "Action",
-          "keywords": [
-            "تم التحويل",
-            "حولت",
-            "ايصال",
-            "إيصال",
-            "التحويل البنكي",
-            "فودافون كاش",
-            "اشترك السنوي"
-          ]
-        },
-        {
-          "id": "loyalty",
-          "name": "ولاء وتوصية",
-          "color": "#ec4899",
-          "nameEn": "Loyalty",
-          "keywords": [
-            "شكرا",
-            "تسلم",
-            "ممتاز جدا",
-            "روعة",
-            "أشكرك",
-            "رائع"
-          ]
-        }
-      ],
-      "webhookUrl": "https://your-api.com/whatsapp/webhook",
-      "aiAgentName": "",
-      "aiVoiceTone": "professional",
       "phoneNumber": "+971555980556",
-      "syncHistory": true,
-      "aiStopKeyword": "",
-      "aiTemperature": 0.8,
-      "aiAgentEnabled": true,
-      "aiVoiceEnabled": false,
-      "dailySentCount": 52,
-      "aiKnowledgeBase": "",
-      "browserSignature": [
-        "ChatCore Engine",
-        "Chrome",
-        "125.0.0"
-      ],
-      "lastSentResetDate": "2026-07-20",
-      "aiAgentInstructions": ""
+      "ownerId": "admin-tarek",
+      "cloudApiKey": "EAAPKFzn8NnEBSNBE4sArv79ZCnTfGZC95c9kkOp2bvUzhJ827UVWVwWdM4ds8bzIkgvcEUlqxexLF7xI77jJMIH4DLZCvCpmlRMBOUhUowyCfbJzJrmmji2n1PWms7jiiAtkt9ZCzZCsGJSBh3OEZBQujnr6dP8OkQymYqXOiJOEkjQY6QpwvCSI660jZBwAsoFIgZDZD",
+      "phoneId": "1023744268475101",
+      "businessId": "713821952671753",
+      "linkedAt": "2026-07-21T23:48:54.661Z",
+      "apiKey": "waba_sec_n6x22gxu5_r641aev7",
+      "webhookUrl": "https://your-api.com/whatsapp/webhook",
+      "syncHistory": true
     }
   },
   "folders": {},
@@ -1153,6 +1110,186 @@
       "timestamp": "2026-07-20T23:11:40.008Z",
       "recipientId": "contact_201225378152",
       "conversationId": "conv_djji39qrf"
+    },
+    {
+      "id": "AC5193B99EE07062E9C27C2EE3A403BF",
+      "type": "text",
+      "status": "read",
+      "content": "السلام عليكم",
+      "senderId": "contact_201115822923",
+      "timestamp": "2026-07-21T14:33:04.000Z",
+      "recipientId": "admin-tarek",
+      "conversationId": "conv_9vgehiffd"
+    },
+    {
+      "id": "msg_1sflmmdb8",
+      "type": "text",
+      "status": "delivered",
+      "content": "وعليكم السلام ورحمة الله وبركاته يا أستاذ **Roshdi**. \n\nمساء الخير والمسرات. أحييك مجدداً، وأقدر لك سعة صدرك وتواصلك المستمر معنا.\n\nيا غالي، لقد قمت بتثبيت كافة طلباتك ومواصفاتك التقنية الخاصة بهوية **أدفين** ومعايير الـ **Safe Zone** في تذكرة الخدمة الخاصة بك، وهي الآن جاهزة للتحويل للمختصين.\n\nلأتمكن من إتمام هذه الخطوة وربطك بزميلي في الفريق الإبداعي ليقوم بتسليمك البرومبتات الثمانية فوراً، **أرجو منك فقط تزويدي باسمك الكريم (الاسم الكامل).**\n\nبمجرد كتابة الاسم، سأقوم برفع الطلب فوراً لضمان سرعة تواصل الفريق معك. **أنا بانتظارك لننهي هذا الأمر على أكمل وجه.** ✨",
+      "senderId": "admin-tarek",
+      "timestamp": "2026-07-21T14:33:18.418Z",
+      "recipientId": "contact_201115822923",
+      "conversationId": "conv_9vgehiffd"
+    },
+    {
+      "id": "3EB00A347405D4301BA0E6",
+      "type": "text",
+      "status": "read",
+      "content": "أهلاً هاله! 👋\n\nلدينا خبر حماسي نود مشاركته معك اليوم! 🚀\n\nيسعدنا أن نعلن عن إطلاق *شات كور (ChatCore)*، الحل الأمثل لنقل تجربة خدمة العملاء لديك إلى مستوى جديد تماماً! ✨\n\nلماذا *شات كور*؟\n✅ تحكم كامل في محادثاتك في مكان واحد.\n✅ استجابة فورية ترفع من رضا عملائك.\n✅ تصميم ذكي وسهل للاستخدام اليومي.\n\nهل تود التعرف أكثر على كيف يمكن لـ *شات كور* أن يطور عملك؟ 💡\n\nيسعدني أن أرسل لك تفاصيل أكثر أو تحديد موعد سريع لعرض توضيحي.\n\nبانتظار ردك! 😊",
+      "senderId": "admin-tarek",
+      "timestamp": "2026-07-21T14:33:47.000Z",
+      "recipientId": "contact_201225378152",
+      "conversationId": "conv_djji39qrf"
+    },
+    {
+      "id": "3EB05EB5D62F2F5C721FB5",
+      "type": "text",
+      "status": "read",
+      "content": "أهلاً احمد غريب! 👋\n\nلدينا خبر حماسي نود مشاركته معك اليوم! 🚀\n\nيسعدنا أن نعلن عن إطلاق *شات كور (ChatCore)*، الحل الأمثل لنقل تجربة خدمة العملاء لديك إلى مستوى جديد تماماً! ✨\n\nلماذا *شات كور*؟\n✅ تحكم كامل في محادثاتك في مكان واحد.\n✅ استجابة فورية ترفع من رضا عملائك.\n✅ تصميم ذكي وسهل للاستخدام اليومي.\n\nهل تود التعرف أكثر على كيف يمكن لـ *شات كور* أن يطور عملك؟ 💡\n\nيسعدني أن أرسل لك تفاصيل أكثر أو تحديد موعد سريع لعرض توضيحي.\n\nبانتظار ردك! 😊",
+      "senderId": "admin-tarek",
+      "timestamp": "2026-07-21T14:33:53.000Z",
+      "recipientId": "contact_201228394334",
+      "conversationId": "conv_he5i3xlo3"
+    },
+    {
+      "id": "A5E042433573B0CE296EB2C9B7664E07",
+      "type": "text",
+      "status": "read",
+      "content": "ازيك يا بوت",
+      "senderId": "contact_201055700696",
+      "timestamp": "2026-07-21T20:42:30.000Z",
+      "recipientId": "admin-tarek",
+      "conversationId": "conv_zvfagjhq3"
+    },
+    {
+      "id": "msg_z6jvztza9",
+      "type": "text",
+      "status": "delivered",
+      "content": "مساء الخير والمسرات يا فندم. أنا بخير، شكراً لسؤالك اللطيف! \n\nأنا هنا بخدمتك بكل احترافية، وأتطلع لأن أكون مساعدك الشخصي اليوم. كيف يمكنني أن أجعل يومك أفضل؟ هل لديك استفسار معين أو موضوع تود أن أساعدك فيه؟",
+      "senderId": "admin-tarek",
+      "timestamp": "2026-07-21T20:42:50.526Z",
+      "recipientId": "contact_201055700696",
+      "conversationId": "conv_zvfagjhq3"
+    },
+    {
+      "id": "ACE23637E2DBAFACC04009F9C38E728C",
+      "type": "text",
+      "status": "read",
+      "content": "اي يبوت",
+      "senderId": "contact_201228394334",
+      "timestamp": "2026-07-21T20:44:04.000Z",
+      "recipientId": "admin-tarek",
+      "conversationId": "conv_he5i3xlo3"
+    },
+    {
+      "id": "msg_meagwbi43",
+      "type": "text",
+      "status": "delivered",
+      "content": "على راسي يا سيد **أحمد**، وسعيد جداً بتواصلك وتفاعلك معي! 😊\n\nيسعدنا للغاية اهتمامك بـ *شات كور (ChatCore)* ورغبتك في نقل خدمة العملاء الخاصة بك إلى مستوى احترافي جديد تماماً. 🚀\n\nلتزويدك بكافة التفاصيل الفنية، الأسعار الحصرية، وكيفية الاستفادة القصوى من المنصة بما يناسب عملك:\n🔹 هل تفضل أن يقوم أحد مستشارينا المتخصصين بالتواصل معك مباشرة عبر الواتساب أو باتصال هاتفي؟\n\nيرجى تأكيد رقم التواصل المفضل لديك (إذا كان مختلفاً عن هذا الرقم)، وسيتواصل معك أحد زملائي من الفريق البشري فوراً لمساعدتك وتلبية طلبك! ✨",
+      "senderId": "admin-tarek",
+      "timestamp": "2026-07-21T20:44:16.925Z",
+      "recipientId": "contact_201228394334",
+      "conversationId": "conv_he5i3xlo3"
+    },
+    {
+      "id": "AC8CEC48507D504590CB6DEC6DC27B99",
+      "type": "text",
+      "status": "read",
+      "content": "🔥🔥🔥🔥🔥",
+      "senderId": "contact_201228394334",
+      "timestamp": "2026-07-21T20:44:37.000Z",
+      "recipientId": "admin-tarek",
+      "conversationId": "conv_he5i3xlo3"
+    },
+    {
+      "id": "msg_9zhjnooff",
+      "type": "text",
+      "status": "delivered",
+      "content": "يا رب دوم هذا الحماس والشغف يا سيد **أحمد**! 🔥🚀 \n\nيسعدنا جداً أن نرى هذا التفاعل الرائع منك، ونعدك بتجربة استثنائية تليق بطموحاتك مع *شات كور*.\n\nلتسريع الأمور والبدء فوراً:\n🔹 هل نعتمد التواصل معك مباشرة عبر **هذا الرقم الحالي** (واتساب أو اتصال هاتفي)؟\n🔹 أم تفضل رقمًا آخر يا فندم؟\n\nأبشر بسعدك، بمجرد تأكيدك سيقوم أحد مستشارينا المتميزين بالتواصل معك مباشرة لإطلاعك على كافة المزايا والأسعار الحصرية التي تليق بمقامك! ✨",
+      "senderId": "admin-tarek",
+      "timestamp": "2026-07-21T20:44:48.843Z",
+      "recipientId": "contact_201228394334",
+      "conversationId": "conv_he5i3xlo3"
+    },
+    {
+      "id": "D8BB40CE80124B1784",
+      "type": "text",
+      "status": "read",
+      "content": "[Message/رسالة]",
+      "senderId": "contact_447974905044",
+      "timestamp": "2026-07-21T23:06:46.000Z",
+      "recipientId": "admin-tarek",
+      "conversationId": "conv_te2di6jbo"
+    },
+    {
+      "id": "msg_fm9qia05j",
+      "type": "text",
+      "status": "delivered",
+      "content": "مساء الخير والمسرات وأهلاً بك يا فندم! ✨\n\nA very warm good evening to you. It is an absolute pleasure to connect with you tonight. \n\nHow may I assist you or guide you through our premium services today, *Valued Customer*? 🌟\n\nPlease feel free to share how I can be of service to you.",
+      "senderId": "admin-tarek",
+      "timestamp": "2026-07-21T23:06:59.849Z",
+      "recipientId": "contact_447974905044",
+      "conversationId": "conv_te2di6jbo"
+    },
+    {
+      "id": "F5FF7671471B7CC2FF",
+      "type": "text",
+      "status": "read",
+      "content": "[Message/رسالة]",
+      "senderId": "contact_447974905044",
+      "timestamp": "2026-07-21T23:07:03.000Z",
+      "recipientId": "admin-tarek",
+      "conversationId": "conv_te2di6jbo"
+    },
+    {
+      "id": "msg_y5847zcod",
+      "type": "text",
+      "status": "delivered",
+      "content": "Hello, *Valued Customer*! It is wonderful to hear from you. \n\nHow can we assist you tonight? \n\nIf you are looking to explore our premium services, custom solutions, or pricing details, I would be delighted to connect you with one of our specialists. \n\nTo help us serve you best, could you please share:\n🔹 Your **preferred name**?\n🔹 The **nature of your inquiry**?\n\nOnce provided, a dedicated representative will reach out to you directly to assist you with absolute priority. \n\nLooking forward to hearing from you! ✨",
+      "senderId": "admin-tarek",
+      "timestamp": "2026-07-21T23:07:22.286Z",
+      "recipientId": "contact_447974905044",
+      "conversationId": "conv_te2di6jbo"
+    },
+    {
+      "id": "AC768D35F0071E953B900DB886CBCDEB",
+      "type": "text",
+      "status": "read",
+      "content": "السلام عليكم",
+      "senderId": "contact_201115822923",
+      "timestamp": "2026-07-21T23:45:14.000Z",
+      "recipientId": "admin-tarek",
+      "conversationId": "conv_9vgehiffd"
+    },
+    {
+      "id": "msg_lqxkr6ulf",
+      "type": "text",
+      "status": "delivered",
+      "content": "مرحباً، تلقينا رسالتك بنجاح وسنقوم بالرد عليك في أقرب وقت.",
+      "senderId": "admin-tarek",
+      "timestamp": "2026-07-21T23:45:24.048Z",
+      "recipientId": "contact_201115822923",
+      "conversationId": "conv_9vgehiffd"
+    },
+    {
+      "id": "ACB0C699D5078E41863534A7CC8F6614",
+      "type": "text",
+      "status": "read",
+      "content": "؟؟",
+      "senderId": "contact_201115822923",
+      "timestamp": "2026-07-21T23:45:53.000Z",
+      "recipientId": "admin-tarek",
+      "conversationId": "conv_9vgehiffd"
+    },
+    {
+      "id": "msg_lwbmpgd6g",
+      "type": "text",
+      "status": "delivered",
+      "content": "مرحباً، تلقينا رسالتك بنجاح وسنقوم بالرد عليك في أقرب وقت.",
+      "senderId": "admin-tarek",
+      "timestamp": "2026-07-21T23:45:58.472Z",
+      "recipientId": "contact_201115822923",
+      "conversationId": "conv_9vgehiffd"
     }
   ],
   "statuses": [],
@@ -1191,6 +1328,41 @@
       "progress": 0,
       "createdAt": "2026-07-20T23:19:23.719Z",
       "templateText": "أهلاً {name}! 👋\n\nلدينا خبر حماسي نود مشاركته معك اليوم! 🚀\n\nيسعدنا أن نعلن عن إطلاق *شات كور (ChatCore)*، الحل الأمثل لنقل تجربة خدمة العملاء لديك إلى مستوى جديد تماماً! ✨\n\nلماذا *شات كور*؟\n✅ تحكم كامل في محادثاتك في مكان واحد.\n✅ استجابة فورية ترفع من رضا عملائك.\n✅ تصميم ذكي وسهل للاستخدام اليومي.\n\nهل تود التعرف أكثر على كيف يمكن لـ *شات كور* أن يطور عملك؟ 💡\n\nيسعدني أن أرسل لك تفاصيل أكثر أو تحديد موعد سريع لعرض توضيحي.\n\nبانتظار ردك! 😊"
+    },
+    "camp_ucgxbialb": {
+      "id": "camp_ucgxbialb",
+      "logs": [
+        "[2:33:42 PM] Campaign Draft created with 2 targets.",
+        "[2:33:43 PM] Starting marketing queue...",
+        "[2:33:43 PM] Starting outreach campaign with dynamic load distribution and device failover.",
+        "[2:33:44 PM] [1/2] Dispatching template via \"ChatCore\" to هاله (+201225378152)...",
+        "[2:33:47 PM] Executing live HTTP callback dispatch to +201225378152...",
+        "[2:33:47 PM] [✔] Delivered to +201225378152. Remote status: DELIVERED.",
+        "[2:33:50 PM] [2/2] Dispatching template via \"ChatCore\" to احمد غريب (+201228394334)...",
+        "[2:33:53 PM] Executing live HTTP callback dispatch to +201228394334...",
+        "[2:33:53 PM] [✔] Delivered to +201228394334. Remote status: DELIVERED.",
+        "[2:33:56 PM] Bulk dispatch campaign successfully completed!"
+      ],
+      "name": "00 (Copy)",
+      "delay": 6,
+      "status": "completed",
+      "targets": [
+        {
+          "name": "هاله",
+          "phone": "201225378152",
+          "status": "sent"
+        },
+        {
+          "name": "احمد غريب",
+          "phone": "201228394334",
+          "status": "sent"
+        }
+      ],
+      "deviceId": "dev_wpaax10r2",
+      "progress": 100,
+      "createdAt": "2026-07-21T14:33:42.904Z",
+      "completedAt": "2026-07-21T14:33:56.893Z",
+      "templateText": "أهلاً {name}! 👋\n\nلدينا خبر حماسي نود مشاركته معك اليوم! 🚀\n\nيسعدنا أن نعلن عن إطلاق *شات كور (ChatCore)*، الحل الأمثل لنقل تجربة خدمة العملاء لديك إلى مستوى جديد تماماً! ✨\n\nلماذا *شات كور*؟\n✅ تحكم كامل في محادثاتك في مكان واحد.\n✅ استجابة فورية ترفع من رضا عملائك.\n✅ تصميم ذكي وسهل للاستخدام اليومي.\n\nهل تود التعرف أكثر على كيف يمكن لـ *شات كور* أن يطور عملك؟ 💡\n\nيسعدني أن أرسل لك تفاصيل أكثر أو تحديد موعد سريع لعرض توضيحي.\n\nبانتظار ردك! 😊"
     }
   },
   "demoLeads": [],
@@ -1204,7 +1376,7 @@
       "aiPaused": false,
       "deviceId": "dev_wpaax10r2",
       "createdAt": "2026-07-20T16:23:02.538Z",
-      "updatedAt": "2026-07-20T23:00:29.403Z",
+      "updatedAt": "2026-07-21T23:45:58.472Z",
       "participantIds": [
         "admin-tarek",
         "contact_201115822923"
@@ -1215,10 +1387,25 @@
       "label": "awareness",
       "deviceId": "dev_wpaax10r2",
       "createdAt": "2026-07-20T22:42:37.748Z",
-      "updatedAt": "2026-07-20T23:11:40.008Z",
+      "updatedAt": "2026-07-21T14:33:47.852Z",
       "participantIds": [
         "admin-tarek",
         "contact_201225378152"
+      ]
+    },
+    "conv_he5i3xlo3": {
+      "id": "conv_he5i3xlo3",
+      "label": "consideration",
+      "deviceId": "dev_wpaax10r2",
+      "createdAt": "2026-07-21T14:33:53.993Z",
+      "updatedAt": "2026-07-21T20:44:48.843Z",
+      "adminReport": {
+        "content": "[ADMIN_REPORT]\n\n### ملخص المحادثة:\nتم التواصل مع العميل السيد \"أحمد غريب\" وإرسال رسالة ترويجية لتعريفه بمنصة **شات كور (ChatCore)** كحل متطور لإدارة محادثات خدمة العملاء وتطوير الأعمال. أبدى العميل اهتماماً فورياً وتفاعلاً إيجابياً للغاية مع العرض، معبراً عن حماسه الشديد لمعرفة المزيد من التفاصيل وتجربة المنصة. قام الوكيل الذكي بالترحيب به وحثه على تأكيد رقم التواصل المفضل لديه لترتيب اتصال مباشر أو محادثة عبر الواتساب مع أحد المستشارين البشريين لتقديم عرض توضيحي (Demo) والأسعار الحصرية.\n\n### نية العميل (User Intent):\n* **اهتمام واستفسار تجاري عالي الجدية (High-Intent Lead):** يرغب العميل في استكشاف منصة \"شات كور\" ومعرفة كيف يمكن أن تطور أعماله، ولديه رغبة واضحة في الانتقال للخطوة التالية (العرض التوضيحي).\n\n### الحالة المزاجية (Sentiment):\n* **إيجابي وحماسي للغاية (Highly Enthusiastic):** ظهر ذلك بوضوح من خلال رده السريع وتفاعله باستخدام الرموز التعبيرية الحماسية (🔥🔥🔥🔥🔥).\n\n### الإجراء الذي تم اتخاذه (Action Taken):\n* تم الترحيب بالعميل بشكل احترافي وودود يتناسب مع حماسه.\n* تم توضيح القيمة المضافة وطلب تأكيد وسيلة ورقم التواصل المفضلة لديه (سواء الرقم الحالي أو رقم آخر) لتحويله إلى المستشار البشري المختص.\n* تهيئة العميل لتلقي اتصال هاتفي أو رسالة واتساب تفصيلية تشمل المزايا والأسعار.\n\n### النقاط المفتوحة / التوصيات (Pending Items / Recommendations):\n* **تدخل بشري فوري (Urgent Follow-up Required):** يُوصى بقيام فريق المبيعات/مستشاري الحلول بالتواصل الفوري مع العميل على رقمه الحالي (الذي تمت المحادثة من خلاله) دون تأخير، واستغلال حالة الحماس العالية لديه لإتمام حجز العرض التوضيحي (Demo).\n* **إعداد عرض مخصص:** تجهيز باقة أسعار خاصة وعرض توضيحي سريع يركز على سهولة الاستخدام والتحكم الفوري في المحادثات لجذب العميل وإتمام عملية البيع بنجاح.",
+        "updatedAt": "2026-07-21T20:49:33.822Z"
+      },
+      "participantIds": [
+        "admin-tarek",
+        "contact_201228394334"
       ]
     },
     "conv_k06mr7jpq": {
@@ -1228,6 +1415,46 @@
       "participantIds": [
         "dev_wpaax10r2",
         "contact_201115822923"
+      ]
+    },
+    "conv_r8az0xsql": {
+      "id": "conv_r8az0xsql",
+      "createdAt": "2026-07-21T14:33:53.753Z",
+      "updatedAt": "2026-07-21T14:33:53.753Z",
+      "participantIds": [
+        "dev_wpaax10r2",
+        "contact_201228394334"
+      ]
+    },
+    "conv_te2di6jbo": {
+      "id": "conv_te2di6jbo",
+      "label": "awareness",
+      "deviceId": "dev_wpaax10r2",
+      "createdAt": "2026-07-21T23:06:46.245Z",
+      "updatedAt": "2026-07-21T23:07:22.286Z",
+      "participantIds": [
+        "admin-tarek",
+        "contact_447974905044"
+      ]
+    },
+    "conv_wag046qn6": {
+      "id": "conv_wag046qn6",
+      "createdAt": "2026-07-21T14:33:47.611Z",
+      "updatedAt": "2026-07-21T14:33:47.611Z",
+      "participantIds": [
+        "dev_wpaax10r2",
+        "contact_201225378152"
+      ]
+    },
+    "conv_zvfagjhq3": {
+      "id": "conv_zvfagjhq3",
+      "label": "awareness",
+      "deviceId": "dev_wpaax10r2",
+      "createdAt": "2026-07-21T20:42:30.155Z",
+      "updatedAt": "2026-07-21T20:42:50.526Z",
+      "participantIds": [
+        "admin-tarek",
+        "contact_201055700696"
       ]
     }
   }
