@@ -140,19 +140,45 @@ export function readDb(): DbSchema {
   }
 }
 
+let writeTimeout: NodeJS.Timeout | null = null;
+let isWriting = false;
+let pendingWrite = false;
+
 export function writeDb(data: DbSchema): void {
   cachedDb = data;
+  
+  if (writeTimeout) return; // Debounce already active
+  
+  writeTimeout = setTimeout(async () => {
+    writeTimeout = null;
+    
+    if (isWriting) {
+      pendingWrite = true;
+      return;
+    }
+    
+    await performWrite(data);
+  }, 2000); // 2-second debounce window
+}
+
+async function performWrite(data: DbSchema) {
+  isWriting = true;
+  pendingWrite = false;
   try {
-    console.log(`[Database Write] Writing database to disk synchronously... Total users: ${Object.keys(data.users).length}, conversations: ${Object.keys(data.conversations).length}, devices: ${Object.keys(data.devices || {}).length}, campaigns: ${Object.keys(data.campaigns || {}).length}`);
-    fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2), 'utf-8');
-    console.log('[Database Write] Database successfully written to disk.');
+    // console.log(`[Database Write] Writing database to disk asynchronously... Total users: ${Object.keys(data.users).length}`);
+    await fs.promises.writeFile(DB_FILE, JSON.stringify(data, null, 2), 'utf-8');
     
     // Back up to Supabase asynchronously on every database write
-    backupDbToSupabase(data).catch((err) => {
-      console.error('[Supabase DB Backup] Failed to back up db asynchronously:', err);
+    backupDbToSupabase(data).catch(err => {
+      console.error('[Supabase DB Backup Error]', err);
     });
-  } catch (error) {
-    console.error('Error writing JSON database synchronously', error);
+  } catch (err) {
+    console.error('[Database Write Error]', err);
+  } finally {
+    isWriting = false;
+    if (pendingWrite && cachedDb) {
+      performWrite(cachedDb);
+    }
   }
 }
 

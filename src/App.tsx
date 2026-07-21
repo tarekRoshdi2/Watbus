@@ -419,7 +419,7 @@ export default function App() {
           case 'conversation:update': {
             const { conversation } = data;
             setConversations((prev) =>
-              prev.map((c) => (c.id === conversation.id ? conversation : c))
+              prev.map((c) => (c.id === conversation.id ? { ...c, ...conversation } : c))
             );
             break;
           }

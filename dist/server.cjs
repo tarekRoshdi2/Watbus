@@ -458,15 +458,31 @@ function readDb() {
 }
 function writeDb(data) {
   cachedDb = data;
+  if (writeTimeout) return;
+  writeTimeout = setTimeout(async () => {
+    writeTimeout = null;
+    if (isWriting) {
+      pendingWrite = true;
+      return;
+    }
+    await performWrite(data);
+  }, 2e3);
+}
+async function performWrite(data) {
+  isWriting = true;
+  pendingWrite = false;
   try {
-    console.log(`[Database Write] Writing database to disk synchronously... Total users: ${Object.keys(data.users).length}, conversations: ${Object.keys(data.conversations).length}, devices: ${Object.keys(data.devices || {}).length}, campaigns: ${Object.keys(data.campaigns || {}).length}`);
-    import_fs2.default.writeFileSync(DB_FILE, JSON.stringify(data, null, 2), "utf-8");
-    console.log("[Database Write] Database successfully written to disk.");
+    await import_fs2.default.promises.writeFile(DB_FILE, JSON.stringify(data, null, 2), "utf-8");
     backupDbToSupabase(data).catch((err) => {
-      console.error("[Supabase DB Backup] Failed to back up db asynchronously:", err);
+      console.error("[Supabase DB Backup Error]", err);
     });
-  } catch (error) {
-    console.error("Error writing JSON database synchronously", error);
+  } catch (err) {
+    console.error("[Database Write Error]", err);
+  } finally {
+    isWriting = false;
+    if (pendingWrite && cachedDb) {
+      performWrite(cachedDb);
+    }
   }
 }
 function getUser(userId) {
@@ -925,7 +941,7 @@ function deleteFolder(folderId) {
     writeDb(db);
   }
 }
-var import_fs2, import_path2, DB_FILE, META_AI_USER, ADMIN_USER, cachedDb;
+var import_fs2, import_path2, DB_FILE, META_AI_USER, ADMIN_USER, cachedDb, writeTimeout, isWriting, pendingWrite;
 var init_db = __esm({
   "src/db.ts"() {
     import_fs2 = __toESM(require("fs"), 1);
@@ -964,12 +980,16 @@ var init_db = __esm({
       aiMessagesLimit: 5e4
     };
     cachedDb = null;
+    writeTimeout = null;
+    isWriting = false;
+    pendingWrite = false;
   }
 });
 
 // server.ts
 var server_exports = {};
 __export(server_exports, {
+  globalIncomingHandler: () => globalIncomingHandler,
   memoryLogs: () => memoryLogs
 });
 module.exports = __toCommonJS(server_exports);
@@ -994,6 +1014,8 @@ var import_fs3 = __toESM(require("fs"), 1);
 init_db();
 init_supabase();
 var activeSockets = /* @__PURE__ */ new Map();
+var readySockets = /* @__PURE__ */ new Set();
+var latestLidMessages = /* @__PURE__ */ new Map();
 var activeReconnectTimeouts = /* @__PURE__ */ new Map();
 var conflictCounters = /* @__PURE__ */ new Map();
 var reconnectionAttempts = /* @__PURE__ */ new Map();
@@ -1290,6 +1312,22 @@ async function handleBaileysMessages(sock, messages, deviceId, isHistory = false
     const jid = resolveLidToPhone(rawJid, deviceId);
     const fromMe = !!m.key.fromMe;
     const pushName = m.pushName || void 0;
+    const messageId = m.key.id;
+    if (!fromMe && rawJid && messageId && rawJid.endsWith("@lid")) {
+      latestLidMessages.set(rawJid, m);
+      console.log(`[LID Cache] Saved full message object for ${rawJid} with msgId ${messageId}`);
+      try {
+        const cachePath = import_path3.default.join(process.cwd(), "whatsapp-sessions", deviceId, `lid-quote-${rawJid.replace("@lid", "")}.json`);
+        import_fs3.default.writeFileSync(cachePath, JSON.stringify(m, (key, value) => {
+          if (value && value.type === "Buffer") {
+            return { type: "Buffer", data: Array.from(value.data) };
+          }
+          return value;
+        }));
+      } catch (err) {
+        console.error("[LID Cache] Failed to persist quote object to disk:", err);
+      }
+    }
     let timestamp = Date.now() / 1e3;
     if (m.messageTimestamp) {
       if (typeof m.messageTimestamp === "number") {
@@ -1298,7 +1336,6 @@ async function handleBaileysMessages(sock, messages, deviceId, isHistory = false
         timestamp = m.messageTimestamp.low;
       }
     }
-    const messageId = m.key.id;
     syncIncomingBaileysMessage(sock, jid, pushName, m.message, fromMe, timestamp, messageId, deviceId, isHistory);
   }
 }
@@ -1508,6 +1545,7 @@ async function startWhatsAppSession(deviceId) {
         });
       }
       if (connection === "close") {
+        readySockets.delete(deviceId);
         if (sock.wasClosedIntentionally) {
           console.log(`Connection closed intentionally for device ${deviceId}. Skipping reconnect handling.`);
           if (activeSockets.get(deviceId) === sock) {
@@ -1522,7 +1560,21 @@ async function startWhatsAppSession(deviceId) {
         const isConflict = errMsg.includes("conflict") || statusCode === 440;
         const isQrExpired = errMsg.includes("qr refs attempts ended");
         const isRestartRequired = statusCode === 515;
-        if (isConflict) {
+        if (statusCode === 440) {
+          console.log(`
+====================================================================`);
+          console.log(`\u{1F6A8} [CRITICAL ERROR] \u{1F6A8} SESSION CONFLICT DETECTED (Code 440)`);
+          console.log(`====================================================================`);
+          console.log(`[WhatsApp] Connection closed for device ${deviceId} due to session conflict.`);
+          console.log(`\u{1F4A1} THE REASON: You are running this bot in TWO PLACES at the same time!`);
+          console.log(`\u{1F4A1} You probably have the server running on Hostinger AND your local PC.`);
+          console.log(`\u{1F4A1} WhatsApp ONLY ALLOWS ONE connection at a time per session.`);
+          console.log(`\u{1F4A1} THE FIX: Please STOP the server on Hostinger, OR stop the local server.`);
+          console.log(`====================================================================
+`);
+          const currentConflict = (conflictCounters.get(deviceId) || 0) + 1;
+          conflictCounters.set(deviceId, currentConflict);
+        } else if (isConflict) {
           console.log(`[WhatsApp] Connection closed for device ${deviceId} due to session conflict (handled gracefully). Reason code: ${statusCode}.`);
         } else {
           console.log(`Connection closed for device ${deviceId}. Reason code: ${statusCode}. Permanent disconnect: ${loggedOut}.`);
@@ -1607,6 +1659,7 @@ async function startWhatsAppSession(deviceId) {
           activeReconnectTimeouts.set(deviceId, timeoutId);
         }
       } else if (connection === "open") {
+        readySockets.add(deviceId);
         const fullJid = sock.user?.id || "";
         const cleanPhone = fullJid.split(":")[0] || fullJid.split("@")[0] || "";
         console.log(`WhatsApp connected successfully on +${cleanPhone} for device ${deviceId}!`);
@@ -1726,95 +1779,85 @@ function normalizePhoneNumber(raw) {
 }
 async function sendBaileysMessage(deviceId, to, text, audioBuffer, pdfBuffer, pdfFilename, imageBuffer) {
   let sock = activeSockets.get(deviceId);
-  if (!sock) {
-    const fallbackEntry = Array.from(activeSockets.entries())[0];
-    if (fallbackEntry) {
-      sock = fallbackEntry[1];
-    }
-  }
-  if (!sock) {
-    for (let attempt = 1; attempt <= 5; attempt++) {
-      console.log(`[Baileys Send Retry] Waiting for device socket ${deviceId} to complete reconnect (Attempt ${attempt}/5)...`);
+  if (!sock || !readySockets.has(deviceId)) {
+    for (let attempt = 1; attempt <= 15; attempt++) {
+      console.log(`[Baileys Send Retry] Waiting for device socket ${deviceId} to complete reconnect (Attempt ${attempt}/15)...`);
       await new Promise((r) => setTimeout(r, 3e3));
-      sock = activeSockets.get(deviceId) || Array.from(activeSockets.entries())[0]?.[1];
-      if (sock) {
+      sock = activeSockets.get(deviceId);
+      if (sock && readySockets.has(deviceId)) {
         console.log(`[Baileys Send Retry] Socket re-established successfully! Proceeding to deliver message.`);
         break;
       }
     }
   }
-  if (!sock) {
+  if (!sock || !readySockets.has(deviceId)) {
+    const fallbackEntry = Array.from(activeSockets.entries())[0];
+    if (fallbackEntry && readySockets.has(fallbackEntry[0])) {
+      sock = fallbackEntry[1];
+    }
+  }
+  if (!sock || !readySockets.has(deviceId)) {
     return { success: false, error: "Device connection is offline or starting up" };
   }
   try {
     let cleanPhone = normalizePhoneNumber(to);
-    if (!cleanPhone.endsWith("@s.whatsapp.net")) {
+    const rawNum = cleanPhone.replace("@s.whatsapp.net", "");
+    const sessionPath = import_path3.default.join(process.cwd(), "whatsapp-sessions", deviceId);
+    const forwardLidPath = import_path3.default.join(sessionPath, `lid-mapping-${rawNum}.json`);
+    let quoteId;
+    if (import_fs3.default.existsSync(forwardLidPath)) {
+      try {
+        const mappedLid = JSON.parse(import_fs3.default.readFileSync(forwardLidPath, "utf8"));
+        if (mappedLid && typeof mappedLid === "string") {
+          cleanPhone = `${mappedLid}@lid`;
+          const quotedMessage = latestLidMessages.get(cleanPhone);
+          quoteId = quotedMessage ? quotedMessage.key?.id : void 0;
+          if (!quoteId) {
+            const contactId = `contact_${rawNum}`;
+            const conv = getOrCreateConversation(deviceId, contactId);
+            if (conv) {
+              const msgs = getMessagesForConversation(conv.id);
+              const lastIn = msgs.filter((m) => m.senderId === contactId).pop();
+              if (lastIn && lastIn.id && !lastIn.id.startsWith("msg_")) {
+                quoteId = lastIn.id;
+              }
+            }
+          }
+          console.log(`[Baileys Route] LID Ad conversation detected for ${rawNum} (LID: ${cleanPhone}).`);
+          console.log(`[Baileys Route] Quoting msg: ${quoteId || "none"} to prevent decryption rejection.`);
+        }
+      } catch (err) {
+      }
+    }
+    if (!cleanPhone.endsWith("@s.whatsapp.net") && !cleanPhone.endsWith("@g.us") && !cleanPhone.endsWith("@lid")) {
       cleanPhone = `${cleanPhone}@s.whatsapp.net`;
     }
+    const sendOptions = {};
+    let sentMsg;
     if (audioBuffer) {
-      try {
-        const [result] = await sock.onWhatsApp(cleanPhone);
-        if (!result || !result.exists) {
-          console.warn(`[Baileys Send] Number ${cleanPhone} is not registered on WhatsApp!`);
-          return { success: false, error: "Target phone number is not registered on WhatsApp" };
-        }
-        cleanPhone = result.jid;
-      } catch (checkErr) {
-        console.warn(`[Baileys Send] Failed to verify number on WhatsApp, attempting anyway:`, checkErr);
-      }
-      await sock.sendMessage(cleanPhone, {
+      sentMsg = await sock.sendMessage(cleanPhone, {
         audio: audioBuffer,
         mimetype: "audio/mpeg",
         // MP3/MPEG compliant MIME type for Gemini TTS audio files
         ptt: true
         // Send as a real Voice Note
-      });
+      }, sendOptions);
     } else if (pdfBuffer) {
-      try {
-        const [result] = await sock.onWhatsApp(cleanPhone);
-        if (!result || !result.exists) {
-          console.warn(`[Baileys Send] Number ${cleanPhone} is not registered on WhatsApp!`);
-          return { success: false, error: "Target phone number is not registered on WhatsApp" };
-        }
-        cleanPhone = result.jid;
-      } catch (checkErr) {
-        console.warn(`[Baileys Send] Failed to verify number on WhatsApp, attempting anyway:`, checkErr);
-      }
-      await sock.sendMessage(cleanPhone, {
+      sentMsg = await sock.sendMessage(cleanPhone, {
         document: pdfBuffer,
         mimetype: "application/pdf",
         fileName: pdfFilename || "ticket.pdf",
         caption: text
-      });
+      }, sendOptions);
     } else if (imageBuffer) {
-      try {
-        const [result] = await sock.onWhatsApp(cleanPhone);
-        if (!result || !result.exists) {
-          console.warn(`[Baileys Send] Number ${cleanPhone} is not registered on WhatsApp!`);
-          return { success: false, error: "Target phone number is not registered on WhatsApp" };
-        }
-        cleanPhone = result.jid;
-      } catch (checkErr) {
-        console.warn(`[Baileys Send] Failed to verify number on WhatsApp, attempting anyway:`, checkErr);
-      }
-      await sock.sendMessage(cleanPhone, {
+      sentMsg = await sock.sendMessage(cleanPhone, {
         image: imageBuffer,
         caption: text
-      });
+      }, sendOptions);
     } else {
-      try {
-        const [result] = await sock.onWhatsApp(cleanPhone);
-        if (!result || !result.exists) {
-          console.warn(`[Baileys Send] Number ${cleanPhone} is not registered on WhatsApp!`);
-          return { success: false, error: "Target phone number is not registered on WhatsApp" };
-        }
-        cleanPhone = result.jid;
-      } catch (checkErr) {
-        console.warn(`[Baileys Send] Failed to verify number on WhatsApp, attempting anyway:`, checkErr);
-      }
-      await sock.sendMessage(cleanPhone, { text });
+      sentMsg = await sock.sendMessage(cleanPhone, { text }, sendOptions);
     }
-    return { success: true };
+    return { success: true, messageId: sentMsg?.key?.id };
   } catch (err) {
     console.error(`Failed to send message via Baileys for device ${deviceId}:`, err);
     return { success: false, error: err.message || "Failed to dispatch" };
@@ -1822,6 +1865,12 @@ async function sendBaileysMessage(deviceId, to, text, audioBuffer, pdfBuffer, pd
 }
 function stopWhatsAppSession(deviceId) {
   console.log(`[WhatsApp Session] Stopping session for device: ${deviceId}`);
+  const timeout = activeReconnectTimeouts.get(deviceId);
+  if (timeout) {
+    clearTimeout(timeout);
+    activeReconnectTimeouts.delete(deviceId);
+    console.log(`[WhatsApp Session] Cleared pending reconnect timeout for device: ${deviceId}`);
+  }
   const sock = activeSockets.get(deviceId);
   if (sock) {
     sock.wasClosedIntentionally = true;
@@ -1916,6 +1965,46 @@ var apiLimiter = (0, import_express_rate_limit.default)({
   standardHeaders: true,
   legacyHeaders: false
 });
+app.use("/api/", apiLimiter);
+app.use("/api", (req, res, next) => {
+  res.header("Access-Control-Allow-Origin", "*");
+  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+  res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, api_key, x-api-key, Authorization");
+  if (req.method === "OPTIONS") {
+    res.sendStatus(200);
+    return;
+  }
+  next();
+});
+var publicRoutes = [
+  "/api/auth/admin-login",
+  "/api/auth/login",
+  "/api/auth/send-otp",
+  "/api/auth/verify-otp",
+  "/api/demo-register",
+  "/api/demo-verify",
+  "/api/expocore/webhook",
+  "/api/whatsapp/qr",
+  "/api/catalog"
+];
+app.use("/api", (req, res, next) => {
+  if (publicRoutes.some((route) => req.path === route || req.path.startsWith(route))) {
+    return next();
+  }
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    res.status(401).json({ error: "Unauthorized. Token missing." });
+    return;
+  }
+  const token = authHeader.split(" ")[1];
+  const db = readDb();
+  const isValidAdmin = Object.values(db.users).some((u) => u.password === token && u.role === "admin");
+  if (!isValidAdmin) {
+    res.status(401).json({ error: "Unauthorized. Invalid token." });
+    return;
+  }
+  next();
+});
 app.post("/api/auth/admin-login", (req, res) => {
   const { email, password } = req.body;
   const db = readDb();
@@ -1937,16 +2026,6 @@ app.post("/api/catalog", (req, res) => {
   db.catalog.push(newItem);
   writeDb(db);
   res.json({ item: newItem });
-});
-app.use("/api", (req, res, next) => {
-  res.header("Access-Control-Allow-Origin", "*");
-  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-  res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, api_key, x-api-key, Authorization");
-  if (req.method === "OPTIONS") {
-    res.sendStatus(200);
-    return;
-  }
-  next();
 });
 var server = import_http.default.createServer(app);
 var wss = new import_ws.WebSocketServer({ noServer: true });
@@ -4309,7 +4388,7 @@ app.post("/api/devices", (req, res) => {
     return;
   }
   const tenantId = getTenantId(req);
-  const user = getUser(tenantId);
+  const user = tenantId ? getUser(tenantId) : void 0;
   if (user?.subscriptionPlan === "starter" && method !== "qr") {
     return res.status(403).json({ error: "\u0639\u0630\u0631\u0627\u064B\u060C \u0631\u0628\u0637 \u05D4\u0640 API \u0648\u0627\u0644\u0640 Gateways \u0645\u062A\u0648\u0641\u0631 \u0641\u0642\u0637 \u0641\u064A \u0628\u0627\u0642\u0629 \u0627\u0644\u0645\u062D\u062A\u0631\u0641\u064A\u0646 \u0648\u0627\u0644\u0634\u0631\u0643\u0627\u062A. \u064A\u0631\u062C\u0649 \u0627\u0644\u062A\u0631\u0642\u064A\u0629." });
   }
@@ -5271,6 +5350,7 @@ wss.on("connection", (ws) => {
         }
         case "auth": {
           authenticatedUserId = event.userId;
+          if (!authenticatedUserId) return;
           const existingWs = activeConnections.get(authenticatedUserId);
           if (existingWs && existingWs !== ws) {
             console.log(`[WS] Cleaned up duplicate connection for user ${authenticatedUserId}`);
@@ -5661,130 +5741,100 @@ function cleanOrphanedSessions() {
     console.error("[Session Cleaner] Failed to run session cleanup:", err);
   }
 }
-async function startServer() {
-  if (isSupabaseConfigured()) {
-    console.log("[Supabase Startup] Checking for central database backup in Supabase...");
-    try {
-      const restored = await restoreDbFromSupabase();
-      if (restored) {
-        const dbFile = import_path4.default.join(process.cwd(), "db-store.json");
-        let shouldRestore = true;
-        if (import_fs4.default.existsSync(dbFile)) {
-          const localMtime = import_fs4.default.statSync(dbFile).mtime.getTime();
-          const supabaseTime = new Date(restored.updated_at).getTime();
-          if (localMtime > supabaseTime + 5e3) {
-            console.log(`[Supabase Startup] Local database (modified: ${new Date(localMtime).toISOString()}) is newer than Supabase backup (modified: ${restored.updated_at}). Skipping restore to prevent data loss. Syncing local database up to Supabase...`);
-            shouldRestore = false;
-            const localDb = readDb();
-            await backupDbToSupabase(localDb);
-          }
-        }
-        if (shouldRestore) {
-          import_fs4.default.writeFileSync(dbFile, JSON.stringify(restored.data, null, 2), "utf-8");
-          resetDbCache();
-          console.log("[Supabase Startup] Successfully restored central database locally from Supabase.");
-        }
+async function globalIncomingHandler(deviceId, sock, jid, pushName, messageContent, fromMe, timestamp, messageId) {
+  try {
+    if (!fromMe && sock) {
+      try {
+        await sock.readMessages([{ remoteJid: jid, id: messageId, fromMe: false }]);
+        console.log(`[Humanization] Read receipt sent immediately for message ${messageId} to ${jid}`);
+      } catch (receiptErr) {
+        console.error("[Humanization] Failed to send read receipt:", receiptErr);
       }
-    } catch (err) {
-      console.error("[Supabase Startup] Failed to restore database:", err);
+      try {
+        await sock.sendPresenceUpdate("composing", jid);
+        console.log(`[Humanization] Typing status 'composing' activated for ${jid}`);
+      } catch (presenceErr) {
+        console.error("[Humanization] Failed to set typing presence:", presenceErr);
+      }
     }
-  }
-  cleanOrphanedSessions();
-  setBroadcastHandler(broadcast);
-  setIncomingMessageHandler(async (deviceId, sock, jid, pushName, messageContent, fromMe, timestamp, messageId) => {
-    try {
-      if (!fromMe && sock) {
-        try {
-          await sock.readMessages([{ remoteJid: jid, id: messageId, fromMe: false }]);
-          console.log(`[Humanization] Read receipt sent immediately for message ${messageId} to ${jid}`);
-        } catch (receiptErr) {
-          console.error("[Humanization] Failed to send read receipt:", receiptErr);
-        }
-        try {
-          await sock.sendPresenceUpdate("composing", jid);
-          console.log(`[Humanization] Typing status 'composing' activated for ${jid}`);
-        } catch (presenceErr) {
-          console.error("[Humanization] Failed to set typing presence:", presenceErr);
-        }
-      }
-      const devices = getAllDevices();
-      const device = devices.find((d) => d.id === deviceId);
-      if (!device) {
-        console.log(`[AI Agent DEBUG] Device ${deviceId} not found.`);
-        return;
-      }
-      const contactPhone = jid.split("@")[0];
-      const contactId = `contact_${contactPhone}`;
-      const realUsers = getAllUsers().filter((u) => u.id !== "meta-ai" && !u.id.startsWith("contact_"));
-      const ownerId = device.ownerId || realUsers[0]?.id || "user_default";
-      const conv = getOrCreateConversation(ownerId, contactId, deviceId);
-      let userMessageText = "";
-      if (messageContent.conversation) {
-        userMessageText = messageContent.conversation;
-      } else if (messageContent.extendedTextMessage) {
-        userMessageText = messageContent.extendedTextMessage.text || "";
-      } else if (messageContent.imageMessage) {
-        userMessageText = messageContent.imageMessage.caption || "";
-      }
-      const customStages = device.flowStagesEnabled && device.flowStages && device.flowStages.length > 0 ? device.flowStages : void 0;
-      const historyMsgs = getMessagesForConversation(conv.id);
-      const previousStageId = conv.label || "awareness";
-      const localAnalysis = analyzeMessagesLocal(historyMsgs, conv.label, customStages);
-      const currentStageId = localAnalysis.stage || "awareness";
-      if (currentStageId !== previousStageId) {
-        console.log(`[Flow Automation] Stage transition detected for +${contactPhone}: "${previousStageId}" -> "${currentStageId}"`);
-        conv.label = currentStageId;
-        saveConversation(conv);
-        broadcast({
-          type: "conversation:update",
-          conversation: conv
-        });
-        if (customStages) {
-          const matchedStage = customStages.find((s) => s.id === currentStageId);
-          if (matchedStage) {
-            if (matchedStage.autoResponseText && matchedStage.autoResponseText.trim()) {
-              const textToSend = matchedStage.autoResponseText;
-              console.log(`[Flow Automation] Sending auto-response for stage "${matchedStage.name}": "${textToSend}"`);
-              setTimeout(async () => {
-                const resWa = await sendRealWhatsAppMessage(device, contactPhone, textToSend);
-                const autoMsg = {
-                  id: `msg_${Math.random().toString(36).substring(2, 11)}`,
-                  conversationId: conv.id,
-                  senderId: ownerId,
-                  recipientId: contactId,
-                  content: textToSend,
-                  type: "text",
-                  status: resWa.success ? "delivered" : "failed",
-                  timestamp: (/* @__PURE__ */ new Date()).toISOString()
-                };
-                saveMessage(autoMsg);
-                broadcast({ type: "message:new", message: autoMsg });
-              }, 2e3);
-            }
-            if (matchedStage.notifyOnEnter) {
-              broadcast({
-                type: "flow:stage_alert",
-                deviceId,
-                contactName: pushName || contactPhone,
-                contactPhone,
-                stageName: matchedStage.name,
-                stageColor: matchedStage.color
-              });
-            }
+    const devices = getAllDevices();
+    const device = devices.find((d) => d.id === deviceId);
+    if (!device) {
+      console.log(`[AI Agent DEBUG] Device ${deviceId} not found.`);
+      return;
+    }
+    const contactPhone = jid.split("@")[0];
+    const contactId = `contact_${contactPhone}`;
+    const realUsers = getAllUsers().filter((u) => u.id !== "meta-ai" && !u.id.startsWith("contact_"));
+    const ownerId = device.ownerId || realUsers[0]?.id || "user_default";
+    const conv = getOrCreateConversation(ownerId, contactId, deviceId);
+    let userMessageText = "";
+    if (messageContent.conversation) {
+      userMessageText = messageContent.conversation;
+    } else if (messageContent.extendedTextMessage) {
+      userMessageText = messageContent.extendedTextMessage.text || "";
+    } else if (messageContent.imageMessage) {
+      userMessageText = messageContent.imageMessage.caption || "";
+    }
+    const customStages = device.flowStagesEnabled && device.flowStages && device.flowStages.length > 0 ? device.flowStages : void 0;
+    const historyMsgs = getMessagesForConversation(conv.id);
+    const previousStageId = conv.label || "awareness";
+    const localAnalysis = analyzeMessagesLocal(historyMsgs, conv.label, customStages);
+    const currentStageId = localAnalysis.stage || "awareness";
+    if (currentStageId !== previousStageId) {
+      console.log(`[Flow Automation] Stage transition detected for +${contactPhone}: "${previousStageId}" -> "${currentStageId}"`);
+      conv.label = currentStageId;
+      saveConversation(conv);
+      broadcast({
+        type: "conversation:update",
+        conversation: conv
+      });
+      if (customStages) {
+        const matchedStage = customStages.find((s) => s.id === currentStageId);
+        if (matchedStage) {
+          if (matchedStage.autoResponseText && matchedStage.autoResponseText.trim()) {
+            const textToSend = matchedStage.autoResponseText;
+            console.log(`[Flow Automation] Sending auto-response for stage "${matchedStage.name}": "${textToSend}"`);
+            setTimeout(async () => {
+              const resWa = await sendRealWhatsAppMessage(device, contactPhone, textToSend);
+              const autoMsg = {
+                id: `msg_${Math.random().toString(36).substring(2, 11)}`,
+                conversationId: conv.id,
+                senderId: ownerId,
+                recipientId: contactId,
+                content: textToSend,
+                type: "text",
+                status: resWa.success ? "delivered" : "failed",
+                timestamp: (/* @__PURE__ */ new Date()).toISOString()
+              };
+              saveMessage(autoMsg);
+              broadcast({ type: "message:new", message: autoMsg });
+            }, 2e3);
+          }
+          if (matchedStage.notifyOnEnter) {
+            broadcast({
+              type: "flow:stage_alert",
+              deviceId,
+              contactName: pushName || contactPhone,
+              contactPhone,
+              stageName: matchedStage.name,
+              stageColor: matchedStage.color
+            });
           }
         }
       }
-      if (ai && !conv.aiPaused) {
-        (async () => {
-          try {
-            const recentMsgs = getMessagesForConversation(conv.id);
-            const chatContext = recentMsgs.slice(-15).map((m) => {
-              const role = m.senderId.startsWith("contact_") ? "Customer" : "Agent";
-              return `${role}: ${m.content}`;
-            }).join("\n");
-            const convFlowStages = customStages || DEFAULT_FLOW_STAGES;
-            const stagesDescription = convFlowStages.map((s) => `- ID: "${s.id}", Name: "${s.name}" (English: "${s.nameEn}"), Keywords: [${s.keywords.join(", ")}], Description: "${s.description || ""}"`).join("\n");
-            const prompt = `You are an expert Arabic CRM Analyst. Analyze this chat history and return a clean JSON object containing accurate insights.
+    }
+    if (ai && !conv.aiPaused) {
+      (async () => {
+        try {
+          const recentMsgs = getMessagesForConversation(conv.id);
+          const chatContext = recentMsgs.slice(-15).map((m) => {
+            const role = m.senderId.startsWith("contact_") ? "Customer" : "Agent";
+            return `${role}: ${m.content}`;
+          }).join("\n");
+          const convFlowStages = customStages || DEFAULT_FLOW_STAGES;
+          const stagesDescription = convFlowStages.map((s) => `- ID: "${s.id}", Name: "${s.name}" (English: "${s.nameEn}"), Keywords: [${s.keywords.join(", ")}], Description: "${s.description || ""}"`).join("\n");
+          const prompt = `You are an expert Arabic CRM Analyst. Analyze this chat history and return a clean JSON object containing accurate insights.
             The company has a custom customer journey flow with the following stages:
             ${stagesDescription}
 
@@ -5809,300 +5859,300 @@ async function startServer() {
             ${chatContext}
 
             Return ONLY valid JSON. Do not include markdown code block syntax.`;
-            console.log(`[Background Analyst] Initiating auto-analysis for conversation ${conv.id} (+${contactPhone})...`);
-            const response = await callGeminiWithRetry({
-              model: "gemini-3.5-flash",
-              contents: prompt,
-              config: {
-                responseMimeType: "application/json"
-              }
-            });
-            if (response && response.text) {
-              const parsed = JSON.parse(response.text.trim());
-              if (parsed && parsed.intent) {
-                const finalAiAnalysis = {
-                  intent: parsed.intent,
-                  intentEn: parsed.intentEn || parsed.intent,
-                  confidence: parsed.confidence || 95,
-                  summary: parsed.summary,
-                  summaryEn: parsed.summaryEn || parsed.summary,
-                  keyNeeds: parsed.keyNeeds || [],
-                  keyNeedsEn: parsed.keyNeedsEn || [],
-                  recommendedAction: parsed.recommendedAction,
-                  recommendedActionEn: parsed.recommendedActionEn || parsed.recommendedAction,
-                  draftReply: parsed.draftReply,
-                  draftReplyEn: parsed.draftReplyEn || parsed.draftReply
-                };
-                const localDb = readDb();
-                const freshConv = localDb.conversations[conv.id];
-                if (freshConv) {
-                  freshConv.aiAnalysis = finalAiAnalysis;
-                  if (parsed.stage && convFlowStages.some((s) => s.id === parsed.stage)) {
-                    if (freshConv.label !== parsed.stage) {
-                      const previousStageId2 = freshConv.label;
-                      const nextStageId = parsed.stage;
-                      console.log(`[Background Analyst] Stage changed for +${contactPhone} via AI: "${previousStageId2}" -> "${nextStageId}"`);
-                      freshConv.label = nextStageId;
-                      const matchedStage = convFlowStages.find((s) => s.id === nextStageId);
-                      if (matchedStage) {
-                        if (matchedStage.autoResponseText && matchedStage.autoResponseText.trim()) {
-                          const textToSend = matchedStage.autoResponseText;
-                          console.log(`[Background Analyst Automation] Sending auto-response for stage "${matchedStage.name}": "${textToSend}"`);
-                          setTimeout(async () => {
-                            const resWa = await sendRealWhatsAppMessage(device, contactPhone, textToSend);
-                            const autoMsg = {
-                              id: `msg_${Math.random().toString(36).substring(2, 11)}`,
-                              conversationId: conv.id,
-                              senderId: ownerId,
-                              recipientId: contactId,
-                              content: textToSend,
-                              type: "text",
-                              status: resWa.success ? "delivered" : "failed",
-                              timestamp: (/* @__PURE__ */ new Date()).toISOString()
-                            };
-                            saveMessage(autoMsg);
-                            broadcast({ type: "message:new", message: autoMsg });
-                          }, 2e3);
-                        }
-                        if (matchedStage.notifyOnEnter) {
-                          broadcast({
-                            type: "flow:stage_alert",
-                            deviceId,
-                            contactName: pushName || contactPhone,
-                            contactPhone,
-                            stageName: matchedStage.name,
-                            stageColor: matchedStage.color
-                          });
-                        }
+          console.log(`[Background Analyst] Initiating auto-analysis for conversation ${conv.id} (+${contactPhone})...`);
+          const response = await callGeminiWithRetry({
+            model: "gemini-3.5-flash",
+            contents: prompt,
+            config: {
+              responseMimeType: "application/json"
+            }
+          });
+          if (response && response.text) {
+            const parsed = JSON.parse(response.text.trim());
+            if (parsed && parsed.intent) {
+              const finalAiAnalysis = {
+                intent: parsed.intent,
+                intentEn: parsed.intentEn || parsed.intent,
+                confidence: parsed.confidence || 95,
+                summary: parsed.summary,
+                summaryEn: parsed.summaryEn || parsed.summary,
+                keyNeeds: parsed.keyNeeds || [],
+                keyNeedsEn: parsed.keyNeedsEn || [],
+                recommendedAction: parsed.recommendedAction,
+                recommendedActionEn: parsed.recommendedActionEn || parsed.recommendedAction,
+                draftReply: parsed.draftReply,
+                draftReplyEn: parsed.draftReplyEn || parsed.draftReply
+              };
+              const localDb = readDb();
+              const freshConv = localDb.conversations[conv.id];
+              if (freshConv) {
+                freshConv.aiAnalysis = finalAiAnalysis;
+                if (parsed.stage && convFlowStages.some((s) => s.id === parsed.stage)) {
+                  if (freshConv.label !== parsed.stage) {
+                    const previousStageId2 = freshConv.label;
+                    const nextStageId = parsed.stage;
+                    console.log(`[Background Analyst] Stage changed for +${contactPhone} via AI: "${previousStageId2}" -> "${nextStageId}"`);
+                    freshConv.label = nextStageId;
+                    const matchedStage = convFlowStages.find((s) => s.id === nextStageId);
+                    if (matchedStage) {
+                      if (matchedStage.autoResponseText && matchedStage.autoResponseText.trim()) {
+                        const textToSend = matchedStage.autoResponseText;
+                        console.log(`[Background Analyst Automation] Sending auto-response for stage "${matchedStage.name}": "${textToSend}"`);
+                        setTimeout(async () => {
+                          const resWa = await sendRealWhatsAppMessage(device, contactPhone, textToSend);
+                          const autoMsg = {
+                            id: `msg_${Math.random().toString(36).substring(2, 11)}`,
+                            conversationId: conv.id,
+                            senderId: ownerId,
+                            recipientId: contactId,
+                            content: textToSend,
+                            type: "text",
+                            status: resWa.success ? "delivered" : "failed",
+                            timestamp: (/* @__PURE__ */ new Date()).toISOString()
+                          };
+                          saveMessage(autoMsg);
+                          broadcast({ type: "message:new", message: autoMsg });
+                        }, 2e3);
+                      }
+                      if (matchedStage.notifyOnEnter) {
+                        broadcast({
+                          type: "flow:stage_alert",
+                          deviceId,
+                          contactName: pushName || contactPhone,
+                          contactPhone,
+                          stageName: matchedStage.name,
+                          stageColor: matchedStage.color
+                        });
                       }
                     }
                   }
-                  localDb.conversations[conv.id] = freshConv;
-                  writeDb(localDb);
-                  broadcast({
-                    type: "conversation:update",
-                    conversation: freshConv
-                  });
                 }
+                localDb.conversations[conv.id] = freshConv;
+                writeDb(localDb);
+                broadcast({
+                  type: "conversation:update",
+                  conversation: freshConv
+                });
               }
             }
-          } catch (analysisErr) {
-            console.error("[Background Analyst] Failed running background auto-analysis:", analysisErr);
           }
-        })();
-      }
-      if (!device.aiAgentEnabled) {
-        console.log(`[AI Agent DEBUG] AI Agent disabled for device ${deviceId}.`);
-        return;
-      }
-      console.log(`[AI Agent DEBUG] AI Agent active for device ${deviceId}.`);
-      console.log(`[AI Agent - ${device.aiAgentName || "System"}] Analyzing message on device "${device.name}" for contact +${contactPhone}...`);
-      let contentsPayload = null;
-      let incomingAudioBuffer = null;
-      const messageType = messageContent.audioMessage ? "audio" : messageContent.imageMessage ? "image" : "text";
-      let shouldReplyWithVoice = false;
-      if (device.aiVoiceEnabled) {
-        shouldReplyWithVoice = messageType === "audio";
-      }
-      if (messageContent.conversation) {
-        userMessageText = messageContent.conversation;
-      } else if (messageContent.extendedTextMessage) {
-        userMessageText = messageContent.extendedTextMessage.text || "";
-      }
-      if (messageContent.imageMessage) {
-        userMessageText = messageContent.imageMessage.caption || "";
-        try {
-          console.log("Downloading incoming WhatsApp image for AI Agent...");
-          const buffer = await (0, import_baileys2.downloadMediaMessage)(
-            { key: { id: messageId, remoteJid: jid }, message: messageContent },
-            "buffer",
-            {}
-          );
-          const base64Data = buffer.toString("base64");
-          const mimeType = messageContent.imageMessage.mimetype || "image/jpeg";
-          contentsPayload = {
-            parts: [
-              {
-                inlineData: {
-                  data: base64Data,
-                  mimeType
-                }
-              },
-              {
-                text: userMessageText || "Describe what you see in this image and reply to any questions."
+        } catch (analysisErr) {
+          console.error("[Background Analyst] Failed running background auto-analysis:", analysisErr);
+        }
+      })();
+    }
+    if (!device.aiAgentEnabled) {
+      console.log(`[AI Agent DEBUG] AI Agent disabled for device ${deviceId}.`);
+      return;
+    }
+    console.log(`[AI Agent DEBUG] AI Agent active for device ${deviceId}.`);
+    console.log(`[AI Agent - ${device.aiAgentName || "System"}] Analyzing message on device "${device.name}" for contact +${contactPhone}...`);
+    let contentsPayload = null;
+    let incomingAudioBuffer = null;
+    const messageType = messageContent.audioMessage ? "audio" : messageContent.imageMessage ? "image" : "text";
+    let shouldReplyWithVoice = false;
+    if (device.aiVoiceEnabled) {
+      shouldReplyWithVoice = messageType === "audio";
+    }
+    if (messageContent.conversation) {
+      userMessageText = messageContent.conversation;
+    } else if (messageContent.extendedTextMessage) {
+      userMessageText = messageContent.extendedTextMessage.text || "";
+    }
+    if (messageContent.imageMessage) {
+      userMessageText = messageContent.imageMessage.caption || "";
+      try {
+        console.log("Downloading incoming WhatsApp image for AI Agent...");
+        const buffer = await (0, import_baileys2.downloadMediaMessage)(
+          { key: { id: messageId, remoteJid: jid }, message: messageContent },
+          "buffer",
+          {}
+        );
+        const base64Data = buffer.toString("base64");
+        const mimeType = messageContent.imageMessage.mimetype || "image/jpeg";
+        contentsPayload = {
+          parts: [
+            {
+              inlineData: {
+                data: base64Data,
+                mimeType
               }
-            ]
-          };
-        } catch (err) {
-          console.error("Failed to download incoming WhatsApp image:", err);
-          contentsPayload = `[Image] User sent an image. Caption: "${userMessageText}". (System error: Could not download full image bytes for analysis). Respond politely based on the caption if any.`;
-        }
-      } else if (messageContent.audioMessage) {
-        try {
-          console.log("Downloading incoming WhatsApp voice note for AI Agent...");
-          const buffer = await (0, import_baileys2.downloadMediaMessage)(
-            { key: { id: messageId, remoteJid: jid }, message: messageContent },
-            "buffer",
-            {}
-          );
-          incomingAudioBuffer = buffer;
-          const base64Data = buffer.toString("base64");
-          const mimeType = messageContent.audioMessage.mimetype || "audio/ogg; codecs=opus";
-          contentsPayload = {
-            parts: [
-              {
-                inlineData: {
-                  data: base64Data,
-                  mimeType
-                }
-              },
-              {
-                text: "The user sent a voice message. Listen to the audio, understand what they are saying, and generate a clear, professional conversational reply in the same language. If the language is Arabic, respond in the requested dialect."
+            },
+            {
+              text: userMessageText || "Describe what you see in this image and reply to any questions."
+            }
+          ]
+        };
+      } catch (err) {
+        console.error("Failed to download incoming WhatsApp image:", err);
+        contentsPayload = `[Image] User sent an image. Caption: "${userMessageText}". (System error: Could not download full image bytes for analysis). Respond politely based on the caption if any.`;
+      }
+    } else if (messageContent.audioMessage) {
+      try {
+        console.log("Downloading incoming WhatsApp voice note for AI Agent...");
+        const buffer = await (0, import_baileys2.downloadMediaMessage)(
+          { key: { id: messageId, remoteJid: jid }, message: messageContent },
+          "buffer",
+          {}
+        );
+        incomingAudioBuffer = buffer;
+        const base64Data = buffer.toString("base64");
+        const mimeType = messageContent.audioMessage.mimetype || "audio/ogg; codecs=opus";
+        contentsPayload = {
+          parts: [
+            {
+              inlineData: {
+                data: base64Data,
+                mimeType
               }
-            ]
-          };
-        } catch (err) {
-          console.error("Failed to download incoming WhatsApp voice note:", err);
-          contentsPayload = `[Voice Note] User sent a voice recording. (System error: Could not process voice bytes). Respond politely notifying them that you received a voice note but had a temporary system issue reading it, and ask if they can type their query instead.`;
-        }
-      } else {
-        contentsPayload = userMessageText || "Hello";
-      }
-      const stopKeyword = (device.aiStopKeyword || "").trim().toLowerCase();
-      const userTextLower = userMessageText.trim().toLowerCase();
-      if (conv.aiPaused) {
-        console.log(`[AI Agent - Human Takeover Active] Skipping auto-reply for +${contactPhone} because AI is paused for this conversation.`);
-        return;
-      }
-      const directHandoffKeywords = [
-        "\u0628\u0634\u0631\u064A",
-        "\u0627\u0646\u0633\u0627\u0646",
-        "\u0625\u0646\u0633\u0627\u0646",
-        "\u0645\u0648\u0638\u0641",
-        "\u0645\u062F\u064A\u0631",
-        "\u0623\u0643\u0644\u0645 \u062D\u062F",
-        "\u062A\u062D\u062F\u062B \u0645\u0639",
-        "\u062A\u062D\u062F\u062B \u0645\u0639 \u0645\u0648\u0638\u0641",
-        "\u0623\u0643\u0644\u0645 \u0645\u0648\u0638\u0641",
-        "\u062A\u062D\u0648\u064A\u0644",
-        "\u0645\u0633\u0624\u0648\u0644",
-        "\u0645\u0633\u0626\u0648\u0644",
-        "\u0634\u062E\u0635 \u062D\u0642\u064A\u0642\u064A",
-        "\u062A\u0648\u0627\u0635\u0644 \u0645\u0639 \u0628\u0634\u0631\u064A",
-        "human",
-        "operator",
-        "representative",
-        "real person",
-        "live chat",
-        "talk to human",
-        "speak to human",
-        "agent support"
-      ];
-      const triggersStopKeyword = stopKeyword && userTextLower.includes(stopKeyword);
-      const triggersDirectHandoff = directHandoffKeywords.some((keyword) => userTextLower.includes(keyword));
-      if (triggersStopKeyword || triggersDirectHandoff) {
-        const triggerReason = triggersStopKeyword ? `custom stop keyword "${stopKeyword}"` : `direct handoff keyword`;
-        console.log(`[AI Agent - Human Takeover] Contact +${contactPhone} triggered ${triggerReason}. Disabling AI auto-replies for this contact.`);
-        conv.aiPaused = true;
-        saveConversation(conv);
-        broadcast({
-          type: "conversation:update",
-          conversation: conv
-        });
-        const isArabicMessage = /[\u0600-\u06FF]/.test(userMessageText);
-        const takeoverReply = isArabicMessage ? `\u062A\u0645 \u0625\u064A\u0642\u0627\u0641 \u0627\u0644\u0645\u0633\u0627\u0639\u062F \u0627\u0644\u0630\u0643\u064A \u0645\u0624\u0642\u062A\u0627\u064B \u0648\u062A\u062D\u0648\u064A\u0644\u0643 \u0644\u0645\u0648\u0638\u0641 \u0627\u0644\u062E\u062F\u0645\u0629 \u0627\u0644\u0628\u0634\u0631\u064A\u0629 \u{1F464}. \u064A\u0631\u062C\u0649 \u0627\u0644\u0627\u0646\u062A\u0638\u0627\u0631\u060C \u0648\u0633\u064A\u062A\u0648\u0627\u0635\u0644 \u0645\u0639\u0643 \u0623\u062D\u062F \u0639\u0645\u0644\u0627\u0626\u0646\u0627 \u0642\u0631\u064A\u0628\u0627\u064B \u0644\u0645\u0633\u0627\u0639\u062F\u062A\u0643.` : `AI assistant has been paused. You are being transferred to a human representative \u{1F464}. Please wait, one of our team members will be with you shortly.`;
-        if (!fromMe && sock) {
-          const humanDelay = Math.floor(Math.random() * (8e3 - 3e3 + 1)) + 3e3;
-          console.log(`[Humanization] Delaying takeover reply by ${humanDelay}ms...`);
-          await new Promise((resolve) => setTimeout(resolve, humanDelay));
-          try {
-            await sock.sendPresenceUpdate("paused", jid);
-          } catch (e) {
-          }
-        }
-        const takeoverRes = await sendRealWhatsAppMessage(device, contactPhone, takeoverReply);
-        const takeoverMsg = {
-          id: `msg_${Math.random().toString(36).substring(2, 11)}`,
-          conversationId: conv.id,
-          senderId: ownerId,
-          recipientId: contactId,
-          content: takeoverReply,
-          type: "text",
-          status: takeoverRes.success ? "delivered" : "failed",
-          timestamp: (/* @__PURE__ */ new Date()).toISOString()
+            },
+            {
+              text: "The user sent a voice message. Listen to the audio, understand what they are saying, and generate a clear, professional conversational reply in the same language. If the language is Arabic, respond in the requested dialect."
+            }
+          ]
         };
-        saveMessage(takeoverMsg);
-        broadcast({
-          type: "message:new",
-          message: takeoverMsg
-        });
-        return;
+      } catch (err) {
+        console.error("Failed to download incoming WhatsApp voice note:", err);
+        contentsPayload = `[Voice Note] User sent a voice recording. (System error: Could not process voice bytes). Respond politely notifying them that you received a voice note but had a temporary system issue reading it, and ask if they can type their query instead.`;
       }
-      let responseText = "";
-      let responseAudioBuffer = null;
-      const usageCheck = incrementUserAiUsage(ownerId);
-      if (usageCheck.limitReached) {
-        console.log(`[AI Quota Reached] User ${ownerId} reached AI limit (${usageCheck.user?.aiMessagesLimit}). Skipping Gemini call.`);
-        const quotaMsg = {
-          id: `msg_${Math.random().toString(36).substring(2, 11)}`,
-          conversationId: conv.id,
-          senderId: ownerId,
-          recipientId: contactId,
-          content: "\u0639\u0630\u0631\u0627\u064B\u060C \u0627\u0644\u0645\u0633\u0627\u0639\u062F \u0627\u0644\u0630\u0643\u064A \u063A\u064A\u0631 \u0645\u062A\u0627\u062D \u062D\u0627\u0644\u064A\u0627\u064B (\u062A\u0645 \u0627\u0633\u062A\u0647\u0644\u0627\u0643 \u0627\u0644\u0628\u0627\u0642\u0629). \u0633\u064A\u062A\u0645 \u062A\u062D\u0648\u064A\u0644\u0643 \u0642\u0631\u064A\u0628\u0627\u064B \u0644\u0623\u062D\u062F \u0645\u0648\u0638\u0641\u064A \u0627\u0644\u0645\u0628\u064A\u0639\u0627\u062A.",
-          type: "text",
-          status: "delivered",
-          timestamp: (/* @__PURE__ */ new Date()).toISOString()
-        };
-        saveMessage(quotaMsg);
-        broadcast({ type: "message:new", message: quotaMsg });
-        if (!fromMe && sock) {
-          const humanDelay = Math.floor(Math.random() * (8e3 - 3e3 + 1)) + 3e3;
-          console.log(`[Humanization] Delaying quota reply by ${humanDelay}ms...`);
-          await new Promise((resolve) => setTimeout(resolve, humanDelay));
-          try {
-            await sock.sendPresenceUpdate("paused", jid);
-          } catch (e) {
-          }
-        }
-        await sendRealWhatsAppMessageDirectly(device, contactPhone, quotaMsg.content);
-        return;
-      }
-      if (ai) {
+    } else {
+      contentsPayload = userMessageText || "Hello";
+    }
+    const stopKeyword = (device.aiStopKeyword || "").trim().toLowerCase();
+    const userTextLower = userMessageText.trim().toLowerCase();
+    if (conv.aiPaused) {
+      console.log(`[AI Agent - Human Takeover Active] Skipping auto-reply for +${contactPhone} because AI is paused for this conversation.`);
+      return;
+    }
+    const directHandoffKeywords = [
+      "\u0628\u0634\u0631\u064A",
+      "\u0627\u0646\u0633\u0627\u0646",
+      "\u0625\u0646\u0633\u0627\u0646",
+      "\u0645\u0648\u0638\u0641",
+      "\u0645\u062F\u064A\u0631",
+      "\u0623\u0643\u0644\u0645 \u062D\u062F",
+      "\u062A\u062D\u062F\u062B \u0645\u0639",
+      "\u062A\u062D\u062F\u062B \u0645\u0639 \u0645\u0648\u0638\u0641",
+      "\u0623\u0643\u0644\u0645 \u0645\u0648\u0638\u0641",
+      "\u062A\u062D\u0648\u064A\u0644",
+      "\u0645\u0633\u0624\u0648\u0644",
+      "\u0645\u0633\u0626\u0648\u0644",
+      "\u0634\u062E\u0635 \u062D\u0642\u064A\u0642\u064A",
+      "\u062A\u0648\u0627\u0635\u0644 \u0645\u0639 \u0628\u0634\u0631\u064A",
+      "human",
+      "operator",
+      "representative",
+      "real person",
+      "live chat",
+      "talk to human",
+      "speak to human",
+      "agent support"
+    ];
+    const triggersStopKeyword = stopKeyword && userTextLower.includes(stopKeyword);
+    const triggersDirectHandoff = directHandoffKeywords.some((keyword) => userTextLower.includes(keyword));
+    if (triggersStopKeyword || triggersDirectHandoff) {
+      const triggerReason = triggersStopKeyword ? `custom stop keyword "${stopKeyword}"` : `direct handoff keyword`;
+      console.log(`[AI Agent - Human Takeover] Contact +${contactPhone} triggered ${triggerReason}. Disabling AI auto-replies for this contact.`);
+      conv.aiPaused = true;
+      saveConversation(conv);
+      broadcast({
+        type: "conversation:update",
+        conversation: conv
+      });
+      const isArabicMessage = /[\u0600-\u06FF]/.test(userMessageText);
+      const takeoverReply = isArabicMessage ? `\u062A\u0645 \u0625\u064A\u0642\u0627\u0641 \u0627\u0644\u0645\u0633\u0627\u0639\u062F \u0627\u0644\u0630\u0643\u064A \u0645\u0624\u0642\u062A\u0627\u064B \u0648\u062A\u062D\u0648\u064A\u0644\u0643 \u0644\u0645\u0648\u0638\u0641 \u0627\u0644\u062E\u062F\u0645\u0629 \u0627\u0644\u0628\u0634\u0631\u064A\u0629 \u{1F464}. \u064A\u0631\u062C\u0649 \u0627\u0644\u0627\u0646\u062A\u0638\u0627\u0631\u060C \u0648\u0633\u064A\u062A\u0648\u0627\u0635\u0644 \u0645\u0639\u0643 \u0623\u062D\u062F \u0639\u0645\u0644\u0627\u0626\u0646\u0627 \u0642\u0631\u064A\u0628\u0627\u064B \u0644\u0645\u0633\u0627\u0639\u062F\u062A\u0643.` : `AI assistant has been paused. You are being transferred to a human representative \u{1F464}. Please wait, one of our team members will be with you shortly.`;
+      if (!fromMe && sock) {
+        const humanDelay = Math.floor(Math.random() * (8e3 - 3e3 + 1)) + 3e3;
+        console.log(`[Humanization] Delaying takeover reply by ${humanDelay}ms...`);
+        await new Promise((resolve) => setTimeout(resolve, humanDelay));
         try {
-          const historyMsgs2 = getMessagesForConversation(conv.id);
-          const last20 = historyMsgs2.slice(-20);
-          let formattedHistory = "";
-          if (last20.length > 0) {
-            formattedHistory = last20.map((m) => {
-              const senderLabel = m.senderId === ownerId ? device.aiAgentName || "AI Support" : pushName || "Customer";
-              return `[${senderLabel}]: ${m.content}`;
-            }).join("\n");
-          }
-          const now = /* @__PURE__ */ new Date();
-          const currentTimeStr = now.toLocaleTimeString("ar-EG", { hour: "2-digit", minute: "2-digit" });
-          const currentDayStr = now.toLocaleDateString("ar-EG", { weekday: "long" });
-          const isMorning = now.getHours() < 12;
-          const currentPeriodStr = isMorning ? "\u0635\u0628\u0627\u062D \u0627\u0644\u062E\u064A\u0631 \u0648\u0627\u0644\u064A\u0645\u0646 \u0648\u0627\u0644\u0628\u0631\u0643\u0627\u062A" : "\u0645\u0633\u0627\u0621 \u0627\u0644\u062E\u064A\u0631 \u0648\u0627\u0644\u0645\u0633\u0631\u0627\u062A";
-          let sentimentInstruction = "";
-          const userMsgLower = (userMessageText || "").trim().toLowerCase();
-          const hasNegativeSentiment = /مشكلة|عطل|سيء|بطيء|شكوى|غاضب|استرجاع|فلوسي|نصاب|رداءة|خراب|bad|worst|angry|broken|issue|problem|error|scam|refund|slow/i.test(userMsgLower);
-          if (hasNegativeSentiment) {
-            sentimentInstruction = `
+          await sock.sendPresenceUpdate("paused", jid);
+        } catch (e) {
+        }
+      }
+      const takeoverRes = await sendRealWhatsAppMessage(device, contactPhone, takeoverReply);
+      const takeoverMsg = {
+        id: `msg_${Math.random().toString(36).substring(2, 11)}`,
+        conversationId: conv.id,
+        senderId: ownerId,
+        recipientId: contactId,
+        content: takeoverReply,
+        type: "text",
+        status: takeoverRes.success ? "delivered" : "failed",
+        timestamp: (/* @__PURE__ */ new Date()).toISOString()
+      };
+      saveMessage(takeoverMsg);
+      broadcast({
+        type: "message:new",
+        message: takeoverMsg
+      });
+      return;
+    }
+    let responseText = "";
+    let responseAudioBuffer = null;
+    const usageCheck = incrementUserAiUsage(ownerId);
+    if (usageCheck.limitReached) {
+      console.log(`[AI Quota Reached] User ${ownerId} reached AI limit (${usageCheck.user?.aiMessagesLimit}). Skipping Gemini call.`);
+      const quotaMsg = {
+        id: `msg_${Math.random().toString(36).substring(2, 11)}`,
+        conversationId: conv.id,
+        senderId: ownerId,
+        recipientId: contactId,
+        content: "\u0639\u0630\u0631\u0627\u064B\u060C \u0627\u0644\u0645\u0633\u0627\u0639\u062F \u0627\u0644\u0630\u0643\u064A \u063A\u064A\u0631 \u0645\u062A\u0627\u062D \u062D\u0627\u0644\u064A\u0627\u064B (\u062A\u0645 \u0627\u0633\u062A\u0647\u0644\u0627\u0643 \u0627\u0644\u0628\u0627\u0642\u0629). \u0633\u064A\u062A\u0645 \u062A\u062D\u0648\u064A\u0644\u0643 \u0642\u0631\u064A\u0628\u0627\u064B \u0644\u0623\u062D\u062F \u0645\u0648\u0638\u0641\u064A \u0627\u0644\u0645\u0628\u064A\u0639\u0627\u062A.",
+        type: "text",
+        status: "delivered",
+        timestamp: (/* @__PURE__ */ new Date()).toISOString()
+      };
+      saveMessage(quotaMsg);
+      broadcast({ type: "message:new", message: quotaMsg });
+      if (!fromMe && sock) {
+        const humanDelay = Math.floor(Math.random() * (8e3 - 3e3 + 1)) + 3e3;
+        console.log(`[Humanization] Delaying quota reply by ${humanDelay}ms...`);
+        await new Promise((resolve) => setTimeout(resolve, humanDelay));
+        try {
+          await sock.sendPresenceUpdate("paused", jid);
+        } catch (e) {
+        }
+      }
+      await sendRealWhatsAppMessageDirectly(device, contactPhone, quotaMsg.content);
+      return;
+    }
+    if (ai) {
+      try {
+        const historyMsgs2 = getMessagesForConversation(conv.id);
+        const last20 = historyMsgs2.slice(-20);
+        let formattedHistory = "";
+        if (last20.length > 0) {
+          formattedHistory = last20.map((m) => {
+            const senderLabel = m.senderId === ownerId ? device.aiAgentName || "AI Support" : pushName || "Customer";
+            return `[${senderLabel}]: ${m.content}`;
+          }).join("\n");
+        }
+        const now = /* @__PURE__ */ new Date();
+        const currentTimeStr = now.toLocaleTimeString("ar-EG", { hour: "2-digit", minute: "2-digit" });
+        const currentDayStr = now.toLocaleDateString("ar-EG", { weekday: "long" });
+        const isMorning = now.getHours() < 12;
+        const currentPeriodStr = isMorning ? "\u0635\u0628\u0627\u062D \u0627\u0644\u062E\u064A\u0631 \u0648\u0627\u0644\u064A\u0645\u0646 \u0648\u0627\u0644\u0628\u0631\u0643\u0627\u062A" : "\u0645\u0633\u0627\u0621 \u0627\u0644\u062E\u064A\u0631 \u0648\u0627\u0644\u0645\u0633\u0631\u0627\u062A";
+        let sentimentInstruction = "";
+        const userMsgLower = (userMessageText || "").trim().toLowerCase();
+        const hasNegativeSentiment = /مشكلة|عطل|سيء|بطيء|شكوى|غاضب|استرجاع|فلوسي|نصاب|رداءة|خراب|bad|worst|angry|broken|issue|problem|error|scam|refund|slow/i.test(userMsgLower);
+        if (hasNegativeSentiment) {
+          sentimentInstruction = `
 - CRITICAL SENTIMENT ADAPTATION: The customer is expressing frustration, annoyance, or reporting a complaint/issue. You MUST immediately start your response with a deeply sincere, warm, and highly professional apology on behalf of our team (e.g., '\u0646\u0639\u062A\u0630\u0631 \u0645\u0646 \u062D\u0636\u0631\u062A\u0643 \u0628\u0634\u062F\u0629 \u064A\u0627 \u0641\u0646\u062F\u0645 \u0639\u0646 \u0647\u0630\u0627 \u0627\u0644\u0625\u0632\u0639\u0627\u062C\u060C \u0648\u0646\u0647\u062A\u0645 \u062C\u062F\u0627\u064B \u0628\u062D\u0644 \u0645\u0634\u0643\u0644\u062A\u0643...' or 'Sincere apologies for any inconvenience, we are fully committed to resolving this...'). Avoid standard cheerful greetings or promotional pitches. Be calming, constructive, and direct.`;
-          }
-          const trainingHubKnowledge = (device.knowledgeBaseSources || []).map((source) => `--- SOURCE: ${source.name} ---
+        }
+        const trainingHubKnowledge = (device.knowledgeBaseSources || []).map((source) => `--- SOURCE: ${source.name} ---
 ${source.content}`).join("\n\n");
-          const combinedKnowledge = [device.aiKnowledgeBase, trainingHubKnowledge].filter(Boolean).join("\n\n");
-          const finalKnowledgeBase = combinedKnowledge || "(No factual knowledge base provided. Answer general greetings politely, but if asked about business details like pricing, policies, or products, politely apologize and offer to transfer them to human support.)";
-          let stageInstruction = "";
-          if (device.flowStagesEnabled && device.flowStages && conv.label) {
-            const activeStage = device.flowStages.find((s) => s.id === conv.label);
-            if (activeStage && activeStage.stageAiInstructions && activeStage.stageAiInstructions.trim()) {
-              stageInstruction = `
+        const combinedKnowledge = [device.aiKnowledgeBase, trainingHubKnowledge].filter(Boolean).join("\n\n");
+        const finalKnowledgeBase = combinedKnowledge || "(No factual knowledge base provided. Answer general greetings politely, but if asked about business details like pricing, policies, or products, politely apologize and offer to transfer them to human support.)";
+        let stageInstruction = "";
+        if (device.flowStagesEnabled && device.flowStages && conv.label) {
+          const activeStage = device.flowStages.find((s) => s.id === conv.label);
+          if (activeStage && activeStage.stageAiInstructions && activeStage.stageAiInstructions.trim()) {
+            stageInstruction = `
 - CRITICAL STAGE-SPECIFIC INSTRUCTION: The customer is currently in the journey stage "${activeStage.name}" (${activeStage.nameEn}). You MUST strictly prioritize and adhere to these guidelines for this stage: ${activeStage.stageAiInstructions}`;
-            }
           }
-          const systemPrompt = `You are an elite, highly intelligent corporate AI customer support agent named "${device.aiAgentName || "WhatsApp Smart Agent"}", representing our premium brand on WhatsApp.
+        }
+        const systemPrompt = `You are an elite, highly intelligent corporate AI customer support agent named "${device.aiAgentName || "WhatsApp Smart Agent"}", representing our premium brand on WhatsApp.
 Your absolute goal is to deliver impeccable, friendly, accurate, and prestigious support to our customers.
 
 Here are your elite operating parameters:
@@ -6157,128 +6207,213 @@ Conversation History (Last 20 messages for context):
 ${formattedHistory || "(No previous messages)"}
 
 Formulate your exceptionally smart and professional response now:`;
-          let modelName = device.aiModel || "gemini-3.5-flash";
-          if (modelName === "gemini-2.5-flash" || modelName.startsWith("gemini-2.0") || modelName.startsWith("gemini-1.5")) {
-            modelName = "gemini-3.5-flash";
+        let modelName = device.aiModel || "gemini-3.5-flash";
+        if (modelName === "gemini-2.5-flash" || modelName.startsWith("gemini-2.0") || modelName.startsWith("gemini-1.5")) {
+          modelName = "gemini-3.5-flash";
+        }
+        if (modelName === "gemini-3.5-pro") {
+          modelName = "gemini-3.1-pro-preview";
+        }
+        console.log(`[AI Agent] Formulating response using model "${modelName}"...`);
+        const response = await callGeminiWithRetry({
+          model: modelName,
+          contents: contentsPayload,
+          config: {
+            systemInstruction: systemPrompt,
+            temperature: device.aiTemperature !== void 0 ? Number(device.aiTemperature) : 0.8
           }
-          if (modelName === "gemini-3.5-pro") {
-            modelName = "gemini-3.1-pro-preview";
-          }
-          console.log(`[AI Agent] Formulating response using model "${modelName}"...`);
-          const response = await callGeminiWithRetry({
-            model: modelName,
-            contents: contentsPayload,
-            config: {
-              systemInstruction: systemPrompt,
-              temperature: device.aiTemperature !== void 0 ? Number(device.aiTemperature) : 0.8
+        });
+        responseText = response?.text || "";
+        console.log(`[AI Agent] Generated text response: "${responseText.substring(0, 100)}${responseText.length > 100 ? "..." : ""}"`);
+        if (shouldReplyWithVoice && responseText) {
+          const tone = device.aiVoiceTone || "professional";
+          console.log(`[AI Agent] Synthesizing voice note using gemini-3.1-flash-tts-preview for tone "${tone}"...`);
+          try {
+            let ttsStylePrompt = "";
+            if (tone === "friendly") {
+              ttsStylePrompt = `Say cheerfully in a warm, friendly, and welcoming Arabic tone: ${responseText}`;
+            } else if (tone === "formal") {
+              ttsStylePrompt = `Say in a clear, highly formal, respectful, and professional Arabic tone: ${responseText}`;
+            } else {
+              ttsStylePrompt = `Say professionally, helpful, and naturally in Arabic: ${responseText}`;
             }
-          });
-          responseText = response?.text || "";
-          console.log(`[AI Agent] Generated text response: "${responseText.substring(0, 100)}${responseText.length > 100 ? "..." : ""}"`);
-          if (shouldReplyWithVoice && responseText) {
-            const tone = device.aiVoiceTone || "professional";
-            console.log(`[AI Agent] Synthesizing voice note using gemini-3.1-flash-tts-preview for tone "${tone}"...`);
-            try {
-              let ttsStylePrompt = "";
-              if (tone === "friendly") {
-                ttsStylePrompt = `Say cheerfully in a warm, friendly, and welcoming Arabic tone: ${responseText}`;
-              } else if (tone === "formal") {
-                ttsStylePrompt = `Say in a clear, highly formal, respectful, and professional Arabic tone: ${responseText}`;
-              } else {
-                ttsStylePrompt = `Say professionally, helpful, and naturally in Arabic: ${responseText}`;
-              }
-              let voiceName = "Zephyr";
-              if (tone === "friendly") {
-                voiceName = "Kore";
-              } else if (tone === "formal") {
-                voiceName = "Puck";
-              }
-              const ttsResponse = await callGeminiWithRetry({
-                model: "gemini-3.1-flash-tts-preview",
-                contents: [{ parts: [{ text: ttsStylePrompt }] }],
-                config: {
-                  responseModalities: ["AUDIO"],
-                  speechConfig: {
-                    voiceConfig: {
-                      prebuiltVoiceConfig: { voiceName }
-                    }
+            let voiceName = "Zephyr";
+            if (tone === "friendly") {
+              voiceName = "Kore";
+            } else if (tone === "formal") {
+              voiceName = "Puck";
+            }
+            const ttsResponse = await callGeminiWithRetry({
+              model: "gemini-3.1-flash-tts-preview",
+              contents: [{ parts: [{ text: ttsStylePrompt }] }],
+              config: {
+                responseModalities: ["AUDIO"],
+                speechConfig: {
+                  voiceConfig: {
+                    prebuiltVoiceConfig: { voiceName }
                   }
                 }
-              });
-              const base64Audio = ttsResponse?.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-              if (base64Audio) {
-                responseAudioBuffer = Buffer.from(base64Audio, "base64");
-                console.log(`[AI Agent] Successfully synthesized voice note (${responseAudioBuffer.length} bytes) using voice "${voiceName}".`);
-              } else {
-                console.warn("[AI Agent] TTS returned successful response but no audio parts were found.");
               }
-            } catch (ttsErr) {
-              console.error("[AI Agent] Voice synthesis failed, falling back to text-only reply:", ttsErr);
+            });
+            const base64Audio = ttsResponse?.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+            if (base64Audio) {
+              responseAudioBuffer = Buffer.from(base64Audio, "base64");
+              console.log(`[AI Agent] Successfully synthesized voice note (${responseAudioBuffer.length} bytes) using voice "${voiceName}".`);
+            } else {
+              console.warn("[AI Agent] TTS returned successful response but no audio parts were found.");
+            }
+          } catch (ttsErr) {
+            console.error("[AI Agent] Voice synthesis failed, falling back to text-only reply:", ttsErr);
+          }
+        }
+      } catch (geminiErr) {
+        console.error("Gemini API error in WhatsApp Auto-Reply:", geminiErr);
+        responseText = "\u0645\u0631\u062D\u0628\u0627\u064B\u060C \u062A\u0644\u0642\u064A\u0646\u0627 \u0631\u0633\u0627\u0644\u062A\u0643 \u0628\u0646\u062C\u0627\u062D \u0648\u0633\u0646\u0642\u0648\u0645 \u0628\u0627\u0644\u0631\u062F \u0639\u0644\u064A\u0643 \u0641\u064A \u0623\u0642\u0631\u0628 \u0648\u0642\u062A.";
+      }
+    } else {
+      responseText = `[AI Auto-Reply Simulation] Hello ${pushName || "Customer"}! This is an automated offline simulation reply because no \`GEMINI_API_KEY\` is defined in the system. Add your API key to settings to enable the live smart agent!`;
+    }
+    const userWs = activeConnections.get(ownerId);
+    if (userWs && userWs.readyState === import_ws.WebSocket.OPEN) {
+      userWs.send(JSON.stringify({
+        type: "typing",
+        senderId: contactId,
+        recipientId: ownerId,
+        isTyping: true
+      }));
+    }
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    if (userWs && userWs.readyState === import_ws.WebSocket.OPEN) {
+      userWs.send(JSON.stringify({
+        type: "typing",
+        senderId: contactId,
+        recipientId: ownerId,
+        isTyping: false
+      }));
+    }
+    if (!fromMe && sock) {
+      const humanDelay = Math.floor(Math.random() * (8e3 - 3e3 + 1)) + 3e3;
+      console.log(`[Humanization] Delaying AI reply by ${humanDelay}ms...`);
+      await new Promise((resolve) => setTimeout(resolve, humanDelay));
+      try {
+        await sock.sendPresenceUpdate("paused", jid);
+      } catch (e) {
+      }
+    }
+    console.log(`[AI Agent - Dispatching Reply] Queueing reply via device "${device.name}" to +${contactPhone}. Voice: ${!!responseAudioBuffer}`);
+    const sendResult = await sendRealWhatsAppMessage(
+      device,
+      contactPhone,
+      responseText,
+      false,
+      responseAudioBuffer ? "audio" : "text",
+      responseAudioBuffer ? responseAudioBuffer.toString("base64") : void 0
+    );
+    const aiMsg = {
+      id: `msg_${Math.random().toString(36).substring(2, 11)}`,
+      conversationId: conv.id,
+      senderId: ownerId,
+      recipientId: contactId,
+      content: responseText,
+      type: responseAudioBuffer ? "audio" : "text",
+      mediaUrl: responseAudioBuffer ? `data:audio/mp3;base64,${responseAudioBuffer.toString("base64")}` : void 0,
+      status: sendResult && sendResult.success ? "delivered" : "failed",
+      timestamp: (/* @__PURE__ */ new Date()).toISOString()
+    };
+    saveMessage(aiMsg);
+    broadcast({
+      type: "message:new",
+      message: aiMsg
+    });
+  } catch (err) {
+    console.error("Fatal error in AI Agent WhatsApp responder loop:", err);
+  }
+}
+app.get("/api/webhooks/meta", (req, res) => {
+  const mode = req.query["hub.mode"];
+  const token = req.query["hub.verify_token"];
+  const challenge = req.query["hub.challenge"];
+  if (mode === "subscribe" && token === "watbus_meta_token") {
+    res.status(200).send(challenge);
+  } else {
+    res.sendStatus(403);
+  }
+});
+app.post("/api/webhooks/meta", async (req, res) => {
+  try {
+    const body = req.body;
+    if (body.object === "whatsapp_business_account") {
+      for (const entry of body.entry) {
+        for (const change of entry.changes) {
+          if (change.value && change.value.messages) {
+            const phoneNumberId = change.value.metadata.phone_number_id;
+            const devices = getAllDevices();
+            const device = devices.find((d) => d.method === "cloud_api" && d.phoneId === phoneNumberId);
+            if (device) {
+              for (const msg of change.value.messages) {
+                const contactPhone = msg.from;
+                const jid = `${contactPhone}@s.whatsapp.net`;
+                const pushName = change.value.contacts?.[0]?.profile?.name || contactPhone;
+                const timestamp = parseInt(msg.timestamp) * 1e3;
+                const messageId = msg.id;
+                let messageContent = {};
+                if (msg.type === "text") {
+                  messageContent = { conversation: msg.text.body };
+                } else if (msg.type === "image") {
+                  messageContent = { imageMessage: { caption: msg.image?.caption || "" } };
+                } else if (msg.type === "audio") {
+                  messageContent = { audioMessage: { mimetype: "audio/ogg" } };
+                } else {
+                  messageContent = { conversation: `[Unsupported Meta Message Type: ${msg.type}]` };
+                }
+                await globalIncomingHandler(device.id, null, jid, pushName, messageContent, false, timestamp, messageId);
+              }
+            } else {
+              console.warn(`[Meta Webhook] No cloud_api device found for phoneId ${phoneNumberId}`);
             }
           }
-        } catch (geminiErr) {
-          console.error("Gemini API error in WhatsApp Auto-Reply:", geminiErr);
-          responseText = "\u0645\u0631\u062D\u0628\u0627\u064B\u060C \u062A\u0644\u0642\u064A\u0646\u0627 \u0631\u0633\u0627\u0644\u062A\u0643 \u0628\u0646\u062C\u0627\u062D \u0648\u0633\u0646\u0642\u0648\u0645 \u0628\u0627\u0644\u0631\u062F \u0639\u0644\u064A\u0643 \u0641\u064A \u0623\u0642\u0631\u0628 \u0648\u0642\u062A.";
-        }
-      } else {
-        responseText = `[AI Auto-Reply Simulation] Hello ${pushName || "Customer"}! This is an automated offline simulation reply because no \`GEMINI_API_KEY\` is defined in the system. Add your API key to settings to enable the live smart agent!`;
-      }
-      const userWs = activeConnections.get(ownerId);
-      if (userWs && userWs.readyState === import_ws.WebSocket.OPEN) {
-        userWs.send(JSON.stringify({
-          type: "typing",
-          senderId: contactId,
-          recipientId: ownerId,
-          isTyping: true
-        }));
-      }
-      await new Promise((resolve) => setTimeout(resolve, 600));
-      if (userWs && userWs.readyState === import_ws.WebSocket.OPEN) {
-        userWs.send(JSON.stringify({
-          type: "typing",
-          senderId: contactId,
-          recipientId: ownerId,
-          isTyping: false
-        }));
-      }
-      if (!fromMe && sock) {
-        const humanDelay = Math.floor(Math.random() * (8e3 - 3e3 + 1)) + 3e3;
-        console.log(`[Humanization] Delaying AI reply by ${humanDelay}ms...`);
-        await new Promise((resolve) => setTimeout(resolve, humanDelay));
-        try {
-          await sock.sendPresenceUpdate("paused", jid);
-        } catch (e) {
         }
       }
-      console.log(`[AI Agent - Dispatching Reply] Queueing reply via device "${device.name}" to +${contactPhone}. Voice: ${!!responseAudioBuffer}`);
-      const sendResult = await sendRealWhatsAppMessage(
-        device,
-        contactPhone,
-        responseText,
-        false,
-        responseAudioBuffer ? "audio" : "text",
-        responseAudioBuffer ? responseAudioBuffer.toString("base64") : void 0
-      );
-      const aiMsg = {
-        id: `msg_${Math.random().toString(36).substring(2, 11)}`,
-        conversationId: conv.id,
-        senderId: ownerId,
-        recipientId: contactId,
-        content: responseText,
-        type: responseAudioBuffer ? "audio" : "text",
-        mediaUrl: responseAudioBuffer ? `data:audio/mp3;base64,${responseAudioBuffer.toString("base64")}` : void 0,
-        status: sendResult && sendResult.success ? "delivered" : "failed",
-        timestamp: (/* @__PURE__ */ new Date()).toISOString()
-      };
-      saveMessage(aiMsg);
-      broadcast({
-        type: "message:new",
-        message: aiMsg
-      });
-    } catch (err) {
-      console.error("Fatal error in AI Agent WhatsApp responder loop:", err);
+      res.sendStatus(200);
+    } else {
+      res.sendStatus(404);
     }
-  });
+  } catch (err) {
+    console.error("[Meta Webhook Error]", err);
+    res.sendStatus(500);
+  }
+});
+async function startServer() {
+  if (isSupabaseConfigured()) {
+    console.log("[Supabase Startup] Checking for central database backup in Supabase...");
+    try {
+      const restored = await restoreDbFromSupabase();
+      if (restored) {
+        const dbFile = import_path4.default.join(process.cwd(), "db-store.json");
+        let shouldRestore = true;
+        if (import_fs4.default.existsSync(dbFile)) {
+          const localMtime = import_fs4.default.statSync(dbFile).mtime.getTime();
+          const supabaseTime = new Date(restored.updated_at).getTime();
+          if (localMtime > supabaseTime + 5e3) {
+            console.log(`[Supabase Startup] Local database (modified: ${new Date(localMtime).toISOString()}) is newer than Supabase backup (modified: ${restored.updated_at}). Skipping restore to prevent data loss. Syncing local database up to Supabase...`);
+            shouldRestore = false;
+            const localDb = readDb();
+            await backupDbToSupabase(localDb);
+          }
+        }
+        if (shouldRestore) {
+          import_fs4.default.writeFileSync(dbFile, JSON.stringify(restored.data, null, 2), "utf-8");
+          resetDbCache();
+          console.log("[Supabase Startup] Successfully restored central database locally from Supabase.");
+        }
+      }
+    } catch (err) {
+      console.error("[Supabase Startup] Failed to restore database:", err);
+    }
+  }
+  cleanOrphanedSessions();
+  setBroadcastHandler(broadcast);
+  setIncomingMessageHandler(globalIncomingHandler);
   try {
     console.log("Running LID to Phone Number contact merging migration...");
     mergeLidContactsAndConversations();
@@ -6585,6 +6720,7 @@ We look forward to seeing you! I am your WhatsApp Smart Agent. If you have any q
 startServer();
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {
+  globalIncomingHandler,
   memoryLogs
 });
 /**

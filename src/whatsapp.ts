@@ -21,6 +21,12 @@ import { backupSessionToSupabase, deleteSessionFromSupabase, restoreSessionFromS
 // Map of active WhatsApp socket connections by device ID
 export const activeSockets = new Map<string, any>();
 
+// Set of device IDs that have an OPEN and READY connection
+export const readySockets = new Set<string>();
+
+// Map of latest LID messages per JID to enable perfect quoting with all metadata
+export const latestLidMessages = new Map<string, any>();
+
 // Map of active reconnect timeouts by device ID
 export const activeReconnectTimeouts = new Map<string, NodeJS.Timeout>();
 
@@ -426,6 +432,25 @@ async function handleBaileysMessages(sock: any, messages: any[], deviceId: strin
 
     const fromMe = !!m.key.fromMe;
     const pushName = m.pushName || undefined;
+    const messageId = m.key.id;
+
+    if (!fromMe && rawJid && messageId && rawJid.endsWith('@lid')) {
+      latestLidMessages.set(rawJid, m);
+      console.log(`[LID Cache] Saved full message object for ${rawJid} with msgId ${messageId}`);
+      
+      // Save to disk so it survives server restarts
+      try {
+        const cachePath = path.join(process.cwd(), 'whatsapp-sessions', deviceId, `lid-quote-${rawJid.replace('@lid', '')}.json`);
+        fs.writeFileSync(cachePath, JSON.stringify(m, (key, value) => {
+          if (value && value.type === 'Buffer') {
+            return { type: 'Buffer', data: Array.from(value.data) };
+          }
+          return value;
+        }));
+      } catch (err) {
+        console.error('[LID Cache] Failed to persist quote object to disk:', err);
+      }
+    }
     
     // Safely parse timestamp
     let timestamp = Date.now() / 1000;
@@ -437,7 +462,6 @@ async function handleBaileysMessages(sock: any, messages: any[], deviceId: strin
       }
     }
 
-    const messageId = m.key.id;
     syncIncomingBaileysMessage(sock, jid, pushName, m.message, fromMe, timestamp, messageId, deviceId, isHistory);
   }
 }
@@ -702,6 +726,7 @@ export async function startWhatsAppSession(deviceId: string) {
       }
 
       if (connection === 'close') {
+        readySockets.delete(deviceId);
         if (sock.wasClosedIntentionally) {
           console.log(`Connection closed intentionally for device ${deviceId}. Skipping reconnect handling.`);
           if (activeSockets.get(deviceId) === sock) {
@@ -723,7 +748,20 @@ export async function startWhatsAppSession(deviceId: string) {
         const isQrExpired = errMsg.includes('qr refs attempts ended');
         const isRestartRequired = statusCode === 515;
 
-        if (isConflict) {
+        if (statusCode === 440) {
+          // Session conflict: Connected from another location
+          console.log(`\n====================================================================`);
+          console.log(`🚨 [CRITICAL ERROR] 🚨 SESSION CONFLICT DETECTED (Code 440)`);
+          console.log(`====================================================================`);
+          console.log(`[WhatsApp] Connection closed for device ${deviceId} due to session conflict.`);
+          console.log(`💡 THE REASON: You are running this bot in TWO PLACES at the same time!`);
+          console.log(`💡 You probably have the server running on Hostinger AND your local PC.`);
+          console.log(`💡 WhatsApp ONLY ALLOWS ONE connection at a time per session.`);
+          console.log(`💡 THE FIX: Please STOP the server on Hostinger, OR stop the local server.`);
+          console.log(`====================================================================\n`);
+          const currentConflict = (conflictCounters.get(deviceId) || 0) + 1;
+          conflictCounters.set(deviceId, currentConflict);
+        } else if (isConflict) {
           console.log(`[WhatsApp] Connection closed for device ${deviceId} due to session conflict (handled gracefully). Reason code: ${statusCode}.`);
         } else {
           console.log(`Connection closed for device ${deviceId}. Reason code: ${statusCode}. Permanent disconnect: ${loggedOut}.`);
@@ -830,6 +868,7 @@ export async function startWhatsAppSession(deviceId: string) {
           activeReconnectTimeouts.set(deviceId, timeoutId);
         }
       } else if (connection === 'open') {
+        readySockets.add(deviceId);
         const fullJid = sock.user?.id || '';
         const cleanPhone = fullJid.split(':')[0] || fullJid.split('@')[0] || '';
         console.log(`WhatsApp connected successfully on +${cleanPhone} for device ${deviceId}!`);
@@ -1005,111 +1044,105 @@ export async function sendBaileysMessage(
   pdfBuffer?: Buffer,
   pdfFilename?: string,
   imageBuffer?: Buffer
-): Promise<{ success: boolean; error?: string }> {
+): Promise<{ success: boolean; error?: string; messageId?: string }> {
   let sock = activeSockets.get(deviceId);
-  if (!sock) {
-    // Check fallback active sockets in system
-    const fallbackEntry = Array.from(activeSockets.entries())[0];
-    if (fallbackEntry) {
-      sock = fallbackEntry[1];
-    }
-  }
-
-  // If socket is transiently reconnecting, wait up to 15 seconds for socket to re-establish
-  if (!sock) {
-    for (let attempt = 1; attempt <= 5; attempt++) {
-      console.log(`[Baileys Send Retry] Waiting for device socket ${deviceId} to complete reconnect (Attempt ${attempt}/5)...`);
+  
+  // If socket is transiently reconnecting or initializing, wait up to 45 seconds for socket to re-establish
+  if (!sock || !readySockets.has(deviceId)) {
+    for (let attempt = 1; attempt <= 15; attempt++) {
+      console.log(`[Baileys Send Retry] Waiting for device socket ${deviceId} to complete reconnect (Attempt ${attempt}/15)...`);
       await new Promise((r) => setTimeout(r, 3000));
-      sock = activeSockets.get(deviceId) || Array.from(activeSockets.entries())[0]?.[1];
-      if (sock) {
+      sock = activeSockets.get(deviceId);
+      if (sock && readySockets.has(deviceId)) {
         console.log(`[Baileys Send Retry] Socket re-established successfully! Proceeding to deliver message.`);
         break;
       }
     }
   }
 
-  if (!sock) {
+  // Fallback if still not found
+  if (!sock || !readySockets.has(deviceId)) {
+    const fallbackEntry = Array.from(activeSockets.entries())[0];
+    if (fallbackEntry && readySockets.has(fallbackEntry[0])) {
+      sock = fallbackEntry[1];
+    }
+  }
+
+  if (!sock || !readySockets.has(deviceId)) {
     return { success: false, error: 'Device connection is offline or starting up' };
   }
 
   try {
     let cleanPhone = normalizePhoneNumber(to);
+    
+    // Reverse lookup: If we have an LID mapping for this phone number (e.g. they contacted us via FB Ad)
+    // We MUST reply to their LID JID so the message routes to their active chat thread on their phone.
+    const rawNum = cleanPhone.replace('@s.whatsapp.net', '');
+    const sessionPath = path.join(process.cwd(), 'whatsapp-sessions', deviceId);
+    const forwardLidPath = path.join(sessionPath, `lid-mapping-${rawNum}.json`);
+    
+    let quoteId: string | undefined;
 
-    if (!cleanPhone.endsWith('@s.whatsapp.net')) {
+    // Check if this conversation is tied to an LID (Ad). If so, we MUST send to the LID and attach a safe mock quote!
+    if (fs.existsSync(forwardLidPath)) {
+      try {
+        const mappedLid = JSON.parse(fs.readFileSync(forwardLidPath, 'utf8'));
+        if (mappedLid && typeof mappedLid === 'string') {
+          cleanPhone = `${mappedLid}@lid`; // We MUST send to @lid, otherwise the phone rejects with 'Closing session'
+
+          // Get quoteId from memory if available
+          const quotedMessage = latestLidMessages.get(cleanPhone);
+          quoteId = quotedMessage ? quotedMessage.key?.id : undefined;
+
+          // Database fallback if memory cache is empty (e.g. server restarted or manual Web UI reply)
+          if (!quoteId) {
+            const contactId = `contact_${rawNum}`;
+            const conv = getOrCreateConversation(deviceId, contactId);
+            if (conv) {
+              const msgs = getMessagesForConversation(conv.id);
+              const lastIn = msgs.filter(m => m.senderId === contactId).pop();
+              if (lastIn && lastIn.id && !lastIn.id.startsWith('msg_')) {
+                quoteId = lastIn.id; 
+              }
+            }
+          }
+
+          console.log(`[Baileys Route] LID Ad conversation detected for ${rawNum} (LID: ${cleanPhone}).`);
+          console.log(`[Baileys Route] Quoting msg: ${quoteId || 'none'} to prevent decryption rejection.`);
+        }
+      } catch (err) {}
+    }
+
+    if (!cleanPhone.endsWith('@s.whatsapp.net') && !cleanPhone.endsWith('@g.us') && !cleanPhone.endsWith('@lid')) {
       cleanPhone = `${cleanPhone}@s.whatsapp.net`;
     }
 
-    if (audioBuffer) {
-      // Validate that the number is actually registered on WhatsApp
-      try {
-        const [result] = await sock.onWhatsApp(cleanPhone);
-        if (!result || !result.exists) {
-          console.warn(`[Baileys Send] Number ${cleanPhone} is not registered on WhatsApp!`);
-          return { success: false, error: 'Target phone number is not registered on WhatsApp' };
-        }
-        cleanPhone = result.jid;
-      } catch (checkErr) {
-        console.warn(`[Baileys Send] Failed to verify number on WhatsApp, attempting anyway:`, checkErr);
-      }
+    const sendOptions: any = {};
 
-      await sock.sendMessage(cleanPhone, { 
+    let sentMsg: any;
+    if (audioBuffer) {
+      sentMsg = await sock.sendMessage(cleanPhone, { 
         audio: audioBuffer, 
         mimetype: 'audio/mpeg', // MP3/MPEG compliant MIME type for Gemini TTS audio files
         ptt: true // Send as a real Voice Note
-      });
+      }, sendOptions);
     } else if (pdfBuffer) {
-      // Validate that the number is actually registered on WhatsApp
-      try {
-        const [result] = await sock.onWhatsApp(cleanPhone);
-        if (!result || !result.exists) {
-          console.warn(`[Baileys Send] Number ${cleanPhone} is not registered on WhatsApp!`);
-          return { success: false, error: 'Target phone number is not registered on WhatsApp' };
-        }
-        cleanPhone = result.jid;
-      } catch (checkErr) {
-        console.warn(`[Baileys Send] Failed to verify number on WhatsApp, attempting anyway:`, checkErr);
-      }
-
-      await sock.sendMessage(cleanPhone, {
+      sentMsg = await sock.sendMessage(cleanPhone, {
         document: pdfBuffer,
         mimetype: 'application/pdf',
         fileName: pdfFilename || 'ticket.pdf',
         caption: text
-      });
+      }, sendOptions);
     } else if (imageBuffer) {
-      // Validate that the number is actually registered on WhatsApp
-      try {
-        const [result] = await sock.onWhatsApp(cleanPhone);
-        if (!result || !result.exists) {
-          console.warn(`[Baileys Send] Number ${cleanPhone} is not registered on WhatsApp!`);
-          return { success: false, error: 'Target phone number is not registered on WhatsApp' };
-        }
-        cleanPhone = result.jid;
-      } catch (checkErr) {
-        console.warn(`[Baileys Send] Failed to verify number on WhatsApp, attempting anyway:`, checkErr);
-      }
-
-      await sock.sendMessage(cleanPhone, {
+      sentMsg = await sock.sendMessage(cleanPhone, {
         image: imageBuffer,
         caption: text
-      });
+      }, sendOptions);
     } else {
-      // Validate that the number is actually registered on WhatsApp
-      try {
-        const [result] = await sock.onWhatsApp(cleanPhone);
-        if (!result || !result.exists) {
-          console.warn(`[Baileys Send] Number ${cleanPhone} is not registered on WhatsApp!`);
-          return { success: false, error: 'Target phone number is not registered on WhatsApp' };
-        }
-        cleanPhone = result.jid;
-      } catch (checkErr) {
-        console.warn(`[Baileys Send] Failed to verify number on WhatsApp, attempting anyway:`, checkErr);
-      }
-
-      await sock.sendMessage(cleanPhone, { text });
+      sentMsg = await sock.sendMessage(cleanPhone, { text }, sendOptions);
     }
     
-    return { success: true };
+    return { success: true, messageId: sentMsg?.key?.id };
   } catch (err: any) {
     console.error(`Failed to send message via Baileys for device ${deviceId}:`, err);
     return { success: false, error: err.message || 'Failed to dispatch' };
@@ -1121,6 +1154,15 @@ export async function sendBaileysMessage(
  */
 export function stopWhatsAppSession(deviceId: string) {
   console.log(`[WhatsApp Session] Stopping session for device: ${deviceId}`);
+  
+  // Clear any pending reconnect timeouts to prevent memory leaks and ghost sessions
+  const timeout = activeReconnectTimeouts.get(deviceId);
+  if (timeout) {
+    clearTimeout(timeout);
+    activeReconnectTimeouts.delete(deviceId);
+    console.log(`[WhatsApp Session] Cleared pending reconnect timeout for device: ${deviceId}`);
+  }
+  
   const sock = activeSockets.get(deviceId);
   if (sock) {
     sock.wasClosedIntentionally = true;

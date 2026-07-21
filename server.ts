@@ -154,7 +154,57 @@ const apiLimiter = rateLimit({
 });
 
 // Apply rate limiter to all API routes
-// app.use('/api/', apiLimiter);
+app.use('/api/', apiLimiter);
+
+// Enable CORS for API routes so external systems like ticket.expocore.net can connect
+app.use('/api', (req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, api_key, x-api-key, Authorization');
+  if (req.method === 'OPTIONS') {
+    res.sendStatus(200);
+    return;
+  }
+  next();
+});
+
+// Authentication Middleware
+const publicRoutes = [
+  '/api/auth/admin-login',
+  '/api/auth/login',
+  '/api/auth/send-otp',
+  '/api/auth/verify-otp',
+  '/api/demo-register',
+  '/api/demo-verify',
+  '/api/expocore/webhook',
+  '/api/whatsapp/qr',
+  '/api/catalog'
+];
+
+app.use('/api', (req, res, next) => {
+  // Allow public routes
+  if (publicRoutes.some(route => req.path === route || req.path.startsWith(route))) {
+    return next();
+  }
+
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    res.status(401).json({ error: 'Unauthorized. Token missing.' });
+    return;
+  }
+
+  const token = authHeader.split(' ')[1];
+  const db = readDb();
+  
+  // Verify token (using password as token for now)
+  const isValidAdmin = Object.values(db.users).some(u => u.password === token && u.role === 'admin');
+  if (!isValidAdmin) {
+    res.status(401).json({ error: 'Unauthorized. Invalid token.' });
+    return;
+  }
+
+  next();
+});
 
 // Auth Login for Admin
 app.post('/api/auth/admin-login', (req, res) => {
@@ -186,17 +236,6 @@ app.post('/api/catalog', (req, res) => {
   res.json({ item: newItem });
 });
 
-// Enable CORS for API routes so external systems like ticket.expocore.net can connect
-app.use('/api', (req, res, next) => {
-  res.header('Access-Control-Allow-Origin', '*');
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, api_key, x-api-key, Authorization');
-  if (req.method === 'OPTIONS') {
-    res.sendStatus(200);
-    return;
-  }
-  next();
-});
 
 // Create HTTP Server
 const server = http.createServer(app);
@@ -3057,7 +3096,7 @@ app.post('/api/devices', (req, res) => {
   }
 
   const tenantId = getTenantId(req);
-  const user = getUser(tenantId);
+  const user = tenantId ? getUser(tenantId) : undefined;
   if (user?.subscriptionPlan === 'starter' && method !== 'qr') {
     return res.status(403).json({ error: 'عذراً، ربط הـ API والـ Gateways متوفر فقط في باقة المحترفين والشركات. يرجى الترقية.' });
   }
@@ -3883,7 +3922,7 @@ async function sendRealWhatsAppMessageDirectly(
   text: string,
   mediaType?: 'text' | 'image' | 'audio' | 'document',
   mediaData?: string
-): Promise<{ success: boolean; error?: string }> {
+): Promise<{ success: boolean; error?: string; messageId?: string }> {
   const cleanPhone = to.replace(/[\s\+\-\(\)]/g, '').trim();
   
   try {
@@ -4253,6 +4292,7 @@ wss.on('connection', (ws: WebSocket) => {
           authenticatedUserId = event.userId;
           
           // Clean up any stale, pre-existing WebSocket connections for this user ID
+          if (!authenticatedUserId) return;
           const existingWs = activeConnections.get(authenticatedUserId);
           if (existingWs && existingWs !== ws) {
             console.log(`[WS] Cleaned up duplicate connection for user ${authenticatedUserId}`);
@@ -4736,50 +4776,7 @@ function cleanOrphanedSessions() {
 }
 
 // Vite integration & Production assets serving
-async function startServer() {
-  // If Supabase is configured, restore the database from Supabase on startup
-  if (isSupabaseConfigured()) {
-    console.log('[Supabase Startup] Checking for central database backup in Supabase...');
-    try {
-      const restored = await restoreDbFromSupabase();
-      if (restored) {
-        const dbFile = path.join(process.cwd(), 'db-store.json');
-        let shouldRestore = true;
-
-        if (fs.existsSync(dbFile)) {
-          const localMtime = fs.statSync(dbFile).mtime.getTime();
-          const supabaseTime = new Date(restored.updated_at).getTime();
-
-          // If local file is newer by more than 5 seconds, skip restore and sync local instead to prevent data loss
-          if (localMtime > supabaseTime + 5000) {
-            console.log(`[Supabase Startup] Local database (modified: ${new Date(localMtime).toISOString()}) is newer than Supabase backup (modified: ${restored.updated_at}). Skipping restore to prevent data loss. Syncing local database up to Supabase...`);
-            shouldRestore = false;
-            
-            // Sync local DB up to Supabase
-            const localDb = readDb();
-            await backupDbToSupabase(localDb);
-          }
-        }
-
-        if (shouldRestore) {
-          fs.writeFileSync(dbFile, JSON.stringify(restored.data, null, 2), 'utf-8');
-          resetDbCache();
-          console.log('[Supabase Startup] Successfully restored central database locally from Supabase.');
-        }
-      }
-    } catch (err) {
-      console.error('[Supabase Startup] Failed to restore database:', err);
-    }
-  }
-
-  // Run orphaned session cleaner to free up disk space on startup
-  cleanOrphanedSessions();
-
-  // Wire up WhatsApp gateway real-time broadcast pushes
-  setBroadcastHandler(broadcast);
-
-  // Set up AI Agent automatic responder for WhatsApp incoming messages
-  setIncomingMessageHandler(async (deviceId, sock, jid, pushName, messageContent, fromMe, timestamp, messageId) => {
+  export async function globalIncomingHandler(deviceId: string, sock: any, jid: string, pushName: string | undefined, messageContent: any, fromMe: boolean, timestamp: number, messageId: string) {
     try {
       // Humanization: Send read receipt and activate typing immediately on incoming messages from clients
       if (!fromMe && sock) {
@@ -5466,8 +5463,114 @@ Formulate your exceptionally smart and professional response now:`;
     } catch (err) {
       console.error('Fatal error in AI Agent WhatsApp responder loop:', err);
     }
-  });
+  }
 
+// Meta Cloud API Webhook Integration
+app.get('/api/webhooks/meta', (req, res) => {
+  const mode = req.query['hub.mode'];
+  const token = req.query['hub.verify_token'];
+  const challenge = req.query['hub.challenge'];
+  
+  if (mode === 'subscribe' && token === 'watbus_meta_token') {
+    res.status(200).send(challenge);
+  } else {
+    res.sendStatus(403);
+  }
+});
+
+app.post('/api/webhooks/meta', async (req, res) => {
+  try {
+    const body = req.body;
+    if (body.object === 'whatsapp_business_account') {
+      for (const entry of body.entry) {
+        for (const change of entry.changes) {
+          if (change.value && change.value.messages) {
+            const phoneNumberId = change.value.metadata.phone_number_id;
+            // Find device with this phoneId
+            const devices = getAllDevices();
+            const device = devices.find(d => d.method === 'cloud_api' && d.phoneId === phoneNumberId);
+            if (device) {
+              for (const msg of change.value.messages) {
+                const contactPhone = msg.from;
+                const jid = `${contactPhone}@s.whatsapp.net`;
+                const pushName = change.value.contacts?.[0]?.profile?.name || contactPhone;
+                const timestamp = parseInt(msg.timestamp) * 1000;
+                const messageId = msg.id;
+                
+                let messageContent: any = {};
+                if (msg.type === 'text') {
+                  messageContent = { conversation: msg.text.body };
+                } else if (msg.type === 'image') {
+                  messageContent = { imageMessage: { caption: msg.image?.caption || '' } };
+                } else if (msg.type === 'audio') {
+                  messageContent = { audioMessage: { mimetype: 'audio/ogg' } };
+                } else {
+                  messageContent = { conversation: `[Unsupported Meta Message Type: ${msg.type}]` };
+                }
+                
+                // Route to global incoming handler
+                await globalIncomingHandler(device.id, null, jid, pushName, messageContent, false, timestamp, messageId);
+              }
+            } else {
+              console.warn(`[Meta Webhook] No cloud_api device found for phoneId ${phoneNumberId}`);
+            }
+          }
+        }
+      }
+      res.sendStatus(200);
+    } else {
+      res.sendStatus(404);
+    }
+  } catch (err) {
+    console.error('[Meta Webhook Error]', err);
+    res.sendStatus(500);
+  }
+});
+
+async function startServer() {
+  // If Supabase is configured, restore the database from Supabase on startup
+  if (isSupabaseConfigured()) {
+    console.log('[Supabase Startup] Checking for central database backup in Supabase...');
+    try {
+      const restored = await restoreDbFromSupabase();
+      if (restored) {
+        const dbFile = path.join(process.cwd(), 'db-store.json');
+        let shouldRestore = true;
+
+        if (fs.existsSync(dbFile)) {
+          const localMtime = fs.statSync(dbFile).mtime.getTime();
+          const supabaseTime = new Date(restored.updated_at).getTime();
+
+          // If local file is newer by more than 5 seconds, skip restore and sync local instead to prevent data loss
+          if (localMtime > supabaseTime + 5000) {
+            console.log(`[Supabase Startup] Local database (modified: ${new Date(localMtime).toISOString()}) is newer than Supabase backup (modified: ${restored.updated_at}). Skipping restore to prevent data loss. Syncing local database up to Supabase...`);
+            shouldRestore = false;
+            
+            // Sync local DB up to Supabase
+            const localDb = readDb();
+            await backupDbToSupabase(localDb);
+          }
+        }
+
+        if (shouldRestore) {
+          fs.writeFileSync(dbFile, JSON.stringify(restored.data, null, 2), 'utf-8');
+          resetDbCache();
+          console.log('[Supabase Startup] Successfully restored central database locally from Supabase.');
+        }
+      }
+    } catch (err) {
+      console.error('[Supabase Startup] Failed to restore database:', err);
+    }
+  }
+
+  // Run orphaned session cleaner to free up disk space on startup
+  cleanOrphanedSessions();
+
+  // Wire up WhatsApp gateway real-time broadcast pushes
+  setBroadcastHandler(broadcast);
+
+  // Set up AI Agent automatic responder for WhatsApp incoming messages
+  setIncomingMessageHandler(globalIncomingHandler);
   // Clean up and merge duplicate LID-based contacts/conversations on startup
   try {
     console.log('Running LID to Phone Number contact merging migration...');

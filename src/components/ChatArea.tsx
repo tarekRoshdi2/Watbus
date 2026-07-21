@@ -468,7 +468,7 @@ export default function ChatArea({
 
     // Trigger recording duration tick
     recordingTimerRef.current = window.setInterval(() => {
-      setRecordDuration((prev) => prev + 1);
+      setRecordDuration((prev: number) => prev + 1);
     }, 1000);
 
     try {
@@ -537,7 +537,7 @@ export default function ChatArea({
       
       // Start duration ticker
       callTimerRef.current = window.setInterval(() => {
-        setCallDuration((prev) => prev + 1);
+        setCallDuration((prev: number) => prev + 1);
       }, 1000);
 
       // Trigger initial AI greeting call response
@@ -561,13 +561,13 @@ export default function ChatArea({
         setIsCallResponding(false);
 
         if (data.success) {
-          setCallTranscript((prev) => [...prev, { sender: 'ai', text: data.text }]);
+          setCallTranscript((prev: any[]) => [...prev, { sender: 'ai', text: data.text }]);
           if (data.audio) {
             setIsAiSpeaking(true);
             if (callAudioRef.current) callAudioRef.current.pause();
             const aud = new Audio(data.audio);
             callAudioRef.current = aud;
-            aud.play().catch((e) => console.log('Audio autoplay blocked, visual feedback playing.'));
+            aud.play().catch((e: Error) => console.log('Audio autoplay blocked, visual feedback playing.', e));
             aud.onended = () => {
               setIsAiSpeaking(false);
             };
@@ -577,7 +577,7 @@ export default function ChatArea({
             setTimeout(() => setIsAiSpeaking(false), 4000);
           }
         }
-      } catch (err) {
+      } catch (err: unknown) {
         console.error('Greeting call err:', err);
         setIsCallResponding(false);
       }
@@ -586,7 +586,8 @@ export default function ChatArea({
 
   const handleSendCallMessage = async (textToSay: string) => {
     if (!textToSay.trim()) return;
-    setCallTranscript((prev) => [...prev, { sender: 'user', text: textToSay }]);
+    setCallTranscript((prev: any[]) => [...prev, { sender: 'user', text: textToSay }]);
+    
     setCallInputText('');
     setIsCallResponding(true);
     setIsAiSpeaking(false);
@@ -606,13 +607,13 @@ export default function ChatArea({
       setIsCallResponding(false);
 
       if (data.success) {
-        setCallTranscript((prev) => [...prev, { sender: 'ai', text: data.text }]);
+        setCallTranscript((prev: any[]) => [...prev, { sender: 'ai', text: data.text }]);
         if (data.audio) {
           setIsAiSpeaking(true);
           if (callAudioRef.current) callAudioRef.current.pause();
           const aud = new Audio(data.audio);
           callAudioRef.current = aud;
-          aud.play().catch((e) => console.log('Audio play blocked.'));
+          aud.play().catch((e: Error) => console.log('Audio play blocked.', e));
           aud.onended = () => {
             setIsAiSpeaking(false);
           };
@@ -621,7 +622,7 @@ export default function ChatArea({
           setTimeout(() => setIsAiSpeaking(false), 4000);
         }
       }
-    } catch (err) {
+    } catch (err: unknown) {
       console.error('Call response error:', err);
       setIsCallResponding(false);
     }
@@ -643,7 +644,7 @@ export default function ChatArea({
       setShowReportDrawer(true);
       try {
         const transcriptText = callTranscript
-          .map((line) => `${line.sender === 'user' ? 'العميل' : 'الوكيل الذكي'}: ${line.text}`)
+          .map((line: { sender: string; text: string }) => `${line.sender === 'user' ? 'العميل' : 'الوكيل الذكي'}: ${line.text}`)
           .join('\n');
 
         const res = await fetch(`/api/conversations/${activeConversation.id}/generate-admin-report`, {
@@ -655,7 +656,7 @@ export default function ChatArea({
         if (data.success) {
           setCurrentAdminReport(data.adminReport);
         }
-      } catch (err) {
+      } catch (err: unknown) {
         console.error('Failed to trigger call admin report:', err);
       } finally {
         setIsGeneratingReport(false);
@@ -677,7 +678,7 @@ export default function ChatArea({
       if (data.success) {
         setCurrentAdminReport(data.adminReport);
       }
-    } catch (err) {
+    } catch (err: unknown) {
       console.error('Failed to trigger manual admin report:', err);
     } finally {
       setIsGeneratingReport(false);
@@ -703,7 +704,7 @@ export default function ChatArea({
     }
 
     // Stop all other audios
-    Object.keys(activeAudiosRef.current).forEach((id) => {
+    Object.keys(activeAudiosRef.current).forEach((id: string) => {
       activeAudiosRef.current[id].pause();
     });
 
@@ -714,12 +715,12 @@ export default function ChatArea({
 
       audio.ontimeupdate = () => {
         const percent = (audio.currentTime / (audio.duration || 1)) * 100;
-        setAudioProgress((prev) => ({ ...prev, [msgId]: percent }));
+        setAudioProgress((prev: Record<string, number>) => ({ ...prev, [msgId]: percent }));
       };
 
       audio.onended = () => {
         setPlayingAudioId(null);
-        setAudioProgress((prev) => ({ ...prev, [msgId]: 0 }));
+        setAudioProgress((prev: Record<string, number>) => ({ ...prev, [msgId]: 0 }));
       };
     }
 
@@ -727,18 +728,18 @@ export default function ChatArea({
       .then(() => {
         setPlayingAudioId(msgId);
       })
-      .catch((err) => {
+      .catch((err: Error) => {
         console.error('Playback block/error:', err);
         // Playback simulation if file is block
         setPlayingAudioId(msgId);
         let progress = 0;
         const sim = setInterval(() => {
           progress += 5;
-          setAudioProgress((prev) => ({ ...prev, [msgId]: progress }));
+          setAudioProgress((prev: Record<string, number>) => ({ ...prev, [msgId]: progress }));
           if (progress >= 100) {
             clearInterval(sim);
             setPlayingAudioId(null);
-            setAudioProgress((prev) => ({ ...prev, [msgId]: 0 }));
+            setAudioProgress((prev: Record<string, number>) => ({ ...prev, [msgId]: 0 }));
           }
         }, 150);
       });
@@ -786,13 +787,13 @@ export default function ChatArea({
                   <span className="text-[9px] md:text-[10px] text-zinc-500 dark:text-zinc-400 font-medium">{lang === 'ar' ? 'تصنيف:' : 'Label:'}</span>
                   <select
                      value={activeConversation.label || 'None'}
-                     onChange={(e) => {
+                     onChange={(e: React.ChangeEvent<HTMLSelectElement>) => {
                        const val = e.target.value;
                        onUpdateLabel(activeConversation.id, val === 'None' ? undefined : val);
                      }}
                      className="text-[9px] md:text-[10px] font-bold bg-transparent text-zinc-700 dark:text-zinc-300 outline-none cursor-pointer hover:text-emerald-500 dark:hover:text-emerald-400 transition-colors"
                   >
-                    {crmLabelsList.map((lbl) => (
+                    {crmLabelsList.map((lbl: { name: string, displayName: string }) => (
                       <option key={lbl.name} value={lbl.name} className="bg-white dark:bg-zinc-900">
                         {lbl.displayName}
                       </option>
@@ -807,7 +808,7 @@ export default function ChatArea({
                   <span className="text-[9px] md:text-[10px] text-zinc-500 dark:text-zinc-400 font-medium">{lang === 'ar' ? '📁' : '📁'}</span>
                   <select
                      value={activeConversation.folderId || ''}
-                     onChange={(e) => {
+                     onChange={(e: React.ChangeEvent<HTMLSelectElement>) => {
                        const val = e.target.value;
                        onMoveToFolder(activeConversation.id, val || undefined);
                      }}
@@ -816,7 +817,7 @@ export default function ChatArea({
                     <option value="" className="bg-white dark:bg-zinc-900">
                       {lang === 'ar' ? 'بلا مجلد' : 'No Folder'}
                     </option>
-                    {folders.map((f) => (
+                    {folders.map((f: { id: string, name: string }) => (
                       <option key={f.id} value={f.id} className="bg-white dark:bg-zinc-900">
                         {f.name}
                       </option>
@@ -939,7 +940,7 @@ export default function ChatArea({
               <span className="text-zinc-500 font-medium">{lang === 'ar' ? 'اللهجة واللغة:' : 'Accent & Lang:'}</span>
               <select
                 value={voiceAccent}
-                onChange={(e) => {
+                onChange={(e: React.ChangeEvent<HTMLSelectElement>) => {
                   const val = e.target.value;
                   setVoiceAccent(val);
                   handleSaveVoiceSettings(voiceEnabled, val, voiceName);
@@ -960,7 +961,7 @@ export default function ChatArea({
               <span className="text-zinc-500 font-medium">{lang === 'ar' ? 'شخصية الصوت:' : 'Voice Style:'}</span>
               <select
                 value={voiceName}
-                onChange={(e) => {
+                onChange={(e: React.ChangeEvent<HTMLSelectElement>) => {
                   const val = e.target.value;
                   setVoiceName(val);
                   handleSaveVoiceSettings(voiceEnabled, voiceAccent, val);
@@ -983,11 +984,11 @@ export default function ChatArea({
         ref={messagesContainerRef}
         className="flex-1 overflow-y-auto px-6 py-4 space-y-3 z-10 custom-scrollbar"
       >
-        {messages.map((msg) => {
+        {messages.map((msg, index) => {
           const isMe = msg.senderId === currentUser.id;
           return (
             <div
-              key={msg.id}
+              key={`${msg.id}-${index}`}
               className={`flex w-full ${isMe ? 'justify-end' : 'justify-start'}`}
             >
               <div
@@ -1183,7 +1184,7 @@ export default function ChatArea({
               <button
                 key={em}
                 onClick={() => {
-                  setInputText((t) => t + em);
+                  setInputText((t: string) => t + em);
                   setShowEmojiPicker(false);
                 }}
                 className="text-xl hover:scale-125 transition-transform cursor-pointer"
