@@ -9,7 +9,7 @@ window.fetch = async (...args) => {
   let [resource, config] = args;
   
   if (typeof resource === 'string' && resource.startsWith('/api/')) {
-    const adminStr = localStorage.getItem('watbus_admin');
+    const adminStr = localStorage.getItem('whatsapp_user');
     if (adminStr) {
       try {
         const admin = JSON.parse(adminStr);
