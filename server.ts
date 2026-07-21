@@ -11,6 +11,9 @@ import path from 'path';
 import fs from 'fs';
 import dotenv from 'dotenv';
 import { GoogleGenAI } from '@google/genai';
+import jwt from 'jsonwebtoken';
+
+const JWT_SECRET = process.env.JWT_SECRET || 'watbus-super-secret-key-2026';
 
 
 // CRITICAL HOSTINGER DEBUGGING LOGIC
@@ -194,16 +197,14 @@ app.use('/api', (req, res, next) => {
   }
 
   const token = authHeader.split(' ')[1];
-  const db = readDb();
   
-  // Verify token (using password as token for now)
-  const isValidAdmin = Object.values(db.users).some(u => u.password === token && u.role === 'admin');
-  if (!isValidAdmin) {
-    res.status(401).json({ error: 'Unauthorized. Invalid token.' });
-    return;
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET) as any;
+    (req as any).user = decoded; // Attach verified user to request
+    next();
+  } catch (err) {
+    res.status(401).json({ error: 'Unauthorized. Invalid or expired token.' });
   }
-
-  next();
 });
 
 // Auth Login for Admin
@@ -215,7 +216,9 @@ app.post('/api/auth/admin-login', (req, res) => {
   const adminUser = Object.values(db.users).find(u => u.email === email && u.password === password && u.role === 'admin');
   
   if (adminUser) {
-    res.json({ success: true, user: adminUser });
+    const token = jwt.sign({ id: adminUser.id, role: adminUser.role }, JWT_SECRET, { expiresIn: '7d' });
+    const { password: _, ...userWithoutPassword } = adminUser;
+    res.json({ success: true, user: userWithoutPassword, token });
   } else {
     res.status(401).json({ error: 'البريد الإلكتروني أو كلمة المرور غير صحيحة' });
   }

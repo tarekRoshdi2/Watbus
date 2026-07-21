@@ -1001,6 +1001,7 @@ var import_path4 = __toESM(require("path"), 1);
 var import_fs4 = __toESM(require("fs"), 1);
 var import_dotenv = __toESM(require("dotenv"), 1);
 var import_genai = require("@google/genai");
+var import_jsonwebtoken = __toESM(require("jsonwebtoken"), 1);
 init_db();
 init_supabase();
 
@@ -1905,6 +1906,7 @@ function parseSpintax(text) {
 // server.ts
 var import_baileys2 = require("@whiskeysockets/baileys");
 var import_express_rate_limit = __toESM(require("express-rate-limit"), 1);
+var JWT_SECRET = process.env.JWT_SECRET || "watbus-super-secret-key-2026";
 var debugLogPath = import_path4.default.join(process.cwd(), "startup-error.log");
 var memoryLogs = [];
 var maxMemoryLogs = 1e3;
@@ -1997,20 +1999,22 @@ app.use("/api", (req, res, next) => {
     return;
   }
   const token = authHeader.split(" ")[1];
-  const db = readDb();
-  const isValidAdmin = Object.values(db.users).some((u) => u.password === token && u.role === "admin");
-  if (!isValidAdmin) {
-    res.status(401).json({ error: "Unauthorized. Invalid token." });
-    return;
+  try {
+    const decoded = import_jsonwebtoken.default.verify(token, JWT_SECRET);
+    req.user = decoded;
+    next();
+  } catch (err) {
+    res.status(401).json({ error: "Unauthorized. Invalid or expired token." });
   }
-  next();
 });
 app.post("/api/auth/admin-login", (req, res) => {
   const { email, password } = req.body;
   const db = readDb();
   const adminUser = Object.values(db.users).find((u) => u.email === email && u.password === password && u.role === "admin");
   if (adminUser) {
-    res.json({ success: true, user: adminUser });
+    const token = import_jsonwebtoken.default.sign({ id: adminUser.id, role: adminUser.role }, JWT_SECRET, { expiresIn: "7d" });
+    const { password: _, ...userWithoutPassword } = adminUser;
+    res.json({ success: true, user: userWithoutPassword, token });
   } else {
     res.status(401).json({ error: "\u0627\u0644\u0628\u0631\u064A\u062F \u0627\u0644\u0625\u0644\u0643\u062A\u0631\u0648\u0646\u064A \u0623\u0648 \u0643\u0644\u0645\u0629 \u0627\u0644\u0645\u0631\u0648\u0631 \u063A\u064A\u0631 \u0635\u062D\u064A\u062D\u0629" });
   }

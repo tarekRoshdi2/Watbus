@@ -13,14 +13,22 @@ window.fetch = async (...args) => {
     if (adminStr) {
       try {
         const admin = JSON.parse(adminStr);
-        if (admin && admin.password) {
-          config = config || {};
+        config = config || {};
+        if (admin && admin.token) {
           config.headers = {
             ...config.headers,
-            'Authorization': `Bearer ${admin.password}` // using password as a simple auth token for now
+            'Authorization': `Bearer ${admin.token}`
+          };
+        } else if (admin && admin.password) {
+          // Fallback for old sessions without JWT
+          config.headers = {
+            ...config.headers,
+            'Authorization': `Bearer ${admin.password}`
           };
         }
-      } catch (e) {}
+      } catch (e) {
+        // Ignore parse error
+      }
     }
   }
   return originalFetch(resource, config);

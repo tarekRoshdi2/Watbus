@@ -127,7 +127,7 @@ export default function AuthView({ onLoginSuccess, onBackToLanding, initialMode 
         });
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || 'Invalid credentials');
-        onLoginSuccess(data.user);
+        onLoginSuccess({ ...data.user, token: data.token });
       } catch (err: any) {
         setError(err.message || 'Something went wrong.');
       } finally {

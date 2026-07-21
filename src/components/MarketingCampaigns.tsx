@@ -418,6 +418,34 @@ export default function MarketingCampaigns({
     setShowAddModal(true);
   };
 
+  const handleDirectResend = async (camp: Campaign) => {
+    try {
+      const payload = {
+        name: camp.name + ' (Copy)',
+        templateText: camp.templateText,
+        mediaUrl: camp.mediaUrl,
+        deviceId: camp.deviceId,
+        delay: camp.delay,
+        targets: camp.targets.map(t => ({ phone: t.phone, name: t.name }))
+      };
+      
+      const response = await fetch('/api/campaigns', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (response.ok) {
+        const data = await response.json();
+        const newCampId = data.campaign.id;
+        window.location.reload();
+        // Auto start the new campaign
+        handleRunQueue(newCampId);
+      }
+    } catch (err) {
+      console.error('Failed to direct resend campaign', err);
+    }
+  };
+
   const handleCreateCampaign = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim() || !message.trim()) return;
@@ -1000,14 +1028,24 @@ export default function MarketingCampaigns({
                     <span>{lang === 'ar' ? 'سجل الإرسال' : 'Console Log'}</span>
                   </button>
 
+                  {/* Direct Resend Campaign Button */}
+                  <button
+                    onClick={() => handleDirectResend(camp)}
+                    className="px-3 py-2 rounded-2xl text-xs font-bold bg-white border border-[#00a884] text-[#00a884] hover:bg-[#00a884] hover:text-white dark:bg-zinc-900 dark:border-[#00a884] flex items-center gap-1.5 transition-all cursor-pointer shadow-sm"
+                    title={lang === 'ar' ? 'إعادة الإرسال مباشرة' : 'Direct Resend'}
+                  >
+                    <Play className="w-4 h-4" />
+                    <span>{lang === 'ar' ? 'إعادة الإرسال' : 'Resend'}</span>
+                  </button>
+
                   {/* Edit Campaign Button */}
                   <button
                     onClick={() => handleStartEditCampaign(camp)}
                     className="px-3 py-2 rounded-2xl text-xs font-bold bg-white border border-zinc-200 text-zinc-500 hover:bg-zinc-50 dark:bg-zinc-900 dark:border-zinc-800 dark:text-zinc-300 flex items-center gap-1.5 transition-all cursor-pointer"
                     title={lang === 'ar' ? 'تعديل الحملة السابقة وإعادة الإرسال' : 'Edit Campaign and Resend'}
                   >
-                    <Pencil className="w-4 h-4 text-[#00a884]" />
-                    <span>{lang === 'ar' ? 'تعديل وإعادة إرسال' : 'Edit & Resend'}</span>
+                    <Pencil className="w-4 h-4 text-zinc-400" />
+                    <span>{lang === 'ar' ? 'تعديل' : 'Edit'}</span>
                   </button>
 
                   {/* Run Button (Only if not completed) */}
