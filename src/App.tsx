@@ -239,7 +239,7 @@ export default function App() {
             const msgData = await msgRes.json();
             setMessages((prev) => {
               const current = prev[c.id] || [];
-              const uniqueMessages = Array.from(new Map(msgData.messages.map((m: Message) => [m.id, m])).values());
+              const uniqueMessages = Array.from(new Map(msgData.messages.map((m: Message) => [m.id, m])).values()) as Message[];
               if (current.length === uniqueMessages.length && JSON.stringify(current) === JSON.stringify(uniqueMessages)) {
                 return prev;
               }
@@ -271,6 +271,18 @@ export default function App() {
 
     return () => clearInterval(pollInterval);
   }, [currentUser]);
+
+  // Hostinger WebSockets bypass: Poll devices rapidly if any device is linking
+  useEffect(() => {
+    if (!currentUser) return;
+    const linkingDeviceExists = devices.some(d => d.status === 'linking');
+    if (linkingDeviceExists) {
+      const qrPoll = setInterval(() => {
+        fetchBusinessData(); // Fetches /api/devices and updates devices state with QR code
+      }, 2000);
+      return () => clearInterval(qrPoll);
+    }
+  }, [currentUser, devices]);
 
   // Connect WebSocket Connection
   const connectWebSocket = () => {
