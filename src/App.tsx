@@ -489,6 +489,7 @@ export default function App() {
   };
 
   const handleLogout = () => {
+    localStorage.removeItem('whatsapp_user');
     setCurrentUser(null);
     setAuthMode('landing');
     setConversations([]);
