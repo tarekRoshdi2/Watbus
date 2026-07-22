@@ -259,13 +259,13 @@ export function updateUserPresence(userId: string, isOnline: boolean): User | un
 export function getOrCreateConversation(userA: string, userB: string, deviceId?: string): Conversation {
   const db = readDb();
   
-  // Find existing conversation
+  // Find existing conversation (matching participantIds)
   const existing = Object.values(db.conversations).find(
-    (c) => c.participantIds.includes(userA) && c.participantIds.includes(userB) && (!deviceId || !c.deviceId || c.deviceId === deviceId)
+    (c) => c.participantIds.includes(userA) && c.participantIds.includes(userB)
   );
   
   if (existing) {
-    if (deviceId && !existing.deviceId) {
+    if (deviceId && existing.deviceId !== deviceId) {
       existing.deviceId = deviceId;
       writeDb(db);
     }
@@ -650,6 +650,18 @@ export function mergeLidContactsAndConversations() {
 export function mergeDuplicateConversations() {
   const db = readDb();
   let changed = false;
+
+  // Update orphaned deviceIds to current active device if device was deleted
+  const validDeviceIds = Object.keys(db.devices || {});
+  const activeDevice = Object.values(db.devices || {})[0];
+  if (activeDevice) {
+    for (const conv of Object.values(db.conversations)) {
+      if (!conv.deviceId || !validDeviceIds.includes(conv.deviceId)) {
+        conv.deviceId = activeDevice.id;
+        changed = true;
+      }
+    }
+  }
   
   const conversations = Object.values(db.conversations);
   
