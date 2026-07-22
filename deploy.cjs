@@ -16,9 +16,7 @@ const ignoreList = [
   'github',
   '.gemini',
   'startup-error.log',
-  '.env',
-  'db-store.json',
-  'db-store.json.tmp'
+  '.env'
 ];
 
 console.log('Starting packaging process...');

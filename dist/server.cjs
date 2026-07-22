@@ -6797,6 +6797,28 @@ async function startServer() {
       }
     } catch (err) {
       console.error("[Supabase Startup] Failed to restore database:", err);
+      try {
+        const db = readDb();
+        const hasCloudApiDevice = Object.values(db.devices || {}).some((d) => d.method === "cloud_api");
+        if (hasCloudApiDevice) {
+          let cleaned = false;
+          for (const [id, dev] of Object.entries(db.devices || {})) {
+            if (dev.method === "qr" && (id === "dev_wpaax10r2" || dev.name === "ChatCore")) {
+              delete db.devices[id];
+              cleaned = true;
+              console.log(`[Device Cleaner] Purged old QR device ${id} from database.`);
+            }
+          }
+          if (cleaned) {
+            writeDb(db);
+            if (isSupabaseConfigured()) {
+              await backupDbToSupabase(db);
+            }
+          }
+        }
+      } catch (cleanErr) {
+        console.error("Error cleaning old devices:", cleanErr);
+      }
     }
   }
   cleanOrphanedSessions();
