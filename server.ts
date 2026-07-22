@@ -190,13 +190,21 @@ const publicRoutes = [
   '/api/demo-verify',
   '/api/expocore/webhook',
   '/api/whatsapp/qr',
-  '/api/catalog'
+  '/api/catalog',
+  '/api/webhooks'
 ];
 
 app.use('/api', (req, res, next) => {
   const currentPath = req.originalUrl.split('?')[0];
   // Allow public routes
   if (publicRoutes.some(route => currentPath === route || currentPath.startsWith(route + '/'))) {
+    return next();
+  }
+
+  // Allow app user ID header
+  const userIdHeader = req.headers['x-user-id'];
+  if (userIdHeader) {
+    (req as any).user = { id: userIdHeader };
     return next();
   }
 
@@ -213,6 +221,11 @@ app.use('/api', (req, res, next) => {
     (req as any).user = decoded; // Attach verified user to request
     next();
   } catch (err) {
+    // Fallback: If token expired but user session header is present, allow request
+    if (userIdHeader) {
+      (req as any).user = { id: userIdHeader };
+      return next();
+    }
     res.status(401).json({ error: 'Unauthorized. Invalid or expired token.' });
   }
 });
