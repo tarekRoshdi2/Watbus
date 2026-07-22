@@ -360,7 +360,6 @@ export default function ChatArea({
       const timer = setTimeout(() => scrollToBottom('smooth'), 100);
       return () => clearTimeout(timer);
     }
-    onMarkRead();
   }, [messages, isTyping]);
 
   // Handle typing triggers

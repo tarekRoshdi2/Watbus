@@ -159,7 +159,7 @@ import rateLimit from 'express-rate-limit';
 
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 1000, // Limit each IP to 1000 requests per windowMs
+  max: 20000, // High limit to allow full SaaS dashboard operations without 429 throttling
   message: { error: 'Too many requests from this IP, please try again after 15 minutes' },
   standardHeaders: true,
   legacyHeaders: false,

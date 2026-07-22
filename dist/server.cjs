@@ -2241,8 +2241,8 @@ app.set("trust proxy", 1);
 var apiLimiter = (0, import_express_rate_limit.default)({
   windowMs: 15 * 60 * 1e3,
   // 15 minutes
-  max: 1e3,
-  // Limit each IP to 1000 requests per windowMs
+  max: 2e4,
+  // High limit to allow full SaaS dashboard operations without 429 throttling
   message: { error: "Too many requests from this IP, please try again after 15 minutes" },
   standardHeaders: true,
   legacyHeaders: false
