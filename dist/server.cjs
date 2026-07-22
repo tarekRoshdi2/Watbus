@@ -4685,11 +4685,11 @@ app.post("/api/devices", (req, res) => {
     status: isDirectConnection ? "connected" : "linking",
     phoneNumber: displayPhone,
     ownerId: tenantId,
-    cloudApiKey: cloudApiKey || void 0,
+    cloudApiKey: cloudApiKey || token || void 0,
     phoneId: phoneId || void 0,
     businessId: businessId || void 0,
     instanceId: instanceId || void 0,
-    token: token || void 0,
+    token: token || cloudApiKey || void 0,
     apiEndpoint: apiEndpoint || void 0,
     gatewayType: gatewayType || void 0,
     qrCodeUrl: void 0,
@@ -5359,10 +5359,11 @@ async function sendRealWhatsAppMessageDirectly(device, to, text, mediaType, medi
         payload.type = "text";
         payload.text = { body: text };
       }
+      const accessToken = device.token || device.cloudApiKey;
       const response = await fetch(endpoint, {
         method: "POST",
         headers: {
-          "Authorization": `Bearer ${device.token}`,
+          "Authorization": `Bearer ${accessToken}`,
           "Content-Type": "application/json"
         },
         body: JSON.stringify(payload)
@@ -6692,6 +6693,7 @@ app.get("/api/webhooks/meta", (req, res) => {
 app.post("/api/webhooks/meta", async (req, res) => {
   try {
     const body = req.body;
+    console.log("[Meta Webhook Received]", JSON.stringify(body));
     if (body.object === "whatsapp_business_account") {
       for (const entry of body.entry) {
         for (const change of entry.changes) {

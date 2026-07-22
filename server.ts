@@ -3137,11 +3137,11 @@ app.post('/api/devices', (req, res) => {
     status: isDirectConnection ? 'connected' : 'linking',
     phoneNumber: displayPhone,
     ownerId: tenantId,
-    cloudApiKey: cloudApiKey || undefined,
+    cloudApiKey: cloudApiKey || token || undefined,
     phoneId: phoneId || undefined,
     businessId: businessId || undefined,
     instanceId: instanceId || undefined,
-    token: token || undefined,
+    token: token || cloudApiKey || undefined,
     apiEndpoint: apiEndpoint || undefined,
     gatewayType: gatewayType || undefined,
     qrCodeUrl: undefined, // Will be populated dynamically by the real Baileys session
@@ -3977,10 +3977,11 @@ async function sendRealWhatsAppMessageDirectly(
         payload.text = { body: text };
       }
 
+      const accessToken = device.token || device.cloudApiKey;
       const response = await fetch(endpoint, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${device.token}`,
+          'Authorization': `Bearer ${accessToken}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify(payload)
@@ -5585,6 +5586,7 @@ app.get('/api/webhooks/meta', (req, res) => {
 app.post('/api/webhooks/meta', async (req, res) => {
   try {
     const body = req.body;
+    console.log('[Meta Webhook Received]', JSON.stringify(body));
     if (body.object === 'whatsapp_business_account') {
       for (const entry of body.entry) {
         for (const change of entry.changes) {
