@@ -5671,7 +5671,7 @@ async function startServer() {
     console.log('[Supabase Startup] Checking for central database backup in Supabase...');
     try {
       const restored = await restoreDbFromSupabase();
-      if (restored) {
+      if (restored && restored.data) {
         const dbFile = path.join(process.cwd(), 'db-store.json');
         let shouldRestore = true;
 
@@ -5691,37 +5691,52 @@ async function startServer() {
         }
 
         if (shouldRestore) {
-          fs.writeFileSync(dbFile, JSON.stringify(restored.data, null, 2), 'utf-8');
+          const localDb = fs.existsSync(dbFile) ? JSON.parse(fs.readFileSync(dbFile, 'utf-8')) : {};
+          const remoteDb = restored.data;
+
+          // Smart merge: Combine users, devices, conversations, and messages
+          const mergedDb = {
+            users: { ...(remoteDb.users || {}), ...(localDb.users || {}) },
+            devices: { ...(remoteDb.devices || {}), ...(localDb.devices || {}) },
+            conversations: { ...(remoteDb.conversations || {}), ...(localDb.conversations || {}) },
+            messages: [],
+            statuses: remoteDb.statuses || localDb.statuses || [],
+            campaigns: remoteDb.campaigns || localDb.campaigns || [],
+            folders: remoteDb.folders || localDb.folders || [],
+            leads: remoteDb.leads || localDb.leads || [],
+            catalog: remoteDb.catalog || localDb.catalog || [],
+            otpLogs: remoteDb.otpLogs || localDb.otpLogs || []
+          };
+
+          // Combine messages cleanly without duplicates by message ID
+          const msgMap = new Map();
+          (remoteDb.messages || []).forEach(m => msgMap.set(m.id, m));
+          (localDb.messages || []).forEach(m => msgMap.set(m.id, m));
+          mergedDb.messages = Array.from(msgMap.values());
+
+          // Purge deleted/stale Baileys QR device dev_wpaax10r2 if cloud_api device exists
+          const devicesRecord = mergedDb.devices as Record<string, DeviceLink>;
+          const hasCloudApi = Object.values(devicesRecord).some(d => d.method === 'cloud_api');
+          if (hasCloudApi) {
+            for (const [id, dev] of Object.entries(devicesRecord)) {
+              if (dev.method === 'qr' && (id === 'dev_wpaax10r2' || dev.name === 'ChatCore')) {
+                delete mergedDb.devices[id];
+                console.log(`[Supabase Startup] Purged old QR device ${id} during restore.`);
+              }
+            }
+          }
+
+          // Write smart-merged database locally
+          fs.writeFileSync(dbFile, JSON.stringify(mergedDb, null, 2), 'utf-8');
           resetDbCache();
-          console.log('[Supabase Startup] Successfully restored central database locally from Supabase.');
+          console.log(`[Supabase Startup] Successfully smart-merged central database locally (${mergedDb.messages.length} messages, ${Object.keys(mergedDb.conversations).length} conversations).`);
+          
+          // Push clean merged database back to Supabase
+          backupDbToSupabase(mergedDb).catch(e => console.error('[Supabase Startup Backup Error]', e));
         }
       }
     } catch (err) {
       console.error('[Supabase Startup] Failed to restore database:', err);
-
-  // Sanitize devices: Purge old deleted Baileys QR sessions if Meta Cloud API device is configured
-  try {
-    const db = readDb();
-    const hasCloudApiDevice = Object.values(db.devices || {}).some(d => d.method === 'cloud_api');
-    if (hasCloudApiDevice) {
-      let cleaned = false;
-      for (const [id, dev] of Object.entries(db.devices || {})) {
-        if (dev.method === 'qr' && (id === 'dev_wpaax10r2' || dev.name === 'ChatCore')) {
-          delete db.devices[id];
-          cleaned = true;
-          console.log(`[Device Cleaner] Purged old QR device ${id} from database.`);
-        }
-      }
-      if (cleaned) {
-        writeDb(db);
-        if (isSupabaseConfigured()) {
-          await backupDbToSupabase(db);
-        }
-      }
-    }
-  } catch (cleanErr) {
-    console.error('Error cleaning old devices:', cleanErr);
-  }
     }
   }
 
