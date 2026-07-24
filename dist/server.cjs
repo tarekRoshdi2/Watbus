@@ -1112,20 +1112,34 @@ async function initializeDbFromPrisma() {
     console.error("[Prisma] Error loading from DB", err);
   }
 }
-var import_client, import_adapter_pg, import_pg, import_dotenv, import_fs2, import_path2, pool, adapter, prisma, DB_FILE, META_AI_USER, ADMIN_USER, cachedDb, writeTimeout, isWriting, pendingWrite;
+var import_dotenv, import_fs2, import_path2, prismaInstance, prisma, DB_FILE, META_AI_USER, ADMIN_USER, cachedDb, writeTimeout, isWriting, pendingWrite;
 var init_db = __esm({
   "src/db.ts"() {
-    import_client = require("@prisma/client");
-    import_adapter_pg = require("@prisma/adapter-pg");
-    import_pg = __toESM(require("pg"), 1);
     import_dotenv = __toESM(require("dotenv"), 1);
     import_fs2 = __toESM(require("fs"), 1);
     import_path2 = __toESM(require("path"), 1);
     init_supabase();
     import_dotenv.default.config();
-    pool = new import_pg.default.Pool({ connectionString: process.env.DATABASE_URL });
-    adapter = new import_adapter_pg.PrismaPg(pool);
-    prisma = new import_client.PrismaClient({ adapter });
+    try {
+      const { PrismaClient } = require("@prisma/client");
+      const { PrismaPg } = require("@prisma/adapter-pg");
+      const pg = require("pg");
+      if (process.env.DATABASE_URL) {
+        const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
+        const adapter = new PrismaPg(pool);
+        prismaInstance = new PrismaClient({ adapter });
+      } else {
+        prismaInstance = new PrismaClient();
+      }
+    } catch (e) {
+      console.warn("[Prisma Init Warning] Could not load Prisma Client. Fallback to store database:", e?.message || e);
+      const dummyHandler = {
+        get: () => new Proxy(() => Promise.resolve(null), dummyHandler),
+        apply: () => Promise.resolve(null)
+      };
+      prismaInstance = new Proxy({}, dummyHandler);
+    }
+    prisma = prismaInstance;
     DB_FILE = import_path2.default.join(process.cwd(), "db-store.json");
     META_AI_USER = {
       id: "meta-ai",

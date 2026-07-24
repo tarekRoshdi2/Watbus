@@ -1,6 +1,3 @@
-import { PrismaClient } from '@prisma/client';
-import { PrismaPg } from '@prisma/adapter-pg';
-import pg from 'pg';
 import dotenv from 'dotenv';
 import fs from 'fs';
 import path from 'path';
@@ -9,9 +6,30 @@ import { backupDbToSupabase } from './supabase.js';
 
 dotenv.config();
 
-const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
-const adapter = new PrismaPg(pool);
-export const prisma = new PrismaClient({ adapter });
+// Safe dynamic Prisma initialization to prevent 503 startup crash if .prisma/client is missing on host
+let prismaInstance: any;
+try {
+  const { PrismaClient } = require('@prisma/client');
+  const { PrismaPg } = require('@prisma/adapter-pg');
+  const pg = require('pg');
+
+  if (process.env.DATABASE_URL) {
+    const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
+    const adapter = new PrismaPg(pool);
+    prismaInstance = new PrismaClient({ adapter });
+  } else {
+    prismaInstance = new PrismaClient();
+  }
+} catch (e: any) {
+  console.warn('[Prisma Init Warning] Could not load Prisma Client. Fallback to store database:', e?.message || e);
+  const dummyHandler: ProxyHandler<any> = {
+    get: () => new Proxy(() => Promise.resolve(null), dummyHandler),
+    apply: () => Promise.resolve(null)
+  };
+  prismaInstance = new Proxy({}, dummyHandler);
+}
+
+export const prisma = prismaInstance;
 
 const DB_FILE = path.join(process.cwd(), 'db-store.json');
 
