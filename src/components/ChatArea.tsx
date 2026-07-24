@@ -796,6 +796,9 @@ export default function ChatArea({
             src={activeContact?.avatarUrl || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80'}
             alt={activeContact?.username || 'WhatsApp Contact'}
             referrerPolicy="no-referrer"
+            onError={(e) => {
+              e.currentTarget.src = 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80';
+            }}
             className="w-9 h-9 md:w-10 md:h-10 rounded-full object-cover border border-zinc-200 dark:border-zinc-700"
           />
           <div className="rtl:text-right ltr:text-left">

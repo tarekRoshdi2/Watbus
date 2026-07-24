@@ -196,6 +196,13 @@ export class ChatCoreSwarm {
   }
 
   private saveChatMessage(chatId: string, role: 'user' | 'assistant', text: string, agentId?: string) {
+    // Prevent memory leaks: Prune oldest threads if total active threads exceed 500
+    const keys = Object.keys(this.conversationMemory);
+    if (keys.length > 500 && !this.conversationMemory[chatId]) {
+      const oldestKey = keys[0];
+      delete this.conversationMemory[oldestKey];
+    }
+
     if (!this.conversationMemory[chatId]) {
       this.conversationMemory[chatId] = [];
     }

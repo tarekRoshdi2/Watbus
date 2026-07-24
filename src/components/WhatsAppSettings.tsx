@@ -22,7 +22,10 @@ import {
   Code,
   Terminal,
   Settings,
-  BellRing
+  BellRing,
+  PhoneCall,
+  PhoneForwarded,
+  ShieldAlert
 } from 'lucide-react';
 import { DeviceLink, FlowStage } from '../types.js';
 import { translations } from '../translations.js';
@@ -56,6 +59,68 @@ export default function WhatsAppSettings({
   const [deviceLogs, setDeviceLogs] = useState<Record<string, string[]>>({});
   const [copiedApiKeyDeviceId, setCopiedApiKeyDeviceId] = useState<string | null>(null);
   const [isSavingDevSettings, setIsSavingDevSettings] = useState<string | null>(null);
+
+  // SIP Calling Modal State
+  const [openSipModalDeviceId, setOpenSipModalDeviceId] = useState<string | null>(null);
+  const [sipEnabled, setSipEnabled] = useState<boolean>(false);
+  const [sipServerHost, setSipServerHost] = useState<string>('');
+  const [sipPort, setSipPort] = useState<number>(5061);
+  const [sipAppId, setSipAppId] = useState<string>('');
+  const [sipRouteToAi, setSipRouteToAi] = useState<boolean>(true);
+  const [isSavingSip, setIsSavingSip] = useState<boolean>(false);
+  const [sipStatusMsg, setSipStatusMsg] = useState<{ type: 'success' | 'error' | 'warning'; text: string } | null>(null);
+
+  const handleOpenSipModal = (device: DeviceLink) => {
+    setOpenSipModalDeviceId(device.id);
+    const existing = device.sipCallingSettings || { enabled: false };
+    setSipEnabled(existing.enabled || false);
+    setSipServerHost(existing.sipServerHost || '');
+    setSipPort(existing.sipPort || 5061);
+    setSipAppId(existing.appId || device.businessId || '');
+    setSipRouteToAi(existing.routeToVoiceAi !== false);
+    setSipStatusMsg(null);
+  };
+
+  const handleSaveSipSettings = async () => {
+    if (!openSipModalDeviceId) return;
+    setIsSavingSip(true);
+    setSipStatusMsg(null);
+
+    try {
+      const res = await fetch(`/api/whatsapp/devices/${openSipModalDeviceId}/sip-settings`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          enabled: sipEnabled,
+          sipServerHost,
+          sipPort,
+          appId: sipAppId,
+          routeToVoiceAi: sipRouteToAi
+        })
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        if (data.metaSync && data.metaSync.error) {
+          setSipStatusMsg({
+            type: 'warning',
+            text: `تم حفظ الإعدادات بنجاح في المنظومة المحلية! تنبيه Meta Cloud API: ${data.metaSync.error} (ملاحظة: تفعيل ميزة المكالمات في Meta يتطلب وصول رقمك للحد اليومي 2,000 محادثة/يومياً وأن يكون التطبيق في وضع Live).`
+          });
+        } else {
+          setSipStatusMsg({
+            type: 'success',
+            text: lang === 'ar' ? 'تمت مزامنة وحفظ إعدادات مكالمات الواتساب بروتوكول SIP بنجاح!' : 'SIP Calling settings saved & synced successfully!'
+          });
+        }
+      } else {
+        setSipStatusMsg({ type: 'error', text: data.error || 'حدث خطأ أثناء حفظ الإعدادات' });
+      }
+    } catch (err: any) {
+      setSipStatusMsg({ type: 'error', text: err.message || 'فشلت المزامنة' });
+    } finally {
+      setIsSavingSip(false);
+    }
+  };
 
   const handleToggleDevSettings = (device: DeviceLink) => {
     if (openDevSettingsDeviceId === device.id) {
@@ -909,6 +974,16 @@ ALTER TABLE crm_backups DISABLE ROW LEVEL SECURITY;`}
                       <span>{lang === 'ar' ? 'إعدادات المطورين والـ API' : 'Developer & API'}</span>
                     </button>
 
+                    {/* WhatsApp SIP Calling Button */}
+                    <button
+                      type="button"
+                      onClick={() => handleOpenSipModal(device)}
+                      className="flex items-center gap-1.5 text-[11px] font-bold px-3 py-2 rounded-xl border border-indigo-500/20 text-indigo-600 bg-indigo-500/5 hover:bg-indigo-500/10 transition-all cursor-pointer"
+                    >
+                      <PhoneCall className="w-3.5 h-3.5 text-indigo-500" />
+                      <span>{lang === 'ar' ? 'المكالمات وبروتوكول SIP' : 'SIP Calling'}</span>
+                    </button>
+
                     {/* AI Settings Action */}
                     <button
                       type="button"
@@ -1467,6 +1542,153 @@ ALTER TABLE crm_backups DISABLE ROW LEVEL SECURITY;`}
                 >
                   {isSavingAgent && <Loader2 className="w-4 h-4 animate-spin mr-1" />}
                   <span>{t.saveRulesButton}</span>
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* MODAL EDIT WHATSAPP BUSINESS SIP & CALLING SETTINGS */}
+      <AnimatePresence>
+        {openSipModalDeviceId && (
+          <div className="fixed inset-0 bg-black/65 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white dark:bg-zinc-900 rounded-3xl w-full max-w-xl shadow-2xl overflow-hidden border border-zinc-100 dark:border-zinc-800"
+            >
+              <div className="bg-zinc-50 dark:bg-zinc-950 px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 flex justify-between items-center">
+                <button onClick={() => setOpenSipModalDeviceId(null)} className="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 text-sm font-bold cursor-pointer">
+                  ✕
+                </button>
+                <h3 className="font-extrabold text-sm text-zinc-800 dark:text-zinc-200 flex items-center gap-2">
+                  <PhoneCall className="w-5 h-5 text-indigo-500" />
+                  <span>{lang === 'ar' ? 'ربط المكالمات بروتوكول SIP - WhatsApp Business Calling' : 'WhatsApp Business SIP & Calling Settings'}</span>
+                </h3>
+              </div>
+
+              <div className="p-6 space-y-4 rtl:text-right ltr:text-left max-h-[75vh] overflow-y-auto custom-scrollbar">
+                {/* Meta Requirement Banner & Troubleshooting */}
+                <div className="bg-indigo-50 dark:bg-indigo-950/20 border border-indigo-200 dark:border-indigo-900/50 p-4 rounded-2xl">
+                  <div className="flex items-start gap-3">
+                    <ShieldAlert className="w-5 h-5 text-indigo-500 shrink-0 mt-0.5" />
+                    <div>
+                      <h4 className="font-bold text-xs text-indigo-800 dark:text-indigo-300 mb-1">
+                        {lang === 'ar' ? 'متطلبات تفعيل مكالمات الـ SIP الرسمية من Meta:' : 'Meta SIP Calling Requirements & Tier Limit:'}
+                      </h4>
+                      <p className="text-[11px] text-indigo-600 dark:text-indigo-400 leading-relaxed">
+                        {lang === 'ar'
+                          ? 'تتيح Meta ربط مكالمات الواتساب الصوتية عبر بروتوكول SIP مباشرة بشرط أن تكون حزمة التطبيق Live وأن يصل الرقم للحد اليومي (2,000 محادثة/يومياً). في حال ظهر لك تنبيه Calling Cannot Be Enabled، يُحفظ الإعداد محلياً بالكامل ويتم تفعيله فور ترقية الحد اليومي.'
+                          : 'Meta requires the App to be Live and the Phone Number to reach Tier 1 (2,000 daily messaging limit) before enabling Calling APIs.'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Status Message if any */}
+                {sipStatusMsg && (
+                  <div className={`p-3.5 rounded-xl border text-xs leading-relaxed font-semibold ${
+                    sipStatusMsg.type === 'success'
+                      ? 'bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950/30 dark:text-emerald-300 dark:border-emerald-800'
+                      : sipStatusMsg.type === 'warning'
+                      ? 'bg-amber-50 text-amber-800 border-amber-200 dark:bg-amber-950/30 dark:text-amber-300 dark:border-amber-800'
+                      : 'bg-rose-50 text-rose-800 border-rose-200 dark:bg-rose-950/30 dark:text-rose-300 dark:border-rose-800'
+                  }`}>
+                    {sipStatusMsg.text}
+                  </div>
+                )}
+
+                {/* Toggle Enable SIP Calling */}
+                <div className="flex items-center justify-between bg-zinc-50 dark:bg-zinc-950 p-4 rounded-2xl border border-zinc-200/50 dark:border-zinc-800">
+                  <input
+                    type="checkbox"
+                    checked={sipEnabled}
+                    onChange={(e) => setSipEnabled(e.target.checked)}
+                    className="w-4 h-4 text-indigo-600 accent-indigo-600 cursor-pointer"
+                  />
+                  <div className="rtl:text-right ltr:text-left">
+                    <span className="font-extrabold text-xs block text-zinc-800 dark:text-zinc-200">
+                      {lang === 'ar' ? 'تفعيل واستقبال مكالمات الواتساب عبر SIP' : 'Allow & Receive WhatsApp Voice Calls'}
+                    </span>
+                    <span className="text-[10px] text-zinc-400 block">
+                      {lang === 'ar' ? 'تمكين العملاء من الاتصال هاتفياً برقم الواتساب وتحويلها للذكاء الاصطناعي' : 'Allow customers to call your WhatsApp number directly'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* SIP Server Hostname */}
+                <div className="rtl:text-right ltr:text-left">
+                  <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-wider mb-1">
+                    {lang === 'ar' ? 'عنوان سيرفر الـ SIP (SIP Hostname / Domain)' : 'SIP Server Hostname'}
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. sip.expocore.net or pbx.company.com"
+                    value={sipServerHost}
+                    onChange={(e) => setSipServerHost(e.target.value)}
+                    className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 py-2.5 text-xs font-mono ltr text-left font-bold"
+                  />
+                </div>
+
+                {/* Grid for SIP Port & App ID */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="rtl:text-right ltr:text-left">
+                    <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-wider mb-1">
+                      {lang === 'ar' ? 'منفذ الـ SIP Port (الافتراضي 5061)' : 'SIP Port (Default 5061)'}
+                    </label>
+                    <input
+                      type="number"
+                      value={sipPort}
+                      onChange={(e) => setSipPort(Number(e.target.value))}
+                      className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 py-2.5 text-xs font-mono text-left font-bold"
+                    />
+                  </div>
+
+                  <div className="rtl:text-right ltr:text-left">
+                    <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-wider mb-1">
+                      {lang === 'ar' ? 'معرف التطبيق (App ID)' : 'App ID'}
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. 12206344641466778"
+                      value={sipAppId}
+                      onChange={(e) => setSipAppId(e.target.value)}
+                      className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 py-2.5 text-xs font-mono text-left font-bold"
+                    />
+                  </div>
+                </div>
+
+                {/* Route Call to Gemini Voice Agent Toggle */}
+                <div className="flex items-center justify-between bg-emerald-50/50 dark:bg-emerald-950/20 p-4 rounded-2xl border border-emerald-200/50 dark:border-emerald-900/50">
+                  <input
+                    type="checkbox"
+                    checked={sipRouteToAi}
+                    onChange={(e) => setSipRouteToAi(e.target.checked)}
+                    className="w-4 h-4 text-emerald-600 accent-emerald-600 cursor-pointer"
+                  />
+                  <div className="rtl:text-right ltr:text-left">
+                    <span className="font-extrabold text-xs block text-emerald-900 dark:text-emerald-200 flex items-center gap-1.5">
+                      <PhoneForwarded className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>{lang === 'ar' ? 'توجيه المكالمات الصوتية تلقائياً لموظف الذكاء الاصطناعي (Gemini Voice AI)' : 'Auto-Route Calls to Voice AI Agent'}</span>
+                    </span>
+                    <span className="text-[10px] text-emerald-700/80 dark:text-emerald-400 block mt-0.5">
+                      {lang === 'ar' ? 'الرد الفوري بالصوت البشري المصري على استفسارات المكالمات الواردة 24/7' : 'AI answers incoming WhatsApp calls in natural voice 24/7'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-6 pt-0">
+                <button
+                  type="button"
+                  onClick={handleSaveSipSettings}
+                  disabled={isSavingSip}
+                  className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-zinc-100 text-white font-bold py-3.5 rounded-xl transition-all cursor-pointer text-xs flex justify-center items-center gap-1.5 shadow-md shadow-indigo-600/10 mt-2"
+                >
+                  {isSavingSip && <Loader2 className="w-4 h-4 animate-spin mr-1" />}
+                  <span>{lang === 'ar' ? 'حفظ ومزامنة إعدادات الـ SIP مع Meta' : 'Save & Sync SIP Settings with Meta'}</span>
                 </button>
               </div>
             </motion.div>

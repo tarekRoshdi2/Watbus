@@ -19,7 +19,7 @@ import { Resvg } from '@resvg/resvg-js';
 import { chatCoreSwarm } from './src/agents/ChatCoreSwarm.js';
 import { initTelegramBot, testTelegramBot } from './src/telegram.js';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'watbus-super-secret-key-2026';
+const JWT_SECRET = process.env.JWT_SECRET || (() => { console.warn('[SECURITY WARNING] JWT_SECRET not set in .env! Using randomly generated secret. Set JWT_SECRET in your .env file for production.'); return require('crypto').randomBytes(32).toString('hex'); })();
 
 
 // CRITICAL HOSTINGER DEBUGGING LOGIC - Reloaded 2026-07-22
@@ -120,7 +120,9 @@ import {
   getAgentStats,
   recordAgentActivity,
   getAgentAuditLogs,
-  syncDatabaseWithSupabase
+  syncDatabaseWithSupabase,
+  getCallLogs,
+  saveCallLog
 } from './src/db.js';
 import { initializeQueues, enqueueIncomingWebhook, setDirectWebhookProcessor } from './src/queues/messageQueue.js';
 import { initializeWorkers } from './src/queues/workers.js';
@@ -209,14 +211,7 @@ syncDatabaseWithSupabase().then(ok => {
   if (ok) console.log('🟢 [Supabase Cloud] Central database restored & synced from Supabase cloud on startup!');
 }).catch(err => console.error('Failed to sync DB with Supabase on startup:', err));
 
-app.get('/api/supabase/status', (req, res) => {
-  res.json({
-    success: true,
-    configured: true,
-    url: process.env.SUPABASE_URL,
-    status: '🟢 Connected & Synced with Supabase Cloud Database'
-  });
-});
+// Note: Main /api/supabase/status route with full SQL migration schema is defined later in startServer()
 
 app.post('/api/supabase/sync', async (req, res) => {
   const ok = await syncDatabaseWithSupabase();
@@ -246,9 +241,9 @@ app.use('/api', (req, res, next) => {
     return next();
   }
 
-  // Allow app user ID header
+  // x-user-id header auth is only allowed in development mode for testing
   const userIdHeader = req.headers['x-user-id'];
-  if (userIdHeader) {
+  if (userIdHeader && process.env.NODE_ENV !== 'production') {
     (req as any).user = { id: userIdHeader };
     return next();
   }
@@ -266,11 +261,6 @@ app.use('/api', (req, res, next) => {
     (req as any).user = decoded; // Attach verified user to request
     next();
   } catch (err) {
-    // Fallback: If token expired but user session header is present, allow request
-    if (userIdHeader) {
-      (req as any).user = { id: userIdHeader };
-      return next();
-    }
     res.status(401).json({ error: 'Unauthorized. Invalid or expired token.' });
   }
 });
@@ -481,23 +471,27 @@ app.get('/api/whatsapp/devices/:deviceId/groups/:groupId/members', async (req, r
   }
 });
 
-// Mock endpoint to fetch WhatsApp group members
-app.get('/api/whatsapp/members', (req, res) => {
-  res.json([
-    { id: '1', name: 'User 1', number: '1234567890' },
-    { id: '2', name: 'User 2', number: '0987654321' }
-  ]);
-});
-
-// Debug and diagnostics endpoint
+// Debug and diagnostics endpoint (restricted to development mode only)
 app.get('/api/debug', (req, res) => {
+  if (process.env.NODE_ENV === 'production') {
+    return res.status(403).json({ error: 'Debug endpoint is disabled in production.' });
+  }
   const wsKeys = Array.from(activeConnections.keys());
   const socketKeys = Array.from(activeSockets.keys());
+  // Strip sensitive fields (passwords, tokens) from user objects
+  const safeUsers = getAllUsers().map(u => {
+    const { password, ...safe } = u as any;
+    return safe;
+  });
+  const safeDevices = getAllDevices().map(d => {
+    const { token, cloudApiKey, apiKey, ...safe } = d as any;
+    return safe;
+  });
   res.json({
     activeWebSockets: wsKeys,
     activeWhatsAppSockets: socketKeys,
-    devices: getAllDevices(),
-    users: getAllUsers()
+    devices: safeDevices,
+    users: safeUsers
   });
 });
 
@@ -4163,6 +4157,25 @@ if (!fs.existsSync(uploadsDir)) {
 }
 app.use('/uploads', express.static(uploadsDir));
 
+// Automatically cleanup temporary uploads older than 24 hours every 6 hours
+setInterval(() => {
+  try {
+    if (fs.existsSync(uploadsDir)) {
+      const now = Date.now();
+      const files = fs.readdirSync(uploadsDir);
+      for (const file of files) {
+        const filePath = path.join(uploadsDir, file);
+        const stat = fs.statSync(filePath);
+        if (now - stat.mtimeMs > 24 * 60 * 60 * 1000) {
+          fs.unlinkSync(filePath);
+        }
+      }
+    }
+  } catch (err) {
+    console.error('[Uploads Cleanup Error]', err);
+  }
+}, 6 * 60 * 60 * 1000);
+
 function saveMediaDataToPublicUrl(mediaData: string, prefix: string = 'media'): string {
   if (!mediaData) return '';
   if (mediaData.startsWith('http://') || mediaData.startsWith('https://')) {
@@ -4280,6 +4293,56 @@ async function uploadMediaToMetaCloudApi(
   } catch (err) {
     console.error('[Meta Media Upload Exception]', err);
     return null;
+  }
+}
+
+async function syncMetaCallingSettings(device: DeviceLink, sipSettings: any): Promise<{ success: boolean; data?: any; error?: string }> {
+  const accessToken = device.token || device.cloudApiKey;
+  if (!accessToken || !device.phoneId) {
+    return { success: false, error: 'بيانات Meta Cloud API غير مكتملة لهذا الخط' };
+  }
+
+  try {
+    const endpoint = `https://graph.facebook.com/v20.0/${device.phoneId}/settings`;
+    const payload: any = {};
+
+    if (sipSettings.enabled !== undefined) {
+      payload.calling = {
+        status: sipSettings.enabled ? 'ENABLED' : 'DISABLED'
+      };
+    }
+
+    if (sipSettings.sipServerHost) {
+      payload.sip = {
+        hostname: sipSettings.sipServerHost,
+        port: sipSettings.sipPort || 5061,
+        app_id: sipSettings.appId || '',
+        user_parameters: sipSettings.uriParameters || {}
+      };
+    }
+
+    console.log(`[Meta Calling Sync] Pushing SIP Calling settings to Meta Graph API for phoneId ${device.phoneId}...`);
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payload)
+    });
+
+    const resData = await res.json();
+    if (res.ok && resData.success !== false) {
+      console.log(`[Meta Calling Sync Success]`, resData);
+      return { success: true, data: resData };
+    } else {
+      console.error(`[Meta Calling Sync Error]`, resData);
+      const msg = resData?.error?.message || 'فشلت المزامنة مع Meta Cloud API';
+      return { success: false, error: msg, data: resData };
+    }
+  } catch (err: any) {
+    console.error('[Meta Calling Sync Exception]', err);
+    return { success: false, error: err.message || String(err) };
   }
 }
 
@@ -6749,6 +6812,71 @@ ${eventDetails.parking}. 📍`;
     return res.json({ thoughts, reply });
   });
 
+  // --- WHATSAPP SIP CALLING & CALL LOGS API ENDPOINTS ---
+  app.get('/api/whatsapp/calls', (req, res) => {
+    try {
+      const db = readDb();
+      res.json({ success: true, calls: db.callLogs || [] });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/whatsapp/calls', (req, res) => {
+    try {
+      const callLog = req.body;
+      if (!callLog.id) {
+        callLog.id = `call_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+      }
+      if (!callLog.startedAt) {
+        callLog.startedAt = new Date().toISOString();
+      }
+      const saved = saveCallLog(callLog);
+      res.json({ success: true, call: saved });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/whatsapp/devices/:deviceId/sip-settings', (req, res) => {
+    try {
+      const { deviceId } = req.params;
+      const device = getAllDevices().find(d => d.id === deviceId);
+      if (!device) return res.status(404).json({ error: 'Device not found' });
+      res.json({ success: true, sipCallingSettings: device.sipCallingSettings || { enabled: false } });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/whatsapp/devices/:deviceId/sip-settings', async (req, res) => {
+    try {
+      const { deviceId } = req.params;
+      const device = getAllDevices().find(d => d.id === deviceId);
+      if (!device) return res.status(404).json({ error: 'Device not found' });
+
+      const newSettings = req.body;
+      device.sipCallingSettings = {
+        ...(device.sipCallingSettings || {}),
+        ...newSettings
+      };
+      saveDevice(device);
+
+      let metaSyncResult = { success: true };
+      if (device.method === 'cloud_api' || device.gatewayType === 'meta_cloud') {
+        metaSyncResult = await syncMetaCallingSettings(device, device.sipCallingSettings);
+      }
+
+      res.json({
+        success: true,
+        sipCallingSettings: device.sipCallingSettings,
+        metaSync: metaSyncResult
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // --- REAL EXPOCORE WEBHOOK RECEIVER ---
   // This endpoint accepts webhook payload from ticket.expocore.net when a guest registers
   app.get('/api/expocore/webhook', (req, res) => {
@@ -6963,14 +7091,6 @@ ${eventDetails.parking}. 📍`;
     }
   } catch (err) {}
 
-  // Initialize Telegram Bot on server boot if token saved
-  try {
-    const pSet = getPaymentSettings();
-    if (pSet && pSet.telegramBotToken) {
-      startTelegramBotEngine(pSet.telegramBotToken);
-    }
-  } catch (err) {}
-
   app.post('/api/telegram/test-bot', async (req, res) => {
     try {
       const { token } = req.body;
@@ -7008,7 +7128,7 @@ ${eventDetails.parking}. 📍`;
   app.get('/api/agents/config', (req, res) => {
     try {
       const db = readDb();
-      res.json({ success: true, agentsConfig: db.agentsConfig || {} });
+      res.json({ success: true, configs: db.agentsConfig || {}, agentsConfig: db.agentsConfig || {} });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -7019,35 +7139,13 @@ ${eventDetails.parking}. 📍`;
       const { agentId, config } = req.body;
       const db = readDb();
       if (!db.agentsConfig) db.agentsConfig = {};
-      db.agentsConfig[agentId] = { ...(db.agentsConfig[agentId] || {}), ...config, updatedAt: new Date().toISOString() };
-      writeDb(db);
-      res.json({ success: true, agentId, config: db.agentsConfig[agentId] });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
-  });
-
-  app.get('/api/agents/config', (req, res) => {
-    try {
-      const db = readDb();
-      res.json({ success: true, configs: db.agentsConfig || {} });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
-  });
-
-  app.post('/api/agents/config', (req, res) => {
-    try {
-      const { agentId, config } = req.body;
-      const db = readDb();
-      if (!db.agentsConfig) db.agentsConfig = {};
-      if (agentId) {
-        db.agentsConfig[agentId] = config;
+      if (agentId && config) {
+        db.agentsConfig[agentId] = { ...(db.agentsConfig[agentId] || {}), ...config, updatedAt: new Date().toISOString() };
       } else if (config) {
         db.agentsConfig = { ...db.agentsConfig, ...config };
       }
       writeDb(db);
-      res.json({ success: true, configs: db.agentsConfig });
+      res.json({ success: true, configs: db.agentsConfig, agentId, config: agentId ? db.agentsConfig[agentId] : undefined });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -7126,47 +7224,7 @@ ${eventDetails.parking}. 📍`;
 
 
 
-  // Payment Settings API
-  app.get('/api/payment-settings', (req, res) => {
-    try {
-      res.json({ success: true, settings: getPaymentSettings() });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
-  });
 
-  app.post('/api/payment-settings', (req, res) => {
-    try {
-      const saved = savePaymentSettings(req.body);
-      if (saved && saved.telegramBotToken) {
-        startTelegramBotEngine(saved.telegramBotToken);
-      }
-      res.json({ success: true, settings: saved });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
-  });
-
-  // Telegram Bot Test & Activation API
-  app.post('/api/telegram/test-bot', async (req, res) => {
-    try {
-      const { token } = req.body;
-      if (!token) return res.status(400).json({ error: 'Token is required' });
-      const tgRes = await fetch(`https://api.telegram.org/bot${token}/getMe`);
-      const data = await tgRes.json();
-      if (data.ok) {
-        startTelegramBotEngine(token);
-        const pSet = getPaymentSettings();
-        cachedTelegramBotInfo = data.result;
-        savePaymentSettings({ ...pSet, telegramBotToken: token, telegramBotEnabled: true, telegramBotInfo: data.result });
-        res.json({ success: true, bot: data.result });
-      } else {
-        res.status(400).json({ error: 'invalid telegram bot token' });
-      }
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
-  });
 
   if (process.env.NODE_ENV !== 'production') {
     // @ts-ignore

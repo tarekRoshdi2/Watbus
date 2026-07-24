@@ -137,6 +137,34 @@ export interface DeviceLink {
   }>;
   flowStages?: FlowStage[];
   flowStagesEnabled?: boolean;
+  sipCallingSettings?: SipCallingSettings;
+}
+
+export interface SipCallingSettings {
+  enabled: boolean;
+  sipServerHost?: string;
+  sipPort?: number;
+  appId?: string;
+  uriParameters?: Record<string, string>;
+  allowIncomingCalls?: boolean;
+  routeToVoiceAi?: boolean;
+  aiVoiceAgentName?: string;
+  sipUsername?: string;
+  sipPassword?: string;
+}
+
+export interface CallLog {
+  id: string;
+  deviceId: string;
+  customerPhone: string;
+  customerName?: string;
+  callType: 'inbound' | 'outbound';
+  status: 'ringing' | 'connected' | 'completed' | 'missed' | 'rejected';
+  durationSeconds: number;
+  startedAt: string;
+  endedAt?: string;
+  aiTranscript?: string;
+  recordingUrl?: string;
 }
 
 export interface FlowStage {

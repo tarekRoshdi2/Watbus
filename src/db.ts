@@ -1,7 +1,7 @@
 import dotenv from 'dotenv';
 import fs from 'fs';
 import path from 'path';
-import { User, Conversation, Message, StatusStory, DeviceLink, Campaign, CatalogItem, OtpLog, OtpSettings, Folder, Ticket } from './types.js';
+import { User, Conversation, Message, StatusStory, DeviceLink, Campaign, CatalogItem, OtpLog, OtpSettings, Folder, Ticket, CallLog } from './types.js';
 import { backupDbToSupabase, restoreDbFromSupabase, isSupabaseConfigured } from './supabase.js';
 
 dotenv.config();
@@ -63,6 +63,7 @@ export interface DbSchema {
   agentStats?: Record<string, AgentStatsItem>;
   agentAuditLogs?: AgentAuditLog[];
   paymentSettings?: PaymentSettings;
+  callLogs?: CallLog[];
 }
 
 export interface AgentAuditLog {
@@ -124,9 +125,9 @@ const META_AI_USER: User = {
 
 const ADMIN_USER: User = {
   id: 'admin-tarek',
-  username: 'Tarek Roshdi',
-  email: 'tarekroshdi@gmail.com',
-  password: 'Tarek@2026',
+  username: process.env.ADMIN_USERNAME || 'Tarek Roshdi',
+  email: process.env.ADMIN_EMAIL || 'admin@chatcore.ai',
+  password: process.env.ADMIN_PASSWORD || 'ChangeMe@2026!',
   role: 'admin',
   avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=150&q=80',
   statusText: 'System Administrator',
@@ -1243,4 +1244,27 @@ export function deleteTicket(id: string): boolean {
     return true;
   }
   return false;
+}
+
+// Call Logs Management
+export function getCallLogs(): any[] {
+  const db = readDb();
+  if (!db.callLogs) {
+    db.callLogs = [];
+    writeDb(db);
+  }
+  return db.callLogs;
+}
+
+export function saveCallLog(log: any): any {
+  const db = readDb();
+  if (!db.callLogs) db.callLogs = [];
+  const index = db.callLogs.findIndex((l: any) => l.id === log.id);
+  if (index >= 0) {
+    db.callLogs[index] = log;
+  } else {
+    db.callLogs.unshift(log);
+  }
+  writeDb(db);
+  return log;
 }
