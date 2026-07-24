@@ -225,3 +225,18 @@ export interface Folder {
   color?: string; // Color code (badge color)
   ownerId?: string; // SaaS tenant isolation
 }
+
+export interface Ticket {
+  id: string;
+  customer: string;
+  phone: string;
+  category: 'technical' | 'billing' | 'account' | 'sales' | 'general';
+  priority: 'urgent' | 'high' | 'medium' | 'low';
+  status: 'open' | 'in_progress' | 'resolved' | 'escalated';
+  time: string;
+  issue: string;
+  solution: string;
+  assignedTo: string;
+  createdAt?: string;
+  updatedAt?: string;
+}

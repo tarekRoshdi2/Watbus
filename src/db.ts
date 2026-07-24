@@ -1,8 +1,8 @@
 import dotenv from 'dotenv';
 import fs from 'fs';
 import path from 'path';
-import { User, Conversation, Message, StatusStory, DeviceLink, Campaign, CatalogItem, OtpLog, OtpSettings, Folder } from './types.js';
-import { backupDbToSupabase } from './supabase.js';
+import { User, Conversation, Message, StatusStory, DeviceLink, Campaign, CatalogItem, OtpLog, OtpSettings, Folder, Ticket } from './types.js';
+import { backupDbToSupabase, restoreDbFromSupabase, isSupabaseConfigured } from './supabase.js';
 
 dotenv.config();
 
@@ -58,6 +58,7 @@ export interface DbSchema {
   otpLogs?: OtpLog[];
   otpSettings?: OtpSettings;
   folders?: Record<string, Folder>;
+  tickets?: Record<string, Ticket>;
   agentsConfig?: Record<string, AgentConfigItem>;
   agentStats?: Record<string, AgentStatsItem>;
   agentAuditLogs?: AgentAuditLog[];
@@ -211,6 +212,34 @@ export function readDb(): DbSchema {
   }
 }
 
+export async function syncDatabaseWithSupabase(): Promise<boolean> {
+  try {
+    const supabaseRecord = await restoreDbFromSupabase();
+    if (supabaseRecord && supabaseRecord.data) {
+      console.log('[Supabase DB Sync] Restoring latest database state from Supabase...');
+      const remoteDb = supabaseRecord.data;
+      const currentLocal = readDb();
+      const mergedDb: DbSchema = {
+        ...currentLocal,
+        ...remoteDb,
+        users: { ...currentLocal.users, ...(remoteDb.users || {}) },
+        conversations: { ...currentLocal.conversations, ...(remoteDb.conversations || {}) },
+        tickets: { ...currentLocal.tickets, ...(remoteDb.tickets || {}) },
+        agentsConfig: { ...currentLocal.agentsConfig, ...(remoteDb.agentsConfig || {}) },
+        campaigns: { ...currentLocal.campaigns, ...(remoteDb.campaigns || {}) },
+        devices: { ...currentLocal.devices, ...(remoteDb.devices || {}) }
+      };
+      cachedDb = mergedDb;
+      fs.writeFileSync(DB_FILE, JSON.stringify(mergedDb, null, 2), 'utf-8');
+      console.log('[Supabase DB Sync] Database state successfully synchronized with Supabase cloud!');
+      return true;
+    }
+  } catch (err) {
+    console.error('[Supabase DB Sync Error]', err);
+  }
+  return false;
+}
+
 let writeTimeout: NodeJS.Timeout | null = null;
 let isWriting = false;
 let pendingWrite = false;
@@ -229,14 +258,13 @@ export function writeDb(data: DbSchema): void {
     }
     
     await performWrite(data);
-  }, 2000); // 2-second debounce window
+  }, 500); // 500ms fast debounce window
 }
 
 async function performWrite(data: DbSchema) {
   isWriting = true;
   pendingWrite = false;
   try {
-    // console.log(`[Database Write] Writing database to disk asynchronously... Total users: ${Object.keys(data.users).length}`);
     await fs.promises.writeFile(DB_FILE, JSON.stringify(data, null, 2), 'utf-8');
     
     // Back up to Supabase asynchronously on every database write
@@ -1173,4 +1201,40 @@ export function recordAgentActivity(
 export function getAgentAuditLogs(limit = 50): AgentAuditLog[] {
   const db = readDb();
   return (db.agentAuditLogs || []).slice(0, limit);
+}
+
+export function getAllTickets(): Ticket[] {
+  const db = readDb();
+  if (!db.tickets) {
+    db.tickets = {
+      'TCK-9482': { id: 'TCK-9482', customer: 'م. أحمد الشريف', phone: '+201123456789', category: 'technical', priority: 'high', status: 'open', time: '11:40 AM', issue: 'توقف المزامنة السحابية للرسائل عند استخدام شريحة جديدة', solution: 'تم تحديث توكن الجلسة وإعادة تشغيل البورت الخاص بالجهاز.', assignedTo: 'مهندس عمر الدعم', createdAt: new Date().toISOString() },
+      'TCK-8819': { id: 'TCK-8819', customer: 'د. سارة عثمان', phone: '+201098765432', category: 'billing', priority: 'urgent', status: 'in_progress', time: '11:15 AM', issue: 'عدم احتساب الخصم المخصص على فاتورة الاشتراكات البنكية', solution: 'سيقوم مسؤول الفواتير بإلغاء الفاتورة السابقة وتوليد كود خصم جديد بنسبة 20%.', assignedTo: 'الأستاذ صلاح الحسابات', createdAt: new Date().toISOString() },
+      'TCK-7740': { id: 'TCK-7740', customer: 'شركة النور للمقاولات', phone: '+201234567890', category: 'account', priority: 'medium', status: 'resolved', time: '10:30 AM', issue: 'طلب ربط حساب Meta Business Suite بـ OTP جديد', solution: 'تمت إتاحة نموذج الاعتماد وإدخال كود التفعيل بنجاح.', assignedTo: 'مهندس عمر الدعم', createdAt: new Date().toISOString() },
+      'TCK-6612': { id: 'TCK-6612', customer: 'خالد عبد الفتاح', phone: '+201555443322', category: 'technical', priority: 'low', status: 'escalated', time: '09:45 AM', issue: 'استفسار عن طريقة تصدير جهات الاتصال إلى ملف Excel', solution: 'تم تحويل المحادثة لممثل خدمة العملاء المباشر مع إرسال فيديو توضيحي.', assignedTo: 'مشرف بشرى', createdAt: new Date().toISOString() }
+    };
+    writeDb(db);
+  }
+  return Object.values(db.tickets);
+}
+
+export function saveTicket(ticket: Ticket): Ticket {
+  const db = readDb();
+  if (!db.tickets) db.tickets = {};
+  const updatedTicket = {
+    ...ticket,
+    updatedAt: new Date().toISOString()
+  };
+  db.tickets[ticket.id] = updatedTicket;
+  writeDb(db);
+  return updatedTicket;
+}
+
+export function deleteTicket(id: string): boolean {
+  const db = readDb();
+  if (db.tickets && db.tickets[id]) {
+    delete db.tickets[id];
+    writeDb(db);
+    return true;
+  }
+  return false;
 }

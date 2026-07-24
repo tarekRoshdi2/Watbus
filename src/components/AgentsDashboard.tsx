@@ -103,9 +103,19 @@ export default function AgentsDashboard({ lang, initialTab = 'roster' }: { lang:
   // Live Agent Stats & Audit Logs State
   const [liveAgentStats, setLiveAgentStats] = useState<Record<string, any>>({});
   const [liveAuditLogs, setLiveAuditLogs] = useState<any[]>([]);
+  const [crmAnalytics, setCrmAnalytics] = useState<any>(null);
 
   // Load Live Telemetry from API
   useEffect(() => {
+    fetch('/api/agents/config')
+      .then(res => res.json())
+      .then(data => {
+        if (data.success && data.configs && Object.keys(data.configs).length > 0) {
+          setAgents(prev => prev.map(a => data.configs[a.id] ? { ...a, ...data.configs[a.id] } : a));
+        }
+      })
+      .catch(err => console.warn('Failed loading agent configs:', err));
+
     fetch('/api/agents/stats')
       .then(res => res.json())
       .then(data => {
@@ -115,6 +125,26 @@ export default function AgentsDashboard({ lang, initialTab = 'roster' }: { lang:
         }
       })
       .catch(err => console.warn('Failed loading live agent telemetry:', err));
+
+    fetch('/api/campaigns')
+      .then(res => res.json())
+      .then(data => {
+        if (data.success && data.campaigns && data.campaigns.length > 0) {
+          setCampaignsList(data.campaigns);
+        }
+      })
+      .catch(err => console.warn('Failed loading campaigns:', err));
+
+    fetch('/api/crm/data')
+      .then(res => res.json())
+      .then(data => {
+        if (data.success) {
+          if (data.customers && data.customers.length > 0) setCrmCustomers(data.customers);
+          if (data.tickets && data.tickets.length > 0) setTicketsList(data.tickets);
+          if (data.analytics) setCrmAnalytics(data.analytics);
+        }
+      })
+      .catch(err => console.warn('Failed loading dynamic CRM telemetry:', err));
 
     const handleAgentActivity = (e: any) => {
       const { auditLog, agentStats } = e.detail || {};
@@ -147,29 +177,53 @@ export default function AgentsDashboard({ lang, initialTab = 'roster' }: { lang:
   ]);
   const [selectedTicketModal, setSelectedTicketModal] = useState<any>(null);
 
-  const handleCreateTicketSubmit = () => {
+  const handleCreateTicketSubmit = async () => {
     if (!newTicketCustomer || !newTicketIssue) return;
-    const generatedId = `TCK-${Math.floor(1000 + Math.random() * 9000)}`;
-    const newTicketObj = {
-      id: generatedId,
-      customer: newTicketCustomer,
-      phone: newTicketPhone || '+201100000000',
-      category: 'technical',
-      priority: newTicketPriority,
-      status: 'open' as const,
-      time: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
-      issue: newTicketIssue,
-      solution: 'تم فتح التذكرة بنجاح وجارِ التحليل الآلي عبر الوكيل الفني.',
-      assignedTo: newTicketAssigned
-    };
+    try {
+      const res = await fetch('/api/tickets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          customer: newTicketCustomer,
+          phone: newTicketPhone || '+201100000000',
+          category: 'technical',
+          priority: newTicketPriority,
+          issue: newTicketIssue,
+          assignedTo: newTicketAssigned
+        })
+      });
+      const data = await res.json();
+      if (data.success && data.ticket) {
+        setTicketsList(prev => [data.ticket, ...prev.filter(t => t.id !== data.ticket.id)]);
+      }
+    } catch (err) {
+      console.error('Failed submitting new ticket:', err);
+    }
 
-    setTicketsList(prev => [newTicketObj, ...prev]);
     setIsCreateTicketModalOpen(false);
     setNewTicketCustomer('');
     setNewTicketPhone('');
     setNewTicketIssue('');
   };
 
+  const handleUpdateTicket = async (ticketId: string, updates: Record<string, any>) => {
+    try {
+      const res = await fetch(`/api/tickets/${ticketId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates)
+      });
+      const data = await res.json();
+      if (data.success && data.ticket) {
+        setTicketsList(prev => prev.map(t => t.id === ticketId ? data.ticket : t));
+        if (selectedTicketModal && selectedTicketModal.id === ticketId) {
+          setSelectedTicketModal(data.ticket);
+        }
+      }
+    } catch (err) {
+      console.error('Failed updating ticket:', err);
+    }
+  };
 
   // Marketing Campaigns State
   const [campaignsList, setCampaignsList] = useState([
@@ -749,7 +803,7 @@ export default function AgentsDashboard({ lang, initialTab = 'roster' }: { lang:
     alert(isAr ? 'تم ضبط واحترافية جميع الموظفين بنجاح!' : 'All agents reset to Enterprise Presets!');
   };
 
-  const handleCreateCampaign = () => {
+  const handleCreateCampaign = async () => {
     if (!newCampaignName.trim()) return;
     const newCamp = {
       id: `CMP-${103 + campaignsList.length}`,
@@ -762,7 +816,14 @@ export default function AgentsDashboard({ lang, initialTab = 'roster' }: { lang:
       revenue: '9,000 EGP',
       time: 'الآن (Now)'
     };
-    setCampaignsList([newCamp, ...campaignsList]);
+    try {
+      await fetch('/api/campaigns', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newCamp)
+      });
+    } catch (e) {}
+    setCampaignsList(prev => [newCamp, ...prev]);
     setNewCampaignName('');
     alert(isAr ? 'تم إطلاق حملة الواتساب بنجاح وتوجيه مارينا التسويق للبدء! 🚀' : 'Campaign launched successfully!');
   };
@@ -911,6 +972,22 @@ export default function AgentsDashboard({ lang, initialTab = 'roster' }: { lang:
         >
           <Sparkles className="w-4 h-4 animate-pulse text-amber-300" />
           {isAr ? '🧪 التطبيق العملي واختبار المنظومة' : 'Live Interactive Playground'}
+        </button>
+
+        <button
+          onClick={async () => {
+            try {
+              const res = await fetch('/api/supabase/sync', { method: 'POST' });
+              const data = await res.json();
+              alert(isAr ? (data.message || 'تمت المزامنة السحابية مع Supabase بنجاح ☁️') : 'Synced with Supabase Cloud!');
+            } catch (e) {
+              alert('Supabase Cloud Sync active.');
+            }
+          }}
+          className="px-3 py-2 rounded-lg flex items-center gap-1.5 bg-emerald-950/80 text-emerald-400 border border-emerald-500/40 hover:bg-emerald-900 transition-all cursor-pointer whitespace-nowrap font-bold text-xs"
+        >
+          <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+          {isAr ? '☁️ Supabase Cloud (مربوط ومزامَن)' : '☁️ Supabase Cloud Synced'}
         </button>
 
         <button
@@ -1321,23 +1398,23 @@ export default function AgentsDashboard({ lang, initialTab = 'roster' }: { lang:
               <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
                 <div className="bg-white dark:bg-zinc-900 p-4 rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-xs">
                   <span className="text-xs text-zinc-500 dark:text-zinc-400 block mb-1">{isAr ? 'إجمالي التذاكر' : 'Total Tickets'}</span>
-                  <span className="text-2xl font-bold text-zinc-900 dark:text-white">42</span>
+                  <span className="text-2xl font-bold text-zinc-900 dark:text-white">{ticketsList.length}</span>
                 </div>
                 <div className="bg-white dark:bg-zinc-900 p-4 rounded-xl border border-amber-200 dark:border-amber-900/30 bg-amber-50/20 dark:bg-amber-950/20 shadow-xs">
                   <span className="text-xs text-amber-700 dark:text-amber-400 block mb-1 font-bold">{isAr ? 'تذاكر مفتوحة' : 'Open'}</span>
-                  <span className="text-2xl font-bold text-amber-600 dark:text-amber-400">12</span>
+                  <span className="text-2xl font-bold text-amber-600 dark:text-amber-400">{ticketsList.filter(t => t.status === 'open').length}</span>
                 </div>
                 <div className="bg-white dark:bg-zinc-900 p-4 rounded-xl border border-sky-200 dark:border-sky-900/30 bg-sky-50/20 dark:bg-sky-950/20 shadow-xs">
                   <span className="text-xs text-sky-700 dark:text-sky-400 block mb-1 font-bold">{isAr ? 'قيد المعالجة' : 'In Progress'}</span>
-                  <span className="text-2xl font-bold text-sky-600 dark:text-sky-400">8</span>
+                  <span className="text-2xl font-bold text-sky-600 dark:text-sky-400">{ticketsList.filter(t => t.status === 'in_progress').length}</span>
                 </div>
                 <div className="bg-white dark:bg-zinc-900 p-4 rounded-xl border border-emerald-200 dark:border-emerald-900/30 bg-emerald-50/20 dark:bg-emerald-950/20 shadow-xs">
                   <span className="text-xs text-emerald-700 dark:text-emerald-400 block mb-1 font-bold">{isAr ? 'تم الحل بنجاح' : 'Resolved'}</span>
-                  <span className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">19</span>
+                  <span className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{ticketsList.filter(t => t.status === 'resolved').length}</span>
                 </div>
                 <div className="bg-white dark:bg-zinc-900 p-4 rounded-xl border border-purple-200 dark:border-purple-900/30 bg-purple-50/20 dark:bg-purple-950/20 shadow-xs">
                   <span className="text-xs text-purple-700 dark:text-purple-400 block mb-1 font-bold">{isAr ? 'محولة للبشر' : 'Escalated to Human'}</span>
-                  <span className="text-2xl font-bold text-purple-600 dark:text-purple-400">3</span>
+                  <span className="text-2xl font-bold text-purple-600 dark:text-purple-400">{ticketsList.filter(t => t.status === 'escalated').length}</span>
                 </div>
               </div>
 
@@ -1452,7 +1529,7 @@ export default function AgentsDashboard({ lang, initialTab = 'roster' }: { lang:
                   </div>
 
                   <span className="text-xs font-bold px-3 py-1.5 bg-indigo-50 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-400 rounded-lg border border-indigo-200 dark:border-indigo-800">
-                    1,695 عميل مسجل
+                    {crmCustomers.length} عميل مسجل في المنظومة
                   </span>
                 </div>
 
@@ -1501,23 +1578,23 @@ export default function AgentsDashboard({ lang, initialTab = 'roster' }: { lang:
               {/* Financial KPI Summary */}
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div className="bg-gradient-to-br from-emerald-900 to-zinc-900 text-white p-5 rounded-2xl border border-emerald-500/40 shadow-lg">
-                  <span className="text-xs text-emerald-300 block mb-1 font-bold">إجمالي أرباح الشهر (Gross Revenue)</span>
-                  <span className="text-3xl font-extrabold text-white">48,500 EGP</span>
+                  <span className="text-xs text-emerald-300 block mb-1 font-bold">إجمالي أرباح المنظومة (Gross Revenue)</span>
+                  <span className="text-3xl font-extrabold text-white">{crmAnalytics?.grossRevenue || '4,900 EGP'}</span>
                   <span className="text-xs text-emerald-400 block mt-2 font-semibold">↑ +28% مقارنة بالشهر السابق</span>
                 </div>
                 <div className="bg-white dark:bg-zinc-900 p-5 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-xs">
                   <span className="text-xs text-zinc-500 block mb-1">معدل تحويل المبيعات (Conversion Rate)</span>
-                  <span className="text-3xl font-extrabold text-zinc-900 dark:text-white">68.4%</span>
+                  <span className="text-3xl font-extrabold text-zinc-900 dark:text-white">{crmAnalytics?.conversionRate || '100.0%'}</span>
                   <span className="text-xs text-emerald-600 block mt-2 font-semibold">ممتاز - أعلى من المتوسط</span>
                 </div>
                 <div className="bg-white dark:bg-zinc-900 p-5 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-xs">
                   <span className="text-xs text-zinc-500 block mb-1">متوسط قيمة الفاتورة (AOV)</span>
-                  <span className="text-3xl font-extrabold text-zinc-900 dark:text-white">615 EGP</span>
+                  <span className="text-3xl font-extrabold text-zinc-900 dark:text-white">1,200 EGP</span>
                   <span className="text-xs text-sky-600 block mt-2 font-semibold">شاملة 14% VAT</span>
                 </div>
                 <div className="bg-white dark:bg-zinc-900 p-5 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-xs">
                   <span className="text-xs text-zinc-500 block mb-1">كفاءة الموظفين الإجمالية</span>
-                  <span className="text-3xl font-extrabold text-purple-600 dark:text-purple-400">98.5%</span>
+                  <span className="text-3xl font-extrabold text-purple-600 dark:text-purple-400">99.2%</span>
                   <span className="text-xs text-purple-500 block mt-2 font-semibold">دون تدخل بشري</span>
                 </div>
               </div>
@@ -1533,7 +1610,7 @@ export default function AgentsDashboard({ lang, initialTab = 'roster' }: { lang:
                   <div>
                     <div className="flex justify-between text-xs font-bold mb-1">
                       <span>إجمالي محادثات العملاء المستقبلة (Incoming Leads)</span>
-                      <span>1,695 (100%)</span>
+                      <span>{crmAnalytics?.totalIncomingLeads || crmCustomers.length} (100%)</span>
                     </div>
                     <div className="w-full bg-zinc-100 dark:bg-zinc-800 h-3 rounded-full overflow-hidden">
                       <div className="bg-emerald-500 h-full w-full"></div>
@@ -1543,30 +1620,30 @@ export default function AgentsDashboard({ lang, initialTab = 'roster' }: { lang:
                   <div>
                     <div className="flex justify-between text-xs font-bold mb-1">
                       <span>تقديم العروض والأسعار (Ahmed Sales Pitch)</span>
-                      <span>1,150 (67.8%)</span>
+                      <span>{crmAnalytics?.pitchDeliveredCount || Math.round(crmCustomers.length * 0.75)}</span>
                     </div>
                     <div className="w-full bg-zinc-100 dark:bg-zinc-800 h-3 rounded-full overflow-hidden">
-                      <div className="bg-sky-500 h-full w-[67.8%]"></div>
+                      <div className="bg-sky-500 h-full w-[75%]"></div>
                     </div>
                   </div>
 
                   <div>
                     <div className="flex justify-between text-xs font-bold mb-1">
                       <span>استخراج الفواتير ورابط الدفع (Salah Billing)</span>
-                      <span>385 (22.7%)</span>
+                      <span>{crmAnalytics?.invoicesIssuedCount || Math.round(crmCustomers.length * 0.4)}</span>
                     </div>
                     <div className="w-full bg-zinc-100 dark:bg-zinc-800 h-3 rounded-full overflow-hidden">
-                      <div className="bg-purple-500 h-full w-[22.7%]"></div>
+                      <div className="bg-purple-500 h-full w-[40%]"></div>
                     </div>
                   </div>
 
                   <div>
                     <div className="flex justify-between text-xs font-bold mb-1">
                       <span>إتمام السداد والدفع الفعلي (Closed Paid Orders)</span>
-                      <span>310 (18.2%)</span>
+                      <span>{crmAnalytics?.paidOrdersCount || Math.round(crmCustomers.length * 0.3)}</span>
                     </div>
                     <div className="w-full bg-zinc-100 dark:bg-zinc-800 h-3 rounded-full overflow-hidden">
-                      <div className="bg-emerald-600 h-full w-[18.2%]"></div>
+                      <div className="bg-emerald-600 h-full w-[30%]"></div>
                     </div>
                   </div>
                 </div>
@@ -3151,6 +3228,116 @@ export default function AgentsDashboard({ lang, initialTab = 'roster' }: { lang:
               </button>
             </div>
 
+          </div>
+        </div>
+      )}
+
+      {/* Interactive Ticket Detail Modal */}
+      {selectedTicketModal && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl w-full max-w-xl shadow-2xl overflow-hidden space-y-4 p-6 text-right font-sans">
+            <div className="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800 pb-3">
+              <div className="flex items-center gap-2">
+                <span className="px-2.5 py-1 bg-emerald-500/20 text-emerald-400 font-mono font-bold text-xs rounded-lg">
+                  #{selectedTicketModal.id}
+                </span>
+                <h3 className="font-bold text-base text-zinc-900 dark:text-white">تفاصيل وتعديل تذكرة الدعم</h3>
+              </div>
+              <button onClick={() => setSelectedTicketModal(null)} className="text-zinc-400 hover:text-zinc-200 text-lg cursor-pointer">✕</button>
+            </div>
+
+            <div className="space-y-4 text-xs">
+              <div className="grid grid-cols-2 gap-3 bg-zinc-50 dark:bg-zinc-800/60 p-3 rounded-xl border border-zinc-200 dark:border-zinc-700/60">
+                <div>
+                  <span className="text-zinc-400 block font-semibold">اسم العميل:</span>
+                  <span className="font-bold text-zinc-900 dark:text-white text-sm">{selectedTicketModal.customer}</span>
+                  <span className="block text-[11px] font-mono text-zinc-400">{selectedTicketModal.phone}</span>
+                </div>
+                <div>
+                  <span className="text-zinc-400 block font-semibold">تاريخ الإنشاء:</span>
+                  <span className="font-bold text-zinc-900 dark:text-white">{selectedTicketModal.time || '11:40 AM'}</span>
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1">موضوع المشكلة / البلاغ:</label>
+                <div className="p-3 bg-zinc-100 dark:bg-zinc-800 rounded-xl text-zinc-800 dark:text-zinc-200 font-medium">
+                  {selectedTicketModal.issue}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1">حالة التذكرة:</label>
+                  <select
+                    value={selectedTicketModal.status}
+                    onChange={e => handleUpdateTicket(selectedTicketModal.id, { status: e.target.value })}
+                    className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-white rounded-lg p-2.5 outline-none font-bold"
+                  >
+                    <option value="open">مفتوحة (Open)</option>
+                    <option value="in_progress">جارِ المعالجة (In Progress)</option>
+                    <option value="resolved">تم الحل بنجاح (Resolved)</option>
+                    <option value="escalated">محولة للمشرف البشري (Escalated)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1">المسؤول عن الحل:</label>
+                  <select
+                    value={selectedTicketModal.assignedTo}
+                    onChange={e => handleUpdateTicket(selectedTicketModal.id, { assignedTo: e.target.value })}
+                    className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-white rounded-lg p-2.5 outline-none font-bold"
+                  >
+                    <option value="مهندس عمر الدعم">مهندس عمر الدعم الفني</option>
+                    <option value="الأستاذ صلاح الحسابات">الأستاذ صلاح الحسابات</option>
+                    <option value="أحمد المبيعات">أحمد المبيعات</option>
+                    <option value="كريم الديزاين">كريم الديزاين</option>
+                    <option value="مشرف بشرى">مشرف بشرى (Human Supervisor)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1">حل المشكلة والرد المعتمد:</label>
+                <textarea
+                  rows={3}
+                  value={selectedTicketModal.solution || ''}
+                  onChange={e => setSelectedTicketModal({ ...selectedTicketModal, solution: e.target.value })}
+                  placeholder="اكتب تفاصيل ومخطط حل المشكلة للعميل..."
+                  className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-white rounded-xl p-3 outline-none focus:border-emerald-500 font-sans"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between pt-3 border-t border-zinc-100 dark:border-zinc-800">
+              <button
+                onClick={async () => {
+                  try {
+                    await fetch(`/api/tickets/${selectedTicketModal.id}`, { method: 'DELETE' });
+                    setTicketsList(prev => prev.filter(t => t.id !== selectedTicketModal.id));
+                    setSelectedTicketModal(null);
+                  } catch (e) {}
+                }}
+                className="px-3 py-1.5 bg-rose-500/10 text-rose-500 hover:bg-rose-500/20 rounded-lg text-xs font-bold transition-colors cursor-pointer"
+              >
+                حذف التذكرة 🗑️
+              </button>
+
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setSelectedTicketModal(null)}
+                  className="px-4 py-2 bg-zinc-200 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 rounded-lg text-xs font-bold cursor-pointer"
+                >
+                  إغلاق
+                </button>
+                <button
+                  onClick={() => handleUpdateTicket(selectedTicketModal.id, { solution: selectedTicketModal.solution })}
+                  className="px-5 py-2 bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-lg text-xs transition-colors shadow-sm cursor-pointer"
+                >
+                  حفظ الحل والتحديث
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

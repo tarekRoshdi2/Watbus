@@ -79,7 +79,7 @@ export default function Sidebar({
       const recipientName = c.recipient?.username || '';
       const matchesSearch = recipientName.toLowerCase().includes((searchText || '').toLowerCase());
       const matchesLabel = selectedLabelFilter === 'All' || c.label === selectedLabelFilter;
-      const matchesDevice = selectedDeviceId === 'all' || c.deviceId === selectedDeviceId;
+      const matchesDevice = selectedDeviceId === 'all' || c.deviceId === selectedDeviceId || !c.deviceId || (devices || []).length <= 1;
       const matchesFolder = selectedFolderId === null || c.folderId === selectedFolderId;
       return matchesSearch && matchesLabel && matchesDevice && matchesFolder;
     })

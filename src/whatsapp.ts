@@ -1,6 +1,6 @@
 import { SocksProxyAgent } from 'socks-proxy-agent';
 import { HttpsProxyAgent } from 'https-proxy-agent';
-import makeWASocket, { useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } from '@whiskeysockets/baileys';
+import makeWASocket, { useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion, downloadMediaMessage } from '@whiskeysockets/baileys';
 import pino from 'pino';
 import path from 'path';
 import fs from 'fs';
@@ -309,7 +309,7 @@ function getMessageText(messageObj: any): string {
 /**
  * Sync a single incoming/outgoing Baileys message to local database
  */
-function syncIncomingBaileysMessage(sock: any, jid: string, pushName: string | undefined, messageContent: any, fromMe: boolean, timestamp: number, messageId: string, deviceId: string, isHistory = false) {
+async function syncIncomingBaileysMessage(sock: any, jid: string, pushName: string | undefined, messageContent: any, fromMe: boolean, timestamp: number, messageId: string, deviceId: string, isHistory = false) {
   // 1. Get or create contact user in our database
   const contactUser = getOrCreateContactUser(jid, pushName);
 
@@ -364,9 +364,41 @@ function syncIncomingBaileysMessage(sock: any, jid: string, pushName: string | u
   }
 
   let type: 'text' | 'image' | 'audio' | 'document' = 'text';
-  if (messageContent?.imageMessage) type = 'image';
-  if (messageContent?.audioMessage) type = 'audio';
-  if (messageContent?.documentMessage) type = 'document';
+  let mediaUrl: string | undefined = undefined;
+
+  const cleanObj = getRealMessageContent(messageContent);
+
+  if (cleanObj?.imageMessage) {
+    type = 'image';
+    try {
+      const buffer = await downloadMediaMessage(
+        { key: { id: messageId, remoteJid: jid }, message: messageContent },
+        'buffer',
+        {}
+      );
+      const mime = cleanObj.imageMessage.mimetype || 'image/jpeg';
+      mediaUrl = `data:${mime};base64,${buffer.toString('base64')}`;
+      console.log(`[syncIncomingBaileysMessage] Downloaded incoming image (${buffer.length} bytes) for message ${messageId}`);
+    } catch (err) {
+      console.error('[syncIncomingBaileysMessage] Failed downloading incoming image buffer:', err);
+    }
+  } else if (cleanObj?.audioMessage) {
+    type = 'audio';
+    try {
+      const buffer = await downloadMediaMessage(
+        { key: { id: messageId, remoteJid: jid }, message: messageContent },
+        'buffer',
+        {}
+      );
+      const mime = cleanObj.audioMessage.mimetype || 'audio/ogg; codecs=opus';
+      mediaUrl = `data:${mime};base64,${buffer.toString('base64')}`;
+      console.log(`[syncIncomingBaileysMessage] Downloaded incoming audio (${buffer.length} bytes) for message ${messageId}`);
+    } catch (err) {
+      console.error('[syncIncomingBaileysMessage] Failed downloading incoming audio buffer:', err);
+    }
+  } else if (cleanObj?.documentMessage) {
+    type = 'document';
+  }
 
   const dateStr = new Date(timestamp * 1000).toISOString();
 
@@ -392,6 +424,7 @@ function syncIncomingBaileysMessage(sock: any, jid: string, pushName: string | u
       recipientId: fromMe ? contactUser.id : realUser.id,
       content: text,
       type,
+      mediaUrl,
       status: 'read',
       timestamp: dateStr
     };

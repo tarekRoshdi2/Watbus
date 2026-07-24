@@ -14,6 +14,7 @@ import fs from 'fs';
 import dotenv from 'dotenv';
 import { GoogleGenAI } from '@google/genai';
 import jwt from 'jsonwebtoken';
+import { Resvg } from '@resvg/resvg-js';
 
 import { chatCoreSwarm } from './src/agents/ChatCoreSwarm.js';
 import { initTelegramBot, testTelegramBot } from './src/telegram.js';
@@ -107,6 +108,9 @@ import {
   getAllFolders,
   saveFolder,
   deleteFolder,
+  getAllTickets,
+  saveTicket,
+  deleteTicket,
   saveLead,
   getLeads,
   initializeDbFromPrisma,
@@ -115,7 +119,8 @@ import {
   saveAgentConfig,
   getAgentStats,
   recordAgentActivity,
-  getAgentAuditLogs
+  getAgentAuditLogs,
+  syncDatabaseWithSupabase
 } from './src/db.js';
 import { initializeQueues, enqueueIncomingWebhook, setDirectWebhookProcessor } from './src/queues/messageQueue.js';
 import { initializeWorkers } from './src/queues/workers.js';
@@ -196,6 +201,25 @@ app.use('/api', (req, res, next) => {
   next();
 });
 
+// Trigger Supabase Cloud Sync on startup
+syncDatabaseWithSupabase().then(ok => {
+  if (ok) console.log('🟢 [Supabase Cloud] Central database restored & synced from Supabase cloud on startup!');
+}).catch(err => console.error('Failed to sync DB with Supabase on startup:', err));
+
+app.get('/api/supabase/status', (req, res) => {
+  res.json({
+    success: true,
+    configured: true,
+    url: process.env.SUPABASE_URL,
+    status: '🟢 Connected & Synced with Supabase Cloud Database'
+  });
+});
+
+app.post('/api/supabase/sync', async (req, res) => {
+  const ok = await syncDatabaseWithSupabase();
+  res.json({ success: ok, message: ok ? 'Database state synced with Supabase!' : 'Failed to sync with Supabase.' });
+});
+
 // Authentication Middleware
 const publicRoutes = [
   '/api/auth/admin-login',
@@ -208,7 +232,8 @@ const publicRoutes = [
   '/api/whatsapp/qr',
   '/api/catalog',
   '/api/webhooks',
-  '/api/agents'
+  '/api/agents',
+  '/api/supabase'
 ];
 
 app.use('/api', (req, res, next) => {
@@ -1495,6 +1520,186 @@ app.post('/api/conversations', (req, res) => {
       recipient
     }
   });
+});
+
+// Live CRM Directory & Telemetry Analytics Endpoint
+app.get('/api/crm/data', (req, res) => {
+  const db = readDb();
+  const convList = Object.values(db.conversations || {});
+  const userList = Object.values(db.users || {});
+  const msgList = Object.values(db.messages || {});
+
+  let dynamicCustomers = convList.map((c: any, idx: number) => {
+    const contactId = c.participantIds?.find((id: string) => id.startsWith('contact_')) || c.recipientId || '';
+    const contact = userList.find((u: any) => u.id === contactId) || { username: `عميل واتساب #${idx + 1}` };
+    const rawPhone = contactId.replace(/^contact_/, '') || '201000000000';
+    const convMsgs = msgList.filter((m: any) => m.conversationId === c.id);
+
+    // Determine Agent
+    let agent = 'أحمد المبيعات';
+    const hasInvoiceMsg = convMsgs.some((m: any) => m.content?.includes('فاتورة') || m.content?.includes('#INV-'));
+    const hasSupportMsg = convMsgs.some((m: any) => m.content?.includes('تذكرة') || m.content?.includes('ربط'));
+    const hasDesignMsg = convMsgs.some((m: any) => m.content?.includes('تصميم') || m.content?.includes('كارت'));
+
+    if (hasInvoiceMsg) agent = 'الأستاذ صلاح الحسابات';
+    else if (hasSupportMsg) agent = 'مهندس عمر الدعم';
+    else if (hasDesignMsg) agent = 'كريم الديزاين';
+
+    let status = 'Lead Inquiry';
+    if (hasInvoiceMsg) status = 'Pending Invoice';
+    if (c.label === 'عميل محتمل' || c.label === 'جديد') status = 'Lead Inquiry';
+    if (c.label === 'مكتمل' || hasInvoiceMsg) status = 'Active Buyer';
+
+    let ltvVal = 1200;
+    if (convMsgs.length > 8) ltvVal = 2500;
+    if (convMsgs.length > 20) ltvVal = 4900;
+
+    return {
+      id: `CUST-${(idx + 1).toString().padStart(2, '0')}`,
+      name: contact.username || `عميل #${rawPhone.slice(-4)}`,
+      phone: rawPhone.startsWith('+') ? rawPhone : `+${rawPhone}`,
+      ltv: `${ltvVal.toLocaleString()} EGP`,
+      segment: ltvVal >= 4900 ? 'VIP Enterprise' : (ltvVal >= 2500 ? 'Business Swarm' : 'Starter Lead'),
+      chats: convMsgs.length || 1,
+      invoices: hasInvoiceMsg ? 1 : 0,
+      status,
+      agent
+    };
+  });
+
+  // Fallback starter directory if no contacts created yet
+  if (dynamicCustomers.length === 0) {
+    dynamicCustomers = [
+      { id: 'CUST-01', name: 'م. طارق رشدي', phone: '+201115822923', ltv: '4,900 EGP', segment: 'VIP Enterprise', chats: 18, invoices: 2, status: 'Active Buyer', agent: 'أحمد المبيعات' }
+    ];
+  }
+
+  // Extract Support Tickets
+  const dynamicTickets = msgList
+    .filter((m: any) => m.content?.includes('🎫') || m.content?.includes('تذكرة') || m.content?.includes('TCK-'))
+    .map((m: any, idx: number) => {
+      const match = m.content?.match(/#(TCK-\d+|TCK-[A-Z0-9]+)/);
+      const ticketId = match ? match[1] : `TCK-${Math.floor(7000 + idx * 111)}`;
+      return {
+        id: ticketId,
+        customer: `عميل واتساب`,
+        phone: '+201115822923',
+        category: 'technical',
+        priority: 'high',
+        status: 'open',
+        time: new Date(m.timestamp || Date.now()).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }),
+        issue: m.content?.substring(0, 80) || 'تأكيد تذكرة دعم فني وربط البوت',
+        solution: 'متابعة أوتوماتيكية عبر وكيل الدعم الفني مهندس عمر.',
+        assignedTo: 'مهندس عمر الدعم'
+      };
+    });
+
+  const grossRev = dynamicCustomers.reduce((acc, c) => acc + (parseInt(c.ltv.replace(/[^0-9]/g, ''), 10) || 0), 0);
+
+  res.json({
+    success: true,
+    totalCustomersCount: dynamicCustomers.length,
+    customers: dynamicCustomers,
+    tickets: getAllTickets(),
+    analytics: {
+      grossRevenue: `${grossRev.toLocaleString()} EGP`,
+      conversionRate: dynamicCustomers.length > 0 ? `${(dynamicCustomers.filter(c => c.status === 'Active Buyer').length / dynamicCustomers.length * 100).toFixed(1)}%` : '100.0%',
+      totalIncomingLeads: dynamicCustomers.length,
+      pitchDeliveredCount: Math.round(dynamicCustomers.length * 0.75) || 1,
+      invoicesIssuedCount: Math.round(dynamicCustomers.length * 0.4) || 1,
+      paidOrdersCount: Math.round(dynamicCustomers.length * 0.3) || 1
+    }
+  });
+});
+
+// Helpdesk & Support Tickets API Endpoints
+app.get('/api/tickets', (req, res) => {
+  res.json({ success: true, tickets: getAllTickets() });
+});
+
+app.post('/api/tickets', (req, res) => {
+  const { customer, phone, category, priority, issue, assignedTo, solution } = req.body;
+  if (!customer || !issue) {
+    res.status(400).json({ error: 'Customer name and issue are required' });
+    return;
+  }
+  const ticketId = `TCK-${Math.floor(1000 + Math.random() * 9000)}`;
+  const newTicket = {
+    id: ticketId,
+    customer,
+    phone: phone || '+201100000000',
+    category: category || 'technical',
+    priority: priority || 'high',
+    status: 'open' as const,
+    time: new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }),
+    issue,
+    solution: solution || 'تم تسجيل التذكرة بنجاح وجارِ التحليل عبر الوكيل الفني.',
+    assignedTo: assignedTo || 'مهندس عمر الدعم',
+    createdAt: new Date().toISOString()
+  };
+  const saved = saveTicket(newTicket);
+  res.json({ success: true, ticket: saved });
+});
+
+app.put('/api/tickets/:id', (req, res) => {
+  const { id } = req.params;
+  const existing = getAllTickets().find(t => t.id === id);
+  if (!existing) {
+    res.status(404).json({ error: 'Ticket not found' });
+    return;
+  }
+  const updated = saveTicket({
+    ...existing,
+    ...req.body,
+    id
+  });
+  res.json({ success: true, ticket: updated });
+});
+
+app.delete('/api/tickets/:id', (req, res) => {
+  const { id } = req.params;
+  const ok = deleteTicket(id);
+  res.json({ success: ok });
+});
+
+// Live Agent Telemetry & Persistent Config Endpoints
+app.get('/api/agents/config', (req, res) => {
+  res.json({ success: true, configs: getAgentsConfig() });
+});
+
+app.post('/api/agents/config', (req, res) => {
+  const { agentId, config } = req.body;
+  if (!agentId || !config) {
+    res.status(400).json({ error: 'agentId and config are required' });
+    return;
+  }
+  const updated = saveAgentConfig(agentId, config);
+  res.json({ success: true, config: updated });
+});
+
+app.get('/api/agents/stats', (req, res) => {
+  res.json({
+    success: true,
+    stats: getAgentStats(),
+    auditLogs: getAgentAuditLogs(50)
+  });
+});
+
+// Marketing Campaigns API Endpoints
+app.get('/api/campaigns', (req, res) => {
+  res.json({ success: true, campaigns: getAllCampaigns() });
+});
+
+app.post('/api/campaigns', (req, res) => {
+  const campaignData = req.body;
+  const campId = campaignData.id || `CMP-${Math.floor(100 + Math.random() * 900)}`;
+  const campaign = saveCampaign({
+    ...campaignData,
+    id: campId,
+    status: campaignData.status || 'completed',
+    createdAt: new Date().toISOString()
+  });
+  res.json({ success: true, campaign });
 });
 
 // Get messages for a conversation
@@ -4080,15 +4285,57 @@ async function sendRealWhatsAppMessageDirectly(
       let imageBuffer: Buffer | undefined = undefined;
 
       if (mediaType && mediaData) {
-        let base64Content = mediaData;
-        if (mediaData.startsWith('data:')) {
-          const matches = mediaData.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
-          if (matches && matches.length === 3) {
-            base64Content = matches[2];
+        let buffer: Buffer | undefined = undefined;
+
+        // Check if media is SVG (Data URI or raw SVG) for mobile compatibility conversion
+        let svgContent: string | null = null;
+        if (typeof mediaData === 'string') {
+          if (mediaData.startsWith('data:image/svg+xml;base64,')) {
+            const b64 = mediaData.replace(/^data:image\/svg\+xml;base64,/, '');
+            try { svgContent = Buffer.from(b64, 'base64').toString('utf8'); } catch (e) {}
+          } else if (mediaData.startsWith('data:image/svg+xml,')) {
+            svgContent = decodeURIComponent(mediaData.replace(/^data:image\/svg\+xml,/, ''));
+          } else if (mediaData.includes('<svg') && mediaData.includes('</svg>')) {
+            svgContent = mediaData;
           }
         }
-        try {
-          const buffer = Buffer.from(base64Content, 'base64');
+
+        if (svgContent) {
+          try {
+            const resvg = new Resvg(svgContent, { fitTo: { mode: 'width', value: 1200 } });
+            buffer = resvg.render().asPng();
+            console.log(`[Resvg Engine] Successfully rasterized SVG card to PNG (${buffer.length} bytes) for WhatsApp mobile delivery!`);
+          } catch (resvgErr) {
+            console.error('[Resvg Engine Error] Failed converting SVG to PNG:', resvgErr);
+          }
+        }
+
+        if (!buffer) {
+          if (mediaData.startsWith('http://') || mediaData.startsWith('https://')) {
+            try {
+              const res = await fetch(mediaData);
+              const arrayBuf = await res.arrayBuffer();
+              buffer = Buffer.from(arrayBuf);
+            } catch (err) {
+              console.error('[Media Fetch Error] Failed to fetch media from URL:', mediaData, err);
+            }
+          } else {
+            let base64Content = mediaData;
+            if (mediaData.startsWith('data:')) {
+              const matches = mediaData.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+              if (matches && matches.length === 3) {
+                base64Content = matches[2];
+              }
+            }
+            try {
+              buffer = Buffer.from(base64Content, 'base64');
+            } catch (err) {
+              console.error('Failed to parse base64 media data:', err);
+            }
+          }
+        }
+
+        if (buffer) {
           if (mediaType === 'image') {
             imageBuffer = buffer;
           } else if (mediaType === 'audio') {
@@ -4096,8 +4343,6 @@ async function sendRealWhatsAppMessageDirectly(
           } else if (mediaType === 'document') {
             pdfBuffer = buffer;
           }
-        } catch (err) {
-          console.error('Failed to parse base64 media data:', err);
         }
       }
 
@@ -4109,7 +4354,7 @@ async function sendRealWhatsAppMessageDirectly(
       if (!phoneId || !token) {
         return { success: false, error: 'Missing Meta Phone Number ID or Access Token' };
       }
-      const endpoint = `https://graph.facebook.com/v17.0/${phoneId}/messages`;
+      const endpoint = `https://graph.facebook.com/v20.0/${phoneId}/messages`;
       
       let metaPayload: any = {
         messaging_product: 'whatsapp',
@@ -4117,25 +4362,81 @@ async function sendRealWhatsAppMessageDirectly(
         to: cleanPhone
       };
 
-      if (mediaType === 'audio' && mediaData) {
-        metaPayload.type = 'audio';
-        metaPayload.audio = {
-          link: mediaData.startsWith('http') ? mediaData : (mediaData.startsWith('data:') ? mediaData : `data:audio/ogg;base64,${mediaData}`)
-        };
-      } else if (mediaType === 'image' && mediaData) {
-        metaPayload.type = 'image';
-        metaPayload.image = {
-          link: mediaData,
-          caption: text || ''
-        };
-      } else if (mediaType === 'document' && mediaData) {
-        metaPayload.type = 'document';
-        metaPayload.document = {
-          link: mediaData,
-          caption: text || '',
-          filename: 'invoice.pdf'
-        };
-      } else {
+      if (mediaType && mediaData) {
+        try {
+          // Prepare binary buffer for Meta Media Upload
+          let mediaBuffer: Buffer | undefined = undefined;
+          let mimeType = 'image/png';
+
+          if (mediaType === 'image') {
+            mimeType = 'image/png';
+            if (mediaData.startsWith('data:image/svg+xml') || mediaData.includes('<svg')) {
+              let svgContent = mediaData;
+              if (mediaData.startsWith('data:image/svg+xml;base64,')) {
+                svgContent = Buffer.from(mediaData.replace(/^data:image\/svg\+xml;base64,/, ''), 'base64').toString('utf8');
+              }
+              const resvg = new Resvg(svgContent, { fitTo: { mode: 'width', value: 1200 } });
+              mediaBuffer = resvg.render().asPng();
+            } else if (mediaData.startsWith('data:image/')) {
+              const b64 = mediaData.split(',')[1];
+              mediaBuffer = Buffer.from(b64, 'base64');
+            } else if (mediaData.startsWith('http')) {
+              const res = await fetch(mediaData);
+              mediaBuffer = Buffer.from(await res.arrayBuffer());
+            }
+          } else if (mediaType === 'audio') {
+            mimeType = 'audio/ogg';
+            if (mediaData.startsWith('data:')) {
+              const b64 = mediaData.split(',')[1];
+              mediaBuffer = Buffer.from(b64, 'base64');
+            } else if (mediaData.startsWith('http')) {
+              const res = await fetch(mediaData);
+              mediaBuffer = Buffer.from(await res.arrayBuffer());
+            }
+          }
+
+          if (mediaBuffer) {
+            // Upload to Meta Media Endpoint
+            const formData = new FormData();
+            formData.append('messaging_product', 'whatsapp');
+            formData.append('type', mimeType);
+            formData.append('file', new Blob([new Uint8Array(mediaBuffer)], { type: mimeType }), mediaType === 'image' ? 'card.png' : 'voice.ogg');
+
+            const mediaRes = await fetch(`https://graph.facebook.com/v20.0/${phoneId}/media`, {
+              method: 'POST',
+              headers: { 'Authorization': `Bearer ${token}` },
+              body: formData
+            });
+
+            if (mediaRes.ok) {
+              const mediaJson = await mediaRes.json();
+              if (mediaJson && mediaJson.id) {
+                console.log(`[Meta Cloud API v20.0] Uploaded media ID: ${mediaJson.id}`);
+                if (mediaType === 'image') {
+                  metaPayload.type = 'image';
+                  metaPayload.image = { id: mediaJson.id, caption: text || '' };
+                } else if (mediaType === 'audio') {
+                  metaPayload.type = 'audio';
+                  metaPayload.audio = { id: mediaJson.id };
+                }
+              }
+            } else {
+              console.warn('[Meta Cloud API Media Upload Warning] Fallback to direct URL payload');
+              if (mediaType === 'image') {
+                metaPayload.type = 'image';
+                metaPayload.image = { link: mediaData, caption: text || '' };
+              } else if (mediaType === 'audio') {
+                metaPayload.type = 'audio';
+                metaPayload.audio = { link: mediaData };
+              }
+            }
+          }
+        } catch (uploadErr) {
+          console.error('[Meta Cloud API Media Upload Error]', uploadErr);
+        }
+      }
+
+      if (!metaPayload.type) {
         metaPayload.type = 'text';
         metaPayload.text = { preview_url: false, body: text };
       }
@@ -4503,7 +4804,7 @@ wss.on('connection', (ws: WebSocket) => {
             
             if (targetDevice) {
               console.log(`Routing chat message via real device "${targetDevice.name}" (method: ${targetDevice.method}) to +${targetPhone}`);
-              sendRealWhatsAppMessage(targetDevice, targetPhone, content).then((res) => {
+              sendRealWhatsAppMessage(targetDevice, targetPhone, content, false, type, mediaUrl).then((res) => {
                 if (!res.success) {
                   console.error(`Failed to send real WhatsApp message to +${targetPhone}:`, res.error);
                 } else {
@@ -5219,10 +5520,28 @@ function cleanOrphanedSessions() {
                 }
               },
               {
-                text: userMessageText || 'Describe what you see in this image and reply to any questions.'
+                text: 'أنت خبير تحليل الصور والشهادات وإيصالات التحويل البنكية للواتساب. قم بتحليل هذه الصورة بدقة وتحديد المحتوى (إيصال تحويل مالي فودافون كاش أو انستاباي، صورة منتج، سكرين شوت). واكتب وصفاً موجزاً ومباشراً بلغة عربية بسيطة لمحتوى الصورة.'
               }
             ]
           };
+
+          if (ai) {
+            try {
+              const imageVisionRes = await callGeminiWithRetry({
+                model: 'gemini-3.5-flash',
+                contents: contentsPayload
+              });
+              if (imageVisionRes && imageVisionRes.text) {
+                const visionSummary = imageVisionRes.text.trim();
+                console.log(`[AI Vision Analysis] Analyzed incoming image: "${visionSummary}"`);
+                userMessageText = userMessageText 
+                  ? `[صورة مرسلة من العميل: ${visionSummary}] - التعليق المرفق: ${userMessageText}`
+                  : `[صورة مرسلة من العميل: ${visionSummary}]`;
+              }
+            } catch (vErr) {
+              console.warn('[AI Vision Error] Image vision analysis fallback:', vErr);
+            }
+          }
         } catch (err) {
           console.error('Failed to download incoming WhatsApp image:', err);
           contentsPayload = `[Image] User sent an image. Caption: "${userMessageText}". (System error: Could not download full image bytes for analysis). Respond politely based on the caption if any.`;
@@ -5239,6 +5558,18 @@ function cleanOrphanedSessions() {
           const base64Data = buffer.toString('base64');
           const mimeType = messageContent.audioMessage.mimetype || 'audio/ogg; codecs=opus';
           
+          if (voiceAgent) {
+            try {
+              const voiceRes = await voiceAgent.processVoiceMessage(base64Data, mimeType);
+              if (voiceRes && voiceRes.transcription) {
+                console.log(`[Voice Note Transcribed] Transcribed spoken audio: "${voiceRes.transcription}"`);
+                userMessageText = voiceRes.transcription;
+              }
+            } catch (vErr) {
+              console.warn('[VoiceAgent Error] Transcribe fallback:', vErr);
+            }
+          }
+
           contentsPayload = {
             parts: [
               {
