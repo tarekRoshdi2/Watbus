@@ -131,6 +131,7 @@ export interface SwarmResponse {
   agentTitle: string;
   text: string;
   mediaUrl?: string;
+  isInternalContext?: boolean;  // When true, 'text' is internal data for Gemini — NOT the customer reply
   invoiceData?: {
     invoiceNumber: string;
     amount: number;
@@ -352,7 +353,7 @@ ${historySummary}
     const historySummary = this.getChatHistorySummary(chatId);
 
     // -------------------------------------------------------------
-    // 1. INVOICE INTENT -> صلاح الحسابات
+    // 1. INVOICE INTENT — Internal processing only (صلاح الحسابات)
     // -------------------------------------------------------------
     if (text.includes('فاتورة') || text.includes('سداد') || text.includes('ادفع') || text.includes('تحويل') || text.includes('انستا باي') || text.includes('فودافون') || text.includes('اشترك') || text.includes('ابعت الفاتورة') || text.includes('باقة 2500') || text.includes('باقة 1200') || text.includes('باقة 4900')) {
       const invNo = 'INV-CC-' + Math.floor(100000 + Math.random() * 900000);
@@ -369,67 +370,31 @@ ${historySummary}
         ibanNo: 'EG1234567890123456789012345'
       };
 
-      const invoiceCustom = customConfigs?.invoice?.systemPrompt || "";
-      const prompt = `أنت "الأستاذ صلاح الحسابات" - المحاسب المالي التنفيذي لمنصة شات كور (ChatCore Enterprise AI). ${invoiceCustom}
-${kbContext}
-سياق المحادثة السابق مع العميل:
-${historySummary}
-
-الطلب الحالي: "${userMessage}"
-أصدرت فاتورة رسمية برقم #${invNo} بمبلغ ${amount} ج.م لـ ${planName}.
-رحّب بالعميل "${customerName}" واطلب منه التحويل باسم طارق رشدي على InstaPay (trkroshdi@instapay) أو فودافون كاش (01115822923) ورفع سكرين شوت الإيصال للاعتماد الفوري.
-اكتب بالعامية المصرية الراقية والاحترافية بأسلوب تنفيذي راقٍ.
-قواعد صارمة لمنع التكرار: إذا كانت هناك رسائل سابقة في المحادثة، يمنع إعادتك لديباجة الترحيب مثل "أهلاً بك يا فندم" أو تعريف نفسك مجدداً! أجب مباشرة وبشكل مختصر وفورياً على سؤال العميل!`;
-
-      const aiText = await this.safeGenerateContent(prompt);
-      const replyText = aiText || `أهلاً بك يا فندم (${customerName})! تم إصدار الفاتورة الرسمية برقم #${invNo} لـ ${invoiceData.planName}.
-
-قيمة الاشتراك المستحقة: ${amount} ج.م
-بيانات التحويل الفوري باسم: **طارق رشدي (Tarek Roshdi)**
-📱 InstaPay: **trkroshdi@instapay**
-📲 فودافون كاش: **01115822923**
-🏦 البنك الأهلي (IBAN): **EG1234567890123456789012345**
-
-يرجى تحويل المبلغ ورفع سكرين شوت الإيصال ليقوم النظام بتفعيل الحساب فوراً ⚡!`;
+      // Build internal context string for Gemini to use
+      const invoiceContext = `[INTERNAL SWARM DATA - NOT FOR DIRECT QUOTING]
+Intent: invoice_request
+Invoice Number: #${invNo}
+Amount: ${amount} EGP
+Plan: ${planName}
+Payment: InstaPay=trkroshdi@instapay | Vodafone Cash=01115822923
+Action: Generate a friendly payment message and ask customer to send transfer screenshot.`;
 
       this.saveChatMessage(chatId, 'user', rawText);
-      this.saveChatMessage(chatId, 'assistant', replyText, 'invoice');
       return {
         agentId: 'invoice',
-        agentName: 'الأستاذ صلاح الحسابات',
+        agentName: 'صلاح الحسابات (Internal)',
         agentTitle: 'Invoice & Billing Chief',
-        text: replyText,
-        mediaUrl: 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=800',
-        invoiceData
+        text: invoiceContext,   // Gemini uses this as context, writes its own reply
+        mediaUrl: generatePricingPlansSvg(),
+        invoiceData,
+        isInternalContext: true  // Flag: do NOT send this text to customer directly
       };
     }
 
     // -------------------------------------------------------------
-    // 2. SUPPORT & TECH INTENT -> مهندس عمر الدعم
+    // 2. SUPPORT & TECH INTENT — Internal processing only (مهندس عمر)
     // -------------------------------------------------------------
     if (text.includes('ربط') || text.includes('كود') || text.includes('توكن') || text.includes('botfather') || text.includes('مشكلة') || text.includes('دعم')) {
-      const supportCustom = customConfigs?.support?.systemPrompt || "";
-      const prompt = `أنت "مهندس عمر الدعم الفني" - مسؤول الدعم والربط لمنصة شات كور (ChatCore Enterprise AI). ${supportCustom}
-${kbContext}
-سياق المحادثة السابق مع العميل:
-${historySummary}
-
-رسالة العميل: "${userMessage}"
-اشرح للعميل "${customerName}" طريقة ربط الواتساب (مسح كود QR) أو ربط التليجرام (إنشاء بوت على @BotFather ونسخ التوكن).
-اكتب بالعامية المصرية الراقية والمنظمة جداً.
-قواعد صارمة لمنع التكرار: إذا كانت هناك رسائل سابقة في المحادثة، يمنع إعادتك لديباجة الترحيب مثل "أهلاً بك يا فندم" أو تعريف نفسك مجدداً! أجب مباشرة وبشكل مختصر وفورياً على سؤال العميل!`;
-
-      const aiText = await this.safeGenerateContent(prompt);
-      const replyText = aiText || `أهلاً بك يا فندم (${customerName}) معكم مهندس عمر الدعم الفني 🛠️!
-
-خطوات ربط الخدمة بسيطة جداً:
-1️⃣ لربط خط الواتساب: ادخل على قسم "الأجهزة والخطوط" واضغط "إضافة خط جديد" ثم امسح كود QR من هاتفك.
-2️⃣ لربط التليجرام: ابحث عن @BotFather على تليجرام وأرسل /newbot، ثم انسخ التوكن وضعه في قسم "ربط التليجرام" واضغط تفعيل!
-
-إذا واجهتك أي صعوبة، سأكون معك خطوة بخطوة ⚡`;
-
-      this.saveChatMessage(chatId, 'user', rawText);
-      this.saveChatMessage(chatId, 'assistant', replyText, 'support');
       const tckNo = 'TCK-' + Math.floor(1000 + Math.random() * 9000);
       try {
         saveTicket({
@@ -441,102 +406,68 @@ ${historySummary}
           status: 'open',
           time: new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }),
           issue: userMessage.substring(0, 100),
-          solution: 'تم توليد التذكرة تلقائياً بواسطة مهندس عمر الدعم وجارِ المتابعة.',
-          assignedTo: 'مهندس عمر الدعم',
+          solution: 'تم توليد التذكرة تلقائياً وجارٍ المتابعة.',
+          assignedTo: 'فريق الدعم الفني',
           createdAt: new Date().toISOString()
         });
       } catch (err) {}
 
-      return {
-        agentId: 'support',
-        agentName: 'مهندس عمر الدعم الفني',
-        agentTitle: 'Support & Onboarding Specialist',
-        text: replyText + `\n\n🎫 **رقم تذكرة الدعم الفني المُتولّدة**: #${tckNo}`
-      };
-    }
-
-    // -------------------------------------------------------------
-    // 3. MEDIA / DESIGN INTENT -> كريم الديزاين
-    // -------------------------------------------------------------
-    if (text.includes('صورة') || text.includes('تصميم') || text.includes('كارت') || text.includes('بروشور') || text.includes('شكل')) {
-      const mediaCustom = customConfigs?.media?.systemPrompt || "";
-      const prompt = `أنت "كريم الديزاين" - المصمم المبدع لمنصة شات كور (ChatCore Enterprise AI). ${mediaCustom}
-${kbContext}
-سياق المحادثة السابق:
-${historySummary}
-
-أخبر العميل "${customerName}" أنك جهّزت له الكروت البصرية والرسومات التوضيحية لإمكانيات المنظومة وطاقم الموظفين.
-اكتب بالعامية المصرية المبدعة والودودة.`;
-
-      const aiText = await this.safeGenerateContent(prompt);
-      const replyText = aiText || `أهلاً بك يا فندم (${customerName})! معاك كريم الديزاين 🎨✨
-
-جاهز فوراً لتزويدك بكافة التصاميم والكروت البصرية والتوضيحية لطاقم الموظفين وباقات منصة شات كور، لمشاركتها مع فريق عملك وتسهيل اتخاذ القرار!`;
+      const supportContext = `[INTERNAL SWARM DATA - NOT FOR DIRECT QUOTING]
+Intent: technical_support
+Ticket Created: #${tckNo}
+Topic: ${userMessage.substring(0, 80)}
+Action: Provide clear step-by-step instructions for connecting WhatsApp (QR code) or Telegram (BotFather token). Mention ticket number naturally.`;
 
       this.saveChatMessage(chatId, 'user', rawText);
-      this.saveChatMessage(chatId, 'assistant', replyText, 'media');
-      const shouldSendImage = text.includes('صورة') || text.includes('كارت') || text.includes('تصميم') || text.includes('ارسل الكارت') || text.includes('ابعت الكارت');
-
       return {
-        agentId: 'media',
-        agentName: 'كريم الديزاين',
-        agentTitle: 'Creative Media & Graphic Officer',
-        text: replyText,
-        mediaUrl: shouldSendImage ? generatePricingPlansSvg() : undefined
+        agentId: 'support',
+        agentName: 'عمر الدعم (Internal)',
+        agentTitle: 'Support & Onboarding Specialist',
+        text: supportContext,
+        isInternalContext: true
       };
     }
 
     // -------------------------------------------------------------
-    // 4. DEFAULT SALES INTENT -> أحمد المبيعات
+    // 3. MEDIA / DESIGN INTENT — Internal processing only (كريم الديزاين)
+    // -------------------------------------------------------------
+    if (text.includes('صورة') || text.includes('تصميم') || text.includes('كارت') || text.includes('بروشور') || text.includes('شكل')) {
+      const mediaContext = `[INTERNAL SWARM DATA - NOT FOR DIRECT QUOTING]
+Intent: media_request
+Action: Confirm that a visual card with pricing/plans has been prepared and is being sent now. Keep your reply short and enthusiastic.`;
+
+      const shouldSendImage = text.includes('صورة') || text.includes('كارت') || text.includes('تصميم') || text.includes('ارسل الكارت') || text.includes('ابعت الكارت');
+
+      this.saveChatMessage(chatId, 'user', rawText);
+      return {
+        agentId: 'media',
+        agentName: 'كريم الديزاين (Internal)',
+        agentTitle: 'Creative Media & Graphic Officer',
+        text: mediaContext,
+        mediaUrl: shouldSendImage ? generatePricingPlansSvg() : undefined,
+        isInternalContext: true
+      };
+    }
+
+    // -------------------------------------------------------------
+    // 4. DEFAULT SALES INTENT — Internal processing only (أحمد المبيعات)
     // -------------------------------------------------------------
     const hasDiscussedPlans = historySummary.includes('باقة') || historySummary.includes('Starter') || historySummary.includes('1,200') || historySummary.includes('2,500');
 
-    const salesCustom = customConfigs?.sales?.systemPrompt || "";
-      const prompt = `أنت "أحمد المبيعات" - المدير التنفيذي للمبيعات لمنصة شات كور (ChatCore Enterprise AI). ${salesCustom}
-${kbContext}
-سياق المحادثة السابق مع العميل:
-${historySummary}
-
-رسالة العميل الحالية: "${userMessage}"
-
-قواعد الرد الفائقة:
-${hasDiscussedPlans 
-  ? 'العميل يناقش معك بالفعل وسياق الباقات معروف له! اعد رد قصير ومباشر بالعامية المصرية (فقرة واحدة فقط) لمساعدته في الشراء أو إصدار الفاتورة فوراً دون إعادة سرد قائمة الباقات إطلاقاً!' 
-  : 'هذه أول مرة، اشرح له باقات شات كور بوضوح مختصر:\n1. باقة البداية (Starter AI): 1,200 ج.م\n2. باقة الأعمال (Business Swarm): 2,500 ج.م\n3. باقة المؤسسات (Enterprise HQ): 4,900 ج.م'}
-`;
-
-    const aiText = await this.safeGenerateContent(prompt);
-    
-    let fallbackText = '';
-    if (hasDiscussedPlans) {
-      fallbackText = `تحت أمرك يا فندم (${customerName}) ⚡، هل تحب نأكد على باقة معينة الآن (البداية، الأعمال، أو المؤسسات) علشان أصدر لك الفاتورة؟`;
-    } else {
-      fallbackText = `أهلاً وسهلاً بحضرتك يا فندم (${customerName})! ⚡ معاك أخوك أحمد المبيعات، المدير التنفيذي للمبيعات لمنصة شات كور (ChatCore Enterprise AI).
-
-سعيد جداً بتواصلك معنا! منصة شات كور توفر لك طاقم موظفين ذكاء اصطناعي محترف يعمل 24/7 لزيادة مبيعاتك وأتمتة الفواتير وخدمة العملاء.
-
-إليك باقات الاشتراك المتاحة حالياً:
-🥉 **باقة البداية (Starter AI)**: 1,200 ج.م / شهرياً
-- ربط خط واتساب 1 + موظف مبيعات ذكي 24/7 + فواتير.
-
-🥈 **باقة الأعمال (Business Swarm)**: 2,500 ج.م / شهرياً (الأكثر مبيعاً ⭐)
-- ربط خطين واتساب + تليجرام بوت + طاقم 6 موظفين بالكامل. (خصم ترويجي 15% متوفر اليوم).
-
-🥇 **باقة المؤسسات (Enterprise HQ)**: 4,900 ج.م / شهرياً
-- خطوط وموظفين لا نهائية + ربط سحابي Supabase + تدريب مخصص.
-
-أي باقة تشعر أنها الأنسب لمشروعك الآن؟ وسأقوم بتأكيدها وإصدار الفاتورة فوراً ⚡`;
-    }
-
-    const replyText = aiText || fallbackText;
+    const salesContext = `[INTERNAL SWARM DATA - NOT FOR DIRECT QUOTING]
+Intent: sales_inquiry
+Discussed Plans Before: ${hasDiscussedPlans ? 'yes - skip re-listing plans, focus on closing' : 'no - briefly mention 3 plans: Starter 1200 EGP, Business Swarm 2500 EGP (most popular), Enterprise 4900 EGP'}
+Knowledge Base:\n${kbContext}
+Conversation History:\n${historySummary}
+Action: Answer the customer's question naturally as yourself (the configured AI agent). Do NOT introduce yourself as any internal agent name.`;
 
     this.saveChatMessage(chatId, 'user', rawText);
-    this.saveChatMessage(chatId, 'assistant', replyText, 'sales');
     return {
       agentId: 'sales',
-      agentName: 'أحمد المبيعات',
+      agentName: 'أحمد المبيعات (Internal)',
       agentTitle: 'Chief Sales & Closing Officer',
-      text: replyText
+      text: salesContext,
+      isInternalContext: true
     };
   }
 }

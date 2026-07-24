@@ -6085,19 +6085,17 @@ Formulate your exceptionally smart and professional response now:`;
           );
 
           lastSwarmRes = swarmRes;
-          if (swarmRes && swarmRes.text) {
-            responseText = swarmRes.text;
 
-            // Determine Action Type for Live Metrics
+          // Determine Action Type for Live Metrics (always, regardless of isInternalContext)
+          if (swarmRes) {
             let actionType: any = 'task_completed';
             if (swarmRes.agentId === 'invoice' || swarmRes.invoiceData) actionType = 'invoice_issued';
             if (swarmRes.agentId === 'support') actionType = 'ticket_created';
             if (swarmRes.agentId === 'media' || swarmRes.mediaUrl) actionType = 'visual_generated';
 
-            // Record Live Activity & Increment Stats
             const auditLog = recordAgentActivity(
               swarmRes.agentId || 'sales',
-              lastSwarmRes.agentName || 'أحمد المبيعات',
+              swarmRes.agentName?.replace(' (Internal)', '') || device.aiAgentName || 'المساعد الذكي',
               actionType,
               userMessageText.substring(0, 70),
               pushName || `+${contactPhone}`,
@@ -6105,24 +6103,39 @@ Formulate your exceptionally smart and professional response now:`;
               { invoiceData: swarmRes.invoiceData, mediaUrl: swarmRes.mediaUrl }
             );
 
-            // Broadcast Live Swarm Telemetry to Enterprise AI Headquarters UI
             broadcast({
               type: 'agent:activity',
               auditLog,
               agentStats: getAgentStats()
             });
+          }
+
+          // CORE FIX: Swarm agents are INTERNAL ONLY.
+          // Their result enriches the Gemini context — Gemini writes ALL customer replies.
+          // isInternalContext=true → inject swarm data as extra context into Gemini prompt
+          // isInternalContext=false (legacy) → use swarm text directly (backward compat)
+          if (swarmRes && swarmRes.text && !swarmRes.isInternalContext) {
+            // Legacy direct response (shouldn't happen with new architecture)
+            responseText = swarmRes.text;
+            console.log(`[AI Agent] Using legacy direct swarm response from "${swarmRes.agentName}"`);
           } else {
-            console.log(`[AI Agent Fallback] Formulating response using Gemini model "${modelName}"...`);
+            // New architecture: inject swarm context into Gemini and let Gemini speak
+            const swarmContext = swarmRes?.text 
+              ? `\n\n--- INTERNAL REASONING CONTEXT (from internal specialist engine, do NOT quote this directly) ---\n${swarmRes.text}\n--- END INTERNAL CONTEXT ---\n\nUsing the above internal context, now write your complete response as ${device.aiAgentName || 'the AI Assistant'} to the customer:`
+              : '';
+            
+            console.log(`[AI Agent] Gemini (${modelName}) generating customer reply with${swarmContext ? ' swarm context for intent=' + swarmRes?.agentId : 'out swarm context'}...`);
             const response = await callGeminiWithRetry({
               model: modelName,
               contents: contentsPayload,
               config: {
-                systemInstruction: systemPrompt,
+                systemInstruction: systemPrompt + swarmContext,
                 temperature: device.aiTemperature !== undefined ? Number(device.aiTemperature) : 0.8,
               }
             });
             responseText = response?.text || '';
           }
+
           console.log(`[AI Agent] Generated text response: "${responseText.substring(0, 100)}${responseText.length > 100 ? '...' : ''}"`);
 
           // 5b. If voice responses are enabled, synthesize the text response into a real voice note (TTS)

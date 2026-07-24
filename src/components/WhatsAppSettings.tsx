@@ -850,6 +850,30 @@ ALTER TABLE crm_backups DISABLE ROW LEVEL SECURITY;`}
                     <Cpu className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" />
                   </div>
 
+                  {/* WhatsApp Voice Calling SIP Status Block */}
+                  <div className="bg-indigo-500/5 border border-indigo-500/15 p-4 rounded-2xl rtl:text-right ltr:text-left flex items-start gap-3 justify-end mt-3">
+                    <div className="flex-1 space-y-1">
+                      <div className="flex items-center justify-end gap-1.5">
+                        {device.sipCallingSettings?.enabled ? (
+                          <span className="text-[9px] font-bold bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 px-1.5 py-0.5 rounded-md">
+                            {lang === 'ar' ? 'المكالمات مفعّلة' : 'SIP Calling Active'}
+                          </span>
+                        ) : (
+                          <span className="text-[9px] font-bold bg-zinc-100 dark:bg-zinc-800 text-zinc-400 px-1.5 py-0.5 rounded-md">
+                            {lang === 'ar' ? 'المكالمات غير مفعلة' : 'Disabled'}
+                          </span>
+                        )}
+                        <h4 className="text-xs font-bold text-zinc-700 dark:text-zinc-300">{lang === 'ar' ? 'مكالمات الواتساب الرسمية (SIP)' : 'WhatsApp Business Calling (SIP)'}</h4>
+                      </div>
+                      <p className="text-[10px] text-zinc-500 line-clamp-2 leading-relaxed">
+                        {device.sipCallingSettings?.enabled 
+                          ? `${lang === 'ar' ? 'سيرفر الـ SIP' : 'SIP Server'}: ${device.sipCallingSettings.sipServerHost || 'مربوط'} - ${lang === 'ar' ? 'التوجيه' : 'Routing'}: ${device.sipCallingSettings.routeToVoiceAi ? 'موظف الذكاء الاصطناعي الصوتي' : 'PBX بشرى'}` 
+                          : (lang === 'ar' ? 'يمكنك ربط مكالمات هذا الرقم هاتفياً بسيرفر SIP وتوجيهها للذكاء الاصطناعي الصوتي.' : 'Connect WhatsApp voice calls via SIP protocol to Gemini Voice AI.')}
+                      </p>
+                    </div>
+                    <PhoneCall className="w-5 h-5 text-indigo-500 flex-shrink-0 mt-0.5" />
+                  </div>
+
                   {/* Connection Stats & Traffic Block */}
                   <div className="bg-zinc-50 dark:bg-zinc-950 p-4 rounded-2xl border border-zinc-150 dark:border-zinc-800/40 text-xs space-y-3 rtl:text-right ltr:text-left mt-3">
                     <div className="flex items-center justify-between border-b border-zinc-150 dark:border-zinc-850 pb-2 flex-row-reverse">
@@ -978,10 +1002,10 @@ ALTER TABLE crm_backups DISABLE ROW LEVEL SECURITY;`}
                     <button
                       type="button"
                       onClick={() => handleOpenSipModal(device)}
-                      className="flex items-center gap-1.5 text-[11px] font-bold px-3 py-2 rounded-xl border border-indigo-500/20 text-indigo-600 bg-indigo-500/5 hover:bg-indigo-500/10 transition-all cursor-pointer"
+                      className="flex items-center gap-1.5 text-xs font-extrabold px-3.5 py-2.5 rounded-xl border border-indigo-500/40 text-indigo-600 dark:text-indigo-300 bg-indigo-500/10 hover:bg-indigo-500/20 transition-all cursor-pointer shadow-xs shadow-indigo-500/10"
                     >
-                      <PhoneCall className="w-3.5 h-3.5 text-indigo-500" />
-                      <span>{lang === 'ar' ? 'المكالمات وبروتوكول SIP' : 'SIP Calling'}</span>
+                      <PhoneCall className="w-4 h-4 text-indigo-500 animate-bounce" />
+                      <span>{lang === 'ar' ? '📞 إعدادات المكالمات والـ SIP' : '📞 SIP Calling Settings'}</span>
                     </button>
 
                     {/* AI Settings Action */}
