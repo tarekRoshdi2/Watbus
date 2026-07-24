@@ -956,15 +956,25 @@ export function savePaymentSettings(settings: PaymentSettings): PaymentSettings 
 export async function initializeDbFromPrisma() {
   console.log('[Prisma] Loading database from PostgreSQL into memory cache...');
   try {
-    const users = await prisma.users.findMany();
-    const devices = await prisma.device.findMany();
-    const conversations = await prisma.conversation.findMany();
-    const messages = await prisma.message.findMany();
+    if (!prisma || typeof prisma.users?.findMany !== 'function') {
+      console.log('[Prisma] Prisma client findMany not available. Operating on store database.');
+      return;
+    }
+
+    const users = await prisma.users.findMany().catch(() => null);
+    const devices = await prisma.device?.findMany().catch(() => null);
+    const conversations = await prisma.conversation?.findMany().catch(() => null);
+    const messages = await prisma.message?.findMany().catch(() => null);
+    
+    if (!Array.isArray(users) || !Array.isArray(messages)) {
+      console.log('[Prisma] PostgreSQL connection or data unavailable. Using store database.');
+      return;
+    }
     
     const db = readDb(); // load from local json first to get legacy data
     
     // Override with Postgres data
-    users.forEach(u => {
+    users.forEach((u: any) => {
       if (db.users[u.id]) {
         db.users[u.id].username = u.username;
       }

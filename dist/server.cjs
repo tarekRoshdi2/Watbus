@@ -1080,10 +1080,18 @@ function savePaymentSettings(settings) {
 async function initializeDbFromPrisma() {
   console.log("[Prisma] Loading database from PostgreSQL into memory cache...");
   try {
-    const users = await prisma.users.findMany();
-    const devices = await prisma.device.findMany();
-    const conversations = await prisma.conversation.findMany();
-    const messages = await prisma.message.findMany();
+    if (!prisma || typeof prisma.users?.findMany !== "function") {
+      console.log("[Prisma] Prisma client findMany not available. Operating on store database.");
+      return;
+    }
+    const users = await prisma.users.findMany().catch(() => null);
+    const devices = await prisma.device?.findMany().catch(() => null);
+    const conversations = await prisma.conversation?.findMany().catch(() => null);
+    const messages = await prisma.message?.findMany().catch(() => null);
+    if (!Array.isArray(users) || !Array.isArray(messages)) {
+      console.log("[Prisma] PostgreSQL connection or data unavailable. Using store database.");
+      return;
+    }
     const db = readDb();
     users.forEach((u) => {
       if (db.users[u.id]) {
@@ -2274,13 +2282,24 @@ async function initializeQueues() {
     boss = null;
   }
 }
+var directWebhookProcessor = null;
+function setDirectWebhookProcessor(processor) {
+  directWebhookProcessor = processor;
+}
 async function enqueueIncomingWebhook(payload) {
   if (boss) {
     try {
       await boss.send("incoming-messages", payload);
+      return;
     } catch (e) {
-      console.warn("[Queues] Direct fallback for webhook.");
+      console.warn("[Queues] Direct fallback for webhook due to boss send error.");
     }
+  }
+  if (directWebhookProcessor) {
+    console.log("[Queues Fallback] Executing Meta Webhook processing directly (pg-boss inactive)...");
+    directWebhookProcessor(payload).catch((err) => {
+      console.error("[Queues Fallback Error] Failed processing Meta Webhook directly:", err);
+    });
   }
 }
 
@@ -7890,7 +7909,7 @@ async function processMetaWebhook(body) {
 app.post("/api/webhooks/meta", async (req, res) => {
   try {
     const body = req.body;
-    console.log("[Meta Webhook Received] Enqueuing payload...");
+    console.log("[Meta Webhook Received] Processing payload...");
     if (body.object === "whatsapp_business_account") {
       res.sendStatus(200);
       enqueueIncomingWebhook(body);
@@ -7963,6 +7982,7 @@ async function startServer() {
   await initializeDbFromPrisma();
   await initializeQueues();
   await initializeWorkers(processMetaWebhook);
+  setDirectWebhookProcessor(processMetaWebhook);
   if (isSupabaseConfigured()) {
     console.log("[Supabase Startup] Checking for central database backup in Supabase...");
     try {

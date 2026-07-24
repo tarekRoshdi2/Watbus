@@ -112,7 +112,7 @@ import {
   initializeDbFromPrisma,
   prisma
 } from './src/db.js';
-import { initializeQueues, enqueueIncomingWebhook } from './src/queues/messageQueue.js';
+import { initializeQueues, enqueueIncomingWebhook, setDirectWebhookProcessor } from './src/queues/messageQueue.js';
 import { initializeWorkers } from './src/queues/workers.js';
 import { Folder } from './src/types.js';
 import { RouterAgent } from './src/agents/RouterAgent.js';
@@ -5709,10 +5709,10 @@ async function processMetaWebhook(body: any) {
 app.post('/api/webhooks/meta', async (req, res) => {
   try {
     const body = req.body;
-    console.log('[Meta Webhook Received] Enqueuing payload...');
+    console.log('[Meta Webhook Received] Processing payload...');
     if (body.object === 'whatsapp_business_account') {
       res.sendStatus(200); // Immediately respond to Meta to prevent timeout/retries
-      enqueueIncomingWebhook(body); // Send to pg-boss queue
+      enqueueIncomingWebhook(body); // Route to pg-boss queue or direct execution fallback
     } else {
       res.sendStatus(404);
     }
@@ -5795,6 +5795,7 @@ async function startServer() {
   await initializeDbFromPrisma();
   await initializeQueues();
   await initializeWorkers(processMetaWebhook);
+  setDirectWebhookProcessor(processMetaWebhook);
   // If Supabase is configured, restore the database from Supabase on startup
   if (isSupabaseConfigured()) {
     console.log('[Supabase Startup] Checking for central database backup in Supabase...');

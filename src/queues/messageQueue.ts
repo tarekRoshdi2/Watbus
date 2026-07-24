@@ -42,13 +42,28 @@ export async function initializeQueues() {
   }
 }
 
+let directWebhookProcessor: ((payload: any) => Promise<void>) | null = null;
+
+export function setDirectWebhookProcessor(processor: (payload: any) => Promise<void>) {
+  directWebhookProcessor = processor;
+}
+
 export async function enqueueIncomingWebhook(payload: any) {
   if (boss) {
     try {
       await boss.send('incoming-messages', payload);
+      return;
     } catch (e) {
-      console.warn('[Queues] Direct fallback for webhook.');
+      console.warn('[Queues] Direct fallback for webhook due to boss send error.');
     }
+  }
+  
+  // Direct Fallback if boss is disabled or fails
+  if (directWebhookProcessor) {
+    console.log('[Queues Fallback] Executing Meta Webhook processing directly (pg-boss inactive)...');
+    directWebhookProcessor(payload).catch(err => {
+      console.error('[Queues Fallback Error] Failed processing Meta Webhook directly:', err);
+    });
   }
 }
 
