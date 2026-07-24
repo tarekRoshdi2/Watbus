@@ -23,7 +23,7 @@ import AiKnowledgeBase from './components/AiKnowledgeBase.js';
 import ExpoCoreAgent from './components/ExpoCoreAgent.js';
 import CustomerFlowBuilder from './components/CustomerFlowBuilder.js';
 import AgentsDashboard from './components/AgentsDashboard.js';
-import { Menu, X, LayoutDashboard, MessageSquare, Smartphone, Megaphone, LogOut, Loader2, Languages, Shield, Users, Group, Star, Brain, Bot, Workflow, CreditCard, Sparkles } from 'lucide-react';
+import { Menu, X, LayoutDashboard, MessageSquare, Smartphone, Megaphone, LogOut, Loader2, Languages, Shield, Users, Group, Star, Brain, Bot, Workflow, CreditCard, Sparkles, Camera, Upload, Save, Check, Ticket } from 'lucide-react';
 import { translations } from './translations.js';
 
 // Subtle synthesizer chime for incoming message alerts
@@ -123,6 +123,19 @@ export default function App() {
   const [folders, setFolders] = useState<Folder[]>([]);
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   const [showProfileSettings, setShowProfileSettings] = useState<boolean>(false);
+  const [profileUsername, setProfileUsername] = useState<string>(currentUser?.username || '');
+  const [profileEmail, setProfileEmail] = useState<string>(currentUser?.email || '');
+  const [profilePassword, setProfilePassword] = useState<string>('');
+  const [profileAvatarUrl, setProfileAvatarUrl] = useState<string>(currentUser?.avatarUrl || '');
+  const [profileSavedToast, setProfileSavedToast] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (currentUser) {
+      setProfileUsername(currentUser.username);
+      setProfileEmail(currentUser.email || '');
+      setProfileAvatarUrl(currentUser.avatarUrl);
+    }
+  }, [currentUser, showProfileSettings]);
 
   // Expanded Image Lightbox State
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
@@ -1466,19 +1479,38 @@ export default function App() {
               <p className="text-emerald-100 text-xs mt-1">{lang === 'ar' ? 'إدارة بياناتك الشخصية وخطتك' : 'Manage your personal details and plan'}</p>
             </div>
 
-            <div className="p-6 space-y-5 max-h-[70vh] overflow-y-auto">
-              {/* Avatar */}
+            <div className="p-6 space-y-5 max-h-[75vh] overflow-y-auto custom-scrollbar">
+              {/* Avatar Upload Header */}
               <div className="flex flex-col items-center gap-3">
-                <img src={currentUser.avatarUrl} alt="avatar" className="w-20 h-20 rounded-full object-cover border-4 border-emerald-500/30 shadow-lg" />
-                <div className="text-center">
-                  <label className="text-[10px] font-bold text-zinc-400 uppercase block mb-1">{lang === 'ar' ? 'رابط الصورة الشخصية' : 'Avatar URL'}</label>
+                <div className="relative group">
+                  <img src={profileAvatarUrl || currentUser.avatarUrl} alt="avatar" className="w-24 h-24 rounded-full object-cover border-4 border-emerald-500/40 shadow-xl group-hover:opacity-80 transition-opacity" />
+                  <label htmlFor="profile-avatar-file" className="absolute inset-0 flex items-center justify-center bg-black/40 rounded-full opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer text-white text-xs font-bold gap-1">
+                    <Camera className="w-5 h-5" />
+                    <span>{lang === 'ar' ? 'تغيير' : 'Edit'}</span>
+                  </label>
                   <input
-                    type="text"
-                    defaultValue={currentUser.avatarUrl}
-                    onBlur={(e) => { if (e.target.value !== currentUser.avatarUrl) handleUpdateProfile({ avatarUrl: e.target.value }); }}
-                    className="bg-zinc-100 dark:bg-zinc-800 text-xs border border-zinc-200 dark:border-zinc-700 rounded-xl px-3 py-2 w-64 text-center outline-none focus:border-emerald-500 text-zinc-700 dark:text-zinc-300"
-                    placeholder="https://..."
+                    type="file"
+                    id="profile-avatar-file"
+                    accept="image/*"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        const reader = new FileReader();
+                        reader.onloadend = () => {
+                          if (reader.result) setProfileAvatarUrl(reader.result as string);
+                        };
+                        reader.readAsDataURL(file);
+                      }
+                    }}
+                    className="hidden"
                   />
+                </div>
+                
+                <div className="flex items-center gap-2">
+                  <label htmlFor="profile-avatar-file" className="bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-xs font-bold px-3.5 py-1.5 rounded-xl border border-emerald-500/30 cursor-pointer flex items-center gap-1.5 transition-all shadow-sm">
+                    <Upload className="w-3.5 h-3.5" />
+                    <span>{lang === 'ar' ? 'رفع صورة جديدة من الجهاز' : 'Upload Image File'}</span>
+                  </label>
                 </div>
               </div>
 
@@ -1487,8 +1519,8 @@ export default function App() {
                 <label className="text-[10px] font-bold text-zinc-400 uppercase block mb-1">{lang === 'ar' ? 'الاسم' : 'Display Name'}</label>
                 <input
                   type="text"
-                  defaultValue={currentUser.username}
-                  onBlur={(e) => { if (e.target.value !== currentUser.username) handleUpdateProfile({ username: e.target.value }); }}
+                  value={profileUsername}
+                  onChange={(e) => setProfileUsername(e.target.value)}
                   className="w-full bg-zinc-100 dark:bg-zinc-800 text-sm border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-2.5 outline-none focus:border-emerald-500 text-zinc-800 dark:text-zinc-200"
                 />
               </div>
@@ -1498,8 +1530,8 @@ export default function App() {
                 <label className="text-[10px] font-bold text-zinc-400 uppercase block mb-1">{lang === 'ar' ? 'البريد الإلكتروني' : 'Email Address'}</label>
                 <input
                   type="email"
-                  defaultValue={currentUser.email || ''}
-                  onBlur={(e) => { if (e.target.value !== (currentUser.email || '')) handleUpdateProfile({ email: e.target.value }); }}
+                  value={profileEmail}
+                  onChange={(e) => setProfileEmail(e.target.value)}
                   className="w-full bg-zinc-100 dark:bg-zinc-800 text-sm border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-2.5 outline-none focus:border-emerald-500 text-zinc-800 dark:text-zinc-200"
                   placeholder="email@example.com"
                 />
@@ -1510,10 +1542,44 @@ export default function App() {
                 <label className="text-[10px] font-bold text-zinc-400 uppercase block mb-1">{lang === 'ar' ? 'كلمة المرور الجديدة' : 'New Password'}</label>
                 <input
                   type="password"
+                  value={profilePassword}
+                  onChange={(e) => setProfilePassword(e.target.value)}
                   placeholder={lang === 'ar' ? 'اتركه فارغاً إن لم تريد التغيير' : 'Leave blank to keep current'}
-                  onBlur={(e) => { if (e.target.value.trim()) handleUpdateProfile({ password: e.target.value.trim() }); }}
                   className="w-full bg-zinc-100 dark:bg-zinc-800 text-sm border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-2.5 outline-none focus:border-emerald-500 text-zinc-800 dark:text-zinc-200"
                 />
+              </div>
+
+              {/* Prominent Save Button */}
+              <div className="pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleUpdateProfile({
+                      username: profileUsername,
+                      email: profileEmail,
+                      avatarUrl: profileAvatarUrl,
+                      ...(profilePassword.trim() ? { password: profilePassword.trim() } : {})
+                    });
+                    setProfileSavedToast(true);
+                    setTimeout(() => {
+                      setProfileSavedToast(false);
+                      setShowProfileSettings(false);
+                    }, 1200);
+                  }}
+                  className="w-full bg-gradient-to-r from-[#00a884] to-emerald-600 hover:from-emerald-600 hover:to-teal-600 text-white py-3 rounded-2xl font-black text-sm shadow-xl shadow-emerald-500/20 cursor-pointer transition-all flex items-center justify-center gap-2 active:scale-95"
+                >
+                  {profileSavedToast ? (
+                    <>
+                      <Check className="w-5 h-5 text-white animate-bounce" />
+                      <span>{lang === 'ar' ? 'تم حفظ التعديلات بنجاح! ✨' : 'Changes Saved Successfully! ✨'}</span>
+                    </>
+                  ) : (
+                    <>
+                      <Save className="w-5 h-5" />
+                      <span>{lang === 'ar' ? 'حفظ التعديلات' : 'Save Changes'}</span>
+                    </>
+                  )}
+                </button>
               </div>
 
               {/* Subscription Info */}

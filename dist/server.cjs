@@ -2083,6 +2083,76 @@ var import_jsonwebtoken = __toESM(require("jsonwebtoken"), 1);
 
 // src/agents/ChatCoreSwarm.ts
 var import_genai = require("@google/genai");
+function generateSupportTicketSvg(tckNo, customerName) {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="800" height="400" viewBox="0 0 800 400" fill="none">
+    <rect width="800" height="400" rx="24" fill="#0f172a"/>
+    <rect width="798" height="398" x="1" y="1" rx="23" stroke="#6366f1" stroke-opacity="0.4" stroke-width="2"/>
+    <circle cx="700" cy="320" r="140" fill="#6366f1" fill-opacity="0.08"/>
+    
+    <!-- Header -->
+    <rect x="40" y="35" width="48" height="48" rx="12" fill="#4f46e5"/>
+    <text x="56" y="67" fill="#ffffff" font-family="system-ui, sans-serif" font-size="22" font-weight="900">\u{1F6E0}\uFE0F</text>
+    <text x="104" y="58" fill="#ffffff" font-family="system-ui, sans-serif" font-size="22" font-weight="800">ChatCore Technical Support</text>
+    <text x="104" y="76" fill="#818cf8" font-family="system-ui, sans-serif" font-size="12" font-weight="700" letter-spacing="1">AUTOMATED ONBOARDING & TICKET</text>
+    
+    <rect x="580" y="35" width="180" height="36" rx="18" fill="#4f46e5" fill-opacity="0.2" stroke="#6366f1"/>
+    <text x="670" y="58" fill="#818cf8" font-family="system-ui, sans-serif" font-size="13" font-weight="800" text-anchor="middle">STATUS: OPEN</text>
+
+    <rect x="40" y="110" width="720" height="240" rx="16" fill="#1e293b" stroke="#334155"/>
+    <text x="70" y="150" fill="#94a3b8" font-family="system-ui, sans-serif" font-size="12" font-weight="600">TICKET ID</text>
+    <text x="70" y="180" fill="#6366f1" font-family="monospace" font-size="22" font-weight="900">#${tckNo}</text>
+    
+    <text x="350" y="150" fill="#94a3b8" font-family="system-ui, sans-serif" font-size="12" font-weight="600">ASSIGNED ENGINEER</text>
+    <text x="350" y="180" fill="#ffffff" font-family="system-ui, sans-serif" font-size="16" font-weight="800">Eng. Omar (\u0645\u0647\u0646\u062F\u0633 \u0639\u0645\u0631 \u0627\u0644\u062F\u0639\u0645)</text>
+    
+    <text x="70" y="230" fill="#94a3b8" font-family="system-ui, sans-serif" font-size="12" font-weight="600">CUSTOMER NAME</text>
+    <text x="70" y="260" fill="#ffffff" font-family="system-ui, sans-serif" font-size="16" font-weight="700">${customerName}</text>
+    
+    <text x="350" y="230" fill="#94a3b8" font-family="system-ui, sans-serif" font-size="12" font-weight="600">PRIORITY</text>
+    <text x="350" y="260" fill="#38bdf8" font-family="system-ui, sans-serif" font-size="16" font-weight="800">\u26A1 HIGH / REAL-TIME ASSIST</text>
+
+    <line x1="70" y1="290" x2="730" y2="290" stroke="#334155" stroke-width="1"/>
+    <text x="70" y="325" fill="#cbd5e1" font-family="system-ui, sans-serif" font-size="13" font-weight="600">Our engineering team is currently assisting your WhatsApp connection step-by-step.</text>
+  </svg>`;
+  return "data:image/svg+xml;base64," + Buffer.from(svg).toString("base64");
+}
+function generatePricingPlansSvg() {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="800" height="420" viewBox="0 0 800 420" fill="none">
+    <rect width="800" height="420" rx="24" fill="#090d16"/>
+    <rect width="798" height="418" x="1" y="1" rx="23" stroke="#f59e0b" stroke-opacity="0.3" stroke-width="2"/>
+    
+    <text x="400" y="45" fill="#ffffff" font-family="system-ui, sans-serif" font-size="24" font-weight="900" text-anchor="middle">\u{1F48E} ChatCore Enterprise AI Plans &amp; Pricing</text>
+    <text x="400" y="70" fill="#f59e0b" font-family="system-ui, sans-serif" font-size="13" font-weight="700" text-anchor="middle">Choose the perfect multi-agent plan for your business in Egypt</text>
+
+    <!-- Plan 1 -->
+    <rect x="40" y="100" width="220" height="280" rx="16" fill="#111827" stroke="#1f2937"/>
+    <text x="150" y="135" fill="#9ca3af" font-family="system-ui, sans-serif" font-size="14" font-weight="800" text-anchor="middle">STARTER AI</text>
+    <text x="150" y="175" fill="#ffffff" font-family="system-ui, sans-serif" font-size="26" font-weight="900" text-anchor="middle">1,200 <tspan font-size="14">EGP</tspan></text>
+    <text x="150" y="210" fill="#10b981" font-family="system-ui, sans-serif" font-size="12" font-weight="700" text-anchor="middle">\u2714 1 WhatsApp Line</text>
+    <text x="150" y="240" fill="#10b981" font-family="system-ui, sans-serif" font-size="12" font-weight="700" text-anchor="middle">\u2714 Basic Sales Agent</text>
+    <text x="150" y="270" fill="#10b981" font-family="system-ui, sans-serif" font-size="12" font-weight="700" text-anchor="middle">\u2714 RAG Knowledge Base</text>
+
+    <!-- Plan 2 (Popular) -->
+    <rect x="290" y="90" width="220" height="300" rx="16" fill="#1e1b4b" stroke="#6366f1" stroke-width="2"/>
+    <rect x="350" y="90" width="100" height="22" rx="11" fill="#6366f1"/>
+    <text x="400" y="105" fill="#ffffff" font-family="system-ui, sans-serif" font-size="10" font-weight="900" text-anchor="middle">MOST POPULAR</text>
+    <text x="400" y="140" fill="#a5b4fc" font-family="system-ui, sans-serif" font-size="15" font-weight="800" text-anchor="middle">BUSINESS SWARM</text>
+    <text x="400" y="180" fill="#ffffff" font-family="system-ui, sans-serif" font-size="28" font-weight="900" text-anchor="middle">2,500 <tspan font-size="14">EGP</tspan></text>
+    <text x="400" y="215" fill="#818cf8" font-family="system-ui, sans-serif" font-size="12" font-weight="700" text-anchor="middle">\u2714 3 Multi-Lines (Baileys/Meta)</text>
+    <text x="400" y="245" fill="#818cf8" font-family="system-ui, sans-serif" font-size="12" font-weight="700" text-anchor="middle">\u2714 6 AI Employees Swarm</text>
+    <text x="400" y="275" fill="#818cf8" font-family="system-ui, sans-serif" font-size="12" font-weight="700" text-anchor="middle">\u2714 Live WebSockets Telemetry</text>
+    <text x="400" y="305" fill="#818cf8" font-family="system-ui, sans-serif" font-size="12" font-weight="700" text-anchor="middle">\u2714 Meta Cloud Voice Notes PTT</text>
+
+    <!-- Plan 3 -->
+    <rect x="540" y="100" width="220" height="280" rx="16" fill="#111827" stroke="#1f2937"/>
+    <text x="650" y="135" fill="#9ca3af" font-family="system-ui, sans-serif" font-size="14" font-weight="800" text-anchor="middle">ENTERPRISE HQ</text>
+    <text x="650" y="175" fill="#ffffff" font-family="system-ui, sans-serif" font-size="26" font-weight="900" text-anchor="middle">4,900 <tspan font-size="14">EGP</tspan></text>
+    <text x="650" y="210" fill="#f59e0b" font-family="system-ui, sans-serif" font-size="12" font-weight="700" text-anchor="middle">\u2714 Unlimited Connections</text>
+    <text x="650" y="240" fill="#f59e0b" font-family="system-ui, sans-serif" font-size="12" font-weight="700" text-anchor="middle">\u2714 Custom Agent Personas</text>
+    <text x="650" y="270" fill="#f59e0b" font-family="system-ui, sans-serif" font-size="12" font-weight="700" text-anchor="middle">\u2714 Dedicated Server Deployment</text>
+  </svg>`;
+  return "data:image/svg+xml;base64," + Buffer.from(svg).toString("base64");
+}
 var ChatCoreSwarm = class {
   constructor() {
     this.ai = null;
@@ -2200,7 +2270,7 @@ ${knowledgeBaseText}
           agentName: "\u0627\u0644\u0623\u0633\u062A\u0627\u0630 \u0635\u0644\u0627\u062D \u0627\u0644\u062D\u0633\u0627\u0628\u0627\u062A",
           agentTitle: "Invoice Chief",
           text: replyText2,
-          mediaUrl: "https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=800",
+          mediaUrl: generatePricingPlansSvg(),
           invoiceData
         };
       }
@@ -2267,7 +2337,8 @@ ${historySummary}
 \u0627\u0644\u0637\u0644\u0628 \u0627\u0644\u062D\u0627\u0644\u064A: "${userMessage}"
 \u0623\u0635\u062F\u0631\u062A \u0641\u0627\u062A\u0648\u0631\u0629 \u0631\u0633\u0645\u064A\u0629 \u0628\u0631\u0642\u0645 #${invNo} \u0628\u0645\u0628\u0644\u063A ${amount} \u062C.\u0645 \u0644\u0640 ${planName}.
 \u0631\u062D\u0651\u0628 \u0628\u0627\u0644\u0639\u0645\u064A\u0644 "${customerName}" \u0648\u0627\u0637\u0644\u0628 \u0645\u0646\u0647 \u0627\u0644\u062A\u062D\u0648\u064A\u0644 \u0628\u0627\u0633\u0645 \u0637\u0627\u0631\u0642 \u0631\u0634\u062F\u064A \u0639\u0644\u0649 InstaPay (trkroshdi@instapay) \u0623\u0648 \u0641\u0648\u062F\u0627\u0641\u0648\u0646 \u0643\u0627\u0634 (01115822923) \u0648\u0631\u0641\u0639 \u0633\u0643\u0631\u064A\u0646 \u0634\u0648\u062A \u0627\u0644\u0625\u064A\u0635\u0627\u0644 \u0644\u0644\u0627\u0639\u062A\u0645\u0627\u062F \u0627\u0644\u0641\u0648\u0631\u064A.
-\u0627\u0643\u062A\u0628 \u0628\u0627\u0644\u0639\u0627\u0645\u064A\u0629 \u0627\u0644\u0645\u0635\u0631\u064A\u0629 \u0627\u0644\u0631\u0627\u0642\u064A\u0629 \u0648\u0627\u0644\u0627\u062D\u062A\u0631\u0627\u0641\u064A\u0629 \u0628\u0623\u0633\u0644\u0648\u0628 \u062A\u0646\u0641\u064A\u0630\u064A \u0631\u0627\u0642\u064D.`;
+\u0627\u0643\u062A\u0628 \u0628\u0627\u0644\u0639\u0627\u0645\u064A\u0629 \u0627\u0644\u0645\u0635\u0631\u064A\u0629 \u0627\u0644\u0631\u0627\u0642\u064A\u0629 \u0648\u0627\u0644\u0627\u062D\u062A\u0631\u0627\u0641\u064A\u0629 \u0628\u0623\u0633\u0644\u0648\u0628 \u062A\u0646\u0641\u064A\u0630\u064A \u0631\u0627\u0642\u064D.
+\u0642\u0648\u0627\u0639\u062F \u0635\u0627\u0631\u0645\u0629 \u0644\u0645\u0646\u0639 \u0627\u0644\u062A\u0643\u0631\u0627\u0631: \u0625\u0630\u0627 \u0643\u0627\u0646\u062A \u0647\u0646\u0627\u0643 \u0631\u0633\u0627\u0626\u0644 \u0633\u0627\u0628\u0642\u0629 \u0641\u064A \u0627\u0644\u0645\u062D\u0627\u062F\u062B\u0629\u060C \u064A\u0645\u0646\u0639 \u0625\u0639\u0627\u062F\u062A\u0643 \u0644\u062F\u064A\u0628\u0627\u062C\u0629 \u0627\u0644\u062A\u0631\u062D\u064A\u0628 \u0645\u062B\u0644 "\u0623\u0647\u0644\u0627\u064B \u0628\u0643 \u064A\u0627 \u0641\u0646\u062F\u0645" \u0623\u0648 \u062A\u0639\u0631\u064A\u0641 \u0646\u0641\u0633\u0643 \u0645\u062C\u062F\u062F\u0627\u064B! \u0623\u062C\u0628 \u0645\u0628\u0627\u0634\u0631\u0629 \u0648\u0628\u0634\u0643\u0644 \u0645\u062E\u062A\u0635\u0631 \u0648\u0641\u0648\u0631\u064A\u0627\u064B \u0639\u0644\u0649 \u0633\u0624\u0627\u0644 \u0627\u0644\u0639\u0645\u064A\u0644!`;
       const aiText2 = await this.safeGenerateContent(prompt2);
       const replyText2 = aiText2 || `\u0623\u0647\u0644\u0627\u064B \u0628\u0643 \u064A\u0627 \u0641\u0646\u062F\u0645 (${customerName})! \u062A\u0645 \u0625\u0635\u062F\u0627\u0631 \u0627\u0644\u0641\u0627\u062A\u0648\u0631\u0629 \u0627\u0644\u0631\u0633\u0645\u064A\u0629 \u0628\u0631\u0642\u0645 #${invNo} \u0644\u0640 ${invoiceData.planName}.
 
@@ -2298,7 +2369,8 @@ ${historySummary}
 
 \u0631\u0633\u0627\u0644\u0629 \u0627\u0644\u0639\u0645\u064A\u0644: "${userMessage}"
 \u0627\u0634\u0631\u062D \u0644\u0644\u0639\u0645\u064A\u0644 "${customerName}" \u0637\u0631\u064A\u0642\u0629 \u0631\u0628\u0637 \u0627\u0644\u0648\u0627\u062A\u0633\u0627\u0628 (\u0645\u0633\u062D \u0643\u0648\u062F QR) \u0623\u0648 \u0631\u0628\u0637 \u0627\u0644\u062A\u0644\u064A\u062C\u0631\u0627\u0645 (\u0625\u0646\u0634\u0627\u0621 \u0628\u0648\u062A \u0639\u0644\u0649 @BotFather \u0648\u0646\u0633\u062E \u0627\u0644\u062A\u0648\u0643\u0646).
-\u0627\u0643\u062A\u0628 \u0628\u0627\u0644\u0639\u0627\u0645\u064A\u0629 \u0627\u0644\u0645\u0635\u0631\u064A\u0629 \u0627\u0644\u0631\u0627\u0642\u064A\u0629 \u0648\u0627\u0644\u0645\u0646\u0638\u0645\u0629 \u062C\u062F\u0627\u064B.`;
+\u0627\u0643\u062A\u0628 \u0628\u0627\u0644\u0639\u0627\u0645\u064A\u0629 \u0627\u0644\u0645\u0635\u0631\u064A\u0629 \u0627\u0644\u0631\u0627\u0642\u064A\u0629 \u0648\u0627\u0644\u0645\u0646\u0638\u0645\u0629 \u062C\u062F\u0627\u064B.
+\u0642\u0648\u0627\u0639\u062F \u0635\u0627\u0631\u0645\u0629 \u0644\u0645\u0646\u0639 \u0627\u0644\u062A\u0643\u0631\u0627\u0631: \u0625\u0630\u0627 \u0643\u0627\u0646\u062A \u0647\u0646\u0627\u0643 \u0631\u0633\u0627\u0626\u0644 \u0633\u0627\u0628\u0642\u0629 \u0641\u064A \u0627\u0644\u0645\u062D\u0627\u062F\u062B\u0629\u060C \u064A\u0645\u0646\u0639 \u0625\u0639\u0627\u062F\u062A\u0643 \u0644\u062F\u064A\u0628\u0627\u062C\u0629 \u0627\u0644\u062A\u0631\u062D\u064A\u0628 \u0645\u062B\u0644 "\u0623\u0647\u0644\u0627\u064B \u0628\u0643 \u064A\u0627 \u0641\u0646\u062F\u0645" \u0623\u0648 \u062A\u0639\u0631\u064A\u0641 \u0646\u0641\u0633\u0643 \u0645\u062C\u062F\u062F\u0627\u064B! \u0623\u062C\u0628 \u0645\u0628\u0627\u0634\u0631\u0629 \u0648\u0628\u0634\u0643\u0644 \u0645\u062E\u062A\u0635\u0631 \u0648\u0641\u0648\u0631\u064A\u0627\u064B \u0639\u0644\u0649 \u0633\u0624\u0627\u0644 \u0627\u0644\u0639\u0645\u064A\u0644!`;
       const aiText2 = await this.safeGenerateContent(prompt2);
       const replyText2 = aiText2 || `\u0623\u0647\u0644\u0627\u064B \u0628\u0643 \u064A\u0627 \u0641\u0646\u062F\u0645 (${customerName}) \u0645\u0639\u0643\u0645 \u0645\u0647\u0646\u062F\u0633 \u0639\u0645\u0631 \u0627\u0644\u062F\u0639\u0645 \u0627\u0644\u0641\u0646\u064A \u{1F6E0}\uFE0F!
 
@@ -2317,7 +2389,7 @@ ${historySummary}
         text: replyText2 + `
 
 \u{1F3AB} **\u0631\u0642\u0645 \u062A\u0630\u0643\u0631\u0629 \u0627\u0644\u062F\u0639\u0645 \u0627\u0644\u0641\u0646\u064A \u0627\u0644\u0645\u064F\u062A\u0648\u0644\u0651\u062F\u0629**: #${tckNo}`,
-        mediaUrl: "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=1200"
+        mediaUrl: generateSupportTicketSvg(tckNo, customerName)
       };
     }
     if (text.includes("\u0635\u0648\u0631\u0629") || text.includes("\u062A\u0635\u0645\u064A\u0645") || text.includes("\u0643\u0627\u0631\u062A") || text.includes("\u0628\u0631\u0648\u0634\u0648\u0631") || text.includes("\u0634\u0643\u0644")) {
@@ -2340,7 +2412,7 @@ ${historySummary}
         agentName: "\u0643\u0631\u064A\u0645 \u0627\u0644\u062F\u064A\u0632\u0627\u064A\u0646",
         agentTitle: "Creative Media & Graphic Officer",
         text: replyText2,
-        mediaUrl: "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800"
+        mediaUrl: generatePricingPlansSvg()
       };
     }
     const hasDiscussedPlans = historySummary.includes("\u0628\u0627\u0642\u0629") || historySummary.includes("Starter") || historySummary.includes("1,200") || historySummary.includes("2,500");
@@ -2384,7 +2456,7 @@ ${hasDiscussedPlans ? "\u0627\u0644\u0639\u0645\u064A\u0644 \u064A\u0646\u0627\u
       agentName: "\u0623\u062D\u0645\u062F \u0627\u0644\u0645\u0628\u064A\u0639\u0627\u062A",
       agentTitle: "Chief Sales & Closing Officer",
       text: replyText,
-      mediaUrl: hasDiscussedPlans ? void 0 : "https://images.unsplash.com/photo-1557804506-669a67965ba0?w=1200"
+      mediaUrl: hasDiscussedPlans ? void 0 : generatePricingPlansSvg()
     };
   }
 };

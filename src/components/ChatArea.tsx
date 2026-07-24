@@ -1157,7 +1157,7 @@ export default function ChatArea({
       </div>
 
       {/* Bottom Message Input Bar */}
-      <div className="bg-zinc-100 dark:bg-zinc-900 border-t border-zinc-200 dark:border-zinc-800 p-3 z-10 shadow-md relative">
+      <div className="bg-zinc-100 dark:bg-zinc-900 border-t border-zinc-200 dark:border-zinc-800 p-3 z-10 shadow-md relative pb-20 md:pb-3">
         {/* AI Employee Actions Quick Bar */}
         <div className="mb-2.5 flex items-center gap-2 overflow-x-auto pb-1 custom-scrollbar text-xs">
           <span className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider flex items-center gap-1 shrink-0">
