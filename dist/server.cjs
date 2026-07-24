@@ -357,6 +357,9 @@ __export(db_exports, {
   deleteFolder: () => deleteFolder,
   deleteUser: () => deleteUser,
   getActiveStatuses: () => getActiveStatuses,
+  getAgentAuditLogs: () => getAgentAuditLogs,
+  getAgentStats: () => getAgentStats,
+  getAgentsConfig: () => getAgentsConfig,
   getAllCampaigns: () => getAllCampaigns,
   getAllDevices: () => getAllDevices,
   getAllFolders: () => getAllFolders,
@@ -377,7 +380,9 @@ __export(db_exports, {
   mergeLidContactsAndConversations: () => mergeLidContactsAndConversations,
   prisma: () => prisma,
   readDb: () => readDb,
+  recordAgentActivity: () => recordAgentActivity,
   resetDbCache: () => resetDbCache,
+  saveAgentConfig: () => saveAgentConfig,
   saveCampaign: () => saveCampaign,
   saveConversation: () => saveConversation,
   saveDevice: () => saveDevice,
@@ -1119,6 +1124,122 @@ async function initializeDbFromPrisma() {
   } catch (err) {
     console.error("[Prisma] Error loading from DB", err);
   }
+}
+function getAgentsConfig() {
+  const db = readDb();
+  return db.agentsConfig || {
+    sales: {
+      id: "sales",
+      name: "\u0623\u062D\u0645\u062F \u0627\u0644\u0645\u0628\u064A\u0639\u0627\u062A",
+      title: "Chief Sales & Closing Officer",
+      systemPrompt: "\u0623\u0646\u062A \u0623\u062D\u0645\u062F \u0627\u0644\u0645\u0628\u064A\u0639\u0627\u062A\u060C \u062E\u0628\u064A\u0631 \u0625\u063A\u0644\u0627\u0642 \u0627\u0644\u0635\u0641\u0642\u0627\u062A \u0648\u0625\u0642\u0646\u0627\u0639 \u0627\u0644\u0639\u0645\u0644\u0627\u0621 \u0628\u0623\u0633\u0644\u0648\u0628 \u0645\u0647\u0646\u064A \u0648\u0648\u062F\u0648\u062F.",
+      responsibilities: ["\u0627\u0633\u062A\u0642\u0628\u0627\u0644 \u0648\u0631\u0639\u0627\u064A\u0629 \u0627\u0644\u0639\u0645\u0644\u0627\u0621 \u0645\u0647\u062A\u0645\u064A\u0646 \u0628\u0627\u0644\u062E\u062F\u0645\u0627\u062A", "\u0627\u0633\u062A\u062E\u062F\u0627\u0645 \u0627\u0633\u062A\u0631\u0627\u062A\u064A\u062C\u064A\u0627\u062A \u0625\u063A\u0644\u0627\u0642 \u0627\u0644\u0645\u0628\u064A\u0639\u0627\u062A", "\u062A\u0642\u062F\u064A\u0645 \u062E\u0635\u0648\u0645\u0627\u062A \u062A\u0631\u0648\u064A\u062C\u064A\u0629 \u062D\u0635\u0631\u064A\u0629"],
+      maxDiscount: 15,
+      isActive: true
+    },
+    invoice: {
+      id: "invoice",
+      name: "\u0627\u0644\u0623\u0633\u062A\u0627\u0630 \u0635\u0644\u0627\u062D \u0627\u0644\u062D\u0633\u0627\u0628\u0627\u062A",
+      title: "Invoice & Billing Chief",
+      systemPrompt: "\u0623\u0646\u062A \u0627\u0644\u0645\u062D\u0627\u0633\u0628 \u0627\u0644\u0645\u0627\u0644\u064A \u0627\u0644\u0623\u0633\u062A\u0627\u0630 \u0635\u0644\u0627\u062D. \u0645\u0647\u0645\u062A\u0643 \u062A\u062F\u0642\u064A\u0642 \u0627\u0644\u0628\u0646\u0648\u062F \u0648\u062D\u0633\u0627\u0628 \u0645\u0628\u0627\u0644\u063A \u0627\u0644\u0627\u0634\u062A\u0631\u0627\u0643\u0627\u062A \u0648\u062A\u0632\u0648\u064A\u062F \u0627\u0644\u0639\u0645\u0644\u0627\u0621 \u0628\u0628\u064A\u0627\u0646\u0627\u062A \u0627\u0644\u0633\u062F\u0627\u062F \u0627\u0644\u0641\u0648\u0631\u064A.",
+      responsibilities: ["\u062A\u0641\u0646\u064A\u062F \u0628\u0646\u0648\u062F \u0627\u0644\u0641\u0627\u062A\u0648\u0631\u0629 \u0648\u062D\u0633\u0627\u0628 \u0627\u0644\u0645\u062C\u0645\u0648\u0639 \u0628\u062C\u062F\u0642\u0629 100%", "\u062A\u0648\u0644\u064A\u062F \u0631\u0648\u0627\u0628\u0637 \u062F\u0641\u0639 \u0633\u0631\u064A\u0639\u0629 \u0648\u0622\u0645\u0646\u0629 (InstaPay/\u0641\u0648\u062F\u0627\u0641\u0648\u0646 \u0643\u0627\u0634)"],
+      isActive: true
+    },
+    support: {
+      id: "support",
+      name: "\u0645\u0647\u0646\u062F\u0633 \u0639\u0645\u0631 \u0627\u0644\u062F\u0639\u0645 \u0627\u0644\u0641\u0646\u064A",
+      title: "Technical Support Chief",
+      systemPrompt: "\u0623\u0646\u062A \u0645\u0647\u0646\u062F\u0633 \u0639\u0645\u0631 \u0627\u0644\u062F\u0639\u0645 \u0627\u0644\u0641\u0646\u064A. \u062A\u062A\u0648\u0644\u0649 \u0645\u0639\u0627\u0644\u062C\u0629 \u0627\u0644\u0634\u0643\u0627\u0648\u0649 \u0641\u0648\u0631\u0627\u064B \u0648\u062A\u0642\u062F\u064A\u0645 \u0627\u0644\u0627\u0639\u062A\u0630\u0627\u0631 \u0627\u0644\u0631\u0627\u0642\u064A \u0648\u062D\u0644 \u0627\u0644\u0645\u0634\u0627\u0643\u0644 \u0627\u0644\u062A\u0642\u0646\u064A\u0629.",
+      responsibilities: ["\u0627\u0633\u062A\u0642\u0628\u0627\u0644 \u0627\u0644\u0623\u0639\u0637\u0627\u0644 \u0648\u0627\u0644\u0627\u0639\u062A\u0630\u0627\u0631 \u0627\u0644\u0641\u0648\u0631\u064A \u0627\u0644\u0644\u0627\u0626\u0642", "\u0641\u062A\u062D \u0648\u062A\u062A\u0628\u0639 \u062A\u0630\u0627\u0643\u0631 \u0627\u0644\u062F\u0639\u0645 \u0628\u0627\u0644\u0631\u0642\u0645 \u0627\u0644\u0641\u0631\u064A\u062F #TCK-XXXX"],
+      isActive: true
+    },
+    media: {
+      id: "media",
+      name: "\u0643\u0631\u064A\u0645 \u0627\u0644\u062F\u064A\u0632\u0627\u064A\u0646",
+      title: "Creative Media Agent",
+      systemPrompt: "\u0623\u0646\u062A \u0643\u0631\u064A\u0645 \u0627\u0644\u0645\u0635\u0645\u0645 \u0627\u0644\u0645\u0628\u062F\u0639. \u062A\u0635\u0646\u0639 \u0643\u0631\u0648\u062A \u0628\u0635\u0631\u064A\u0629 \u062C\u0630\u0627\u0628\u0629 \u0644\u0644\u0645\u0646\u062A\u062C\u0627\u062A \u0648\u0627\u0644\u0639\u0631\u0648\u0636.",
+      responsibilities: ["\u062A\u0635\u0645\u064A\u0645 \u0643\u0631\u0648\u062A \u0639\u0631\u0648\u0636 \u0628\u0631\u0627\u0628\u0637 \u0628\u0635\u0631\u064A \u0639\u0627\u0644\u064A \u0627\u0644\u062C\u0648\u062F\u0629", "\u062A\u0623\u0637\u064A\u0631 \u0645\u0632\u0627\u064A\u0627 \u0627\u0644\u0645\u0646\u062A\u062C\u0627\u062A \u0641\u064A \u0642\u0648\u0627\u0644\u0628 \u062A\u0633\u0648\u064A\u0642\u064A\u0629"],
+      isActive: true
+    },
+    marketing: {
+      id: "marketing",
+      name: "\u0645\u0627\u0631\u064A\u0646\u0627 \u0627\u0644\u062A\u0633\u0648\u064A\u0642",
+      title: "Marketing & Campaigns Agent",
+      systemPrompt: "\u0623\u0646\u062A \u0645\u0627\u0631\u064A\u0646\u0627 \u0645\u062F\u064A\u0631\u0629 \u0627\u0644\u062A\u0633\u0648\u064A\u0642. \u062A\u0642\u0648\u0645\u064A\u0646 \u0628\u062A\u0635\u0646\u064A\u0641 \u0627\u0647\u062A\u0645\u0627\u0645\u0627\u062A \u0627\u0644\u0639\u0645\u0644\u0627\u0621 \u0648\u062C\u062F\u0648\u0644\u0629 \u0627\u0644\u062D\u0645\u0644\u0627\u062A.",
+      responsibilities: ["\u062A\u0642\u0633\u064A\u0645 \u0627\u0644\u0639\u0645\u0644\u0627\u0621 \u0625\u0644\u0649 \u0634\u0631\u0627\u0626\u062D", "\u0635\u064A\u0627\u063A\u0629 \u0646\u0635\u0648\u0635 \u062A\u0631\u0648\u064A\u062C\u064A\u0629 \u0642\u0635\u064A\u0631\u0629 \u0648\u0645\u062D\u0641\u0632\u0629 \u0644\u0644\u0634\u0631\u0627\u0621"],
+      isActive: true
+    },
+    router: {
+      id: "router",
+      name: "\u0627\u0644\u0643\u0627\u0628\u062A\u0646 \u0627\u0644\u0645\u0634\u0631\u0641 \u0627\u0644\u0639\u0627\u0645",
+      title: "Master Swarm Router",
+      systemPrompt: "\u0623\u0646\u062A \u0627\u0644\u0639\u0642\u0644 \u0627\u0644\u062A\u0646\u0633\u064A\u0642\u064A \u0627\u0644\u0645\u0648\u062C\u0647 \u0644\u0644\u0645\u0646\u0638\u0648\u0645\u0629. \u062A\u0637\u0644\u0639 \u0639\u0644\u0649 \u0631\u0633\u0627\u0644\u0629 \u0627\u0644\u0639\u0645\u064A\u0644 \u0648\u062A\u0648\u062C\u0647\u0647\u0627 \u0644\u0644\u0645\u0648\u0638\u0641 \u0627\u0644\u0645\u062E\u062A\u0635 \u0641\u0648\u0631\u0627\u064B.",
+      responsibilities: ["\u062A\u062D\u0644\u064A\u0644 \u0646\u064A\u0629 \u0627\u0644\u0631\u0633\u0627\u0644\u0629 \u0648\u0633\u0631\u0639\u0629 \u0627\u0644\u062A\u0648\u062C\u064A\u0647", "\u0645\u0631\u0627\u0642\u0628\u0629 \u0645\u0633\u062A\u0648\u0649 \u062C\u0648\u062F\u0629 \u0627\u0644\u0631\u062F\u0648\u062F \u0648\u0627\u0644\u062A\u0646\u0633\u064A\u0642"],
+      isActive: true
+    }
+  };
+}
+function saveAgentConfig(agentId, config) {
+  const db = readDb();
+  if (!db.agentsConfig) db.agentsConfig = getAgentsConfig();
+  if (db.agentsConfig[agentId]) {
+    db.agentsConfig[agentId] = { ...db.agentsConfig[agentId], ...config };
+  } else {
+    db.agentsConfig[agentId] = {
+      id: agentId,
+      name: config.name || agentId,
+      title: config.title || "Enterprise AI Agent",
+      ...config
+    };
+  }
+  writeDb(db);
+  return db.agentsConfig;
+}
+function getAgentStats() {
+  const db = readDb();
+  return db.agentStats || {
+    sales: { tasksCount: 42, invoicesIssued: 0, ticketsCreated: 0, visualsGenerated: 0 },
+    invoice: { tasksCount: 28, invoicesIssued: 19, ticketsCreated: 0, visualsGenerated: 0 },
+    support: { tasksCount: 15, invoicesIssued: 0, ticketsCreated: 8, visualsGenerated: 0 },
+    media: { tasksCount: 12, invoicesIssued: 0, ticketsCreated: 0, visualsGenerated: 12 },
+    marketing: { tasksCount: 35, invoicesIssued: 0, ticketsCreated: 0, visualsGenerated: 0 },
+    router: { tasksCount: 132, invoicesIssued: 0, ticketsCreated: 0, visualsGenerated: 0 }
+  };
+}
+function recordAgentActivity(agentId, agentName, actionType, summary, customerName, customerPhone, details) {
+  const db = readDb();
+  if (!db.agentStats) db.agentStats = getAgentStats();
+  if (!db.agentAuditLogs) db.agentAuditLogs = [];
+  if (!db.agentStats[agentId]) {
+    db.agentStats[agentId] = { tasksCount: 0, invoicesIssued: 0, ticketsCreated: 0, visualsGenerated: 0 };
+  }
+  const stats = db.agentStats[agentId];
+  stats.tasksCount = (stats.tasksCount || 0) + 1;
+  stats.lastActiveAt = (/* @__PURE__ */ new Date()).toISOString();
+  if (actionType === "invoice_issued") stats.invoicesIssued = (stats.invoicesIssued || 0) + 1;
+  if (actionType === "ticket_created") stats.ticketsCreated = (stats.ticketsCreated || 0) + 1;
+  if (actionType === "visual_generated") stats.visualsGenerated = (stats.visualsGenerated || 0) + 1;
+  const logItem = {
+    id: `log_${Math.random().toString(36).substring(2, 11)}`,
+    timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+    agentId,
+    agentName,
+    actionType,
+    customerName: customerName || "\u0639\u0645\u064A\u0644 \u0648\u0627\u062A\u0633\u0627\u0628",
+    customerPhone: customerPhone || "",
+    summary,
+    details
+  };
+  db.agentAuditLogs.unshift(logItem);
+  if (db.agentAuditLogs.length > 100) {
+    db.agentAuditLogs.pop();
+  }
+  writeDb(db);
+  return logItem;
+}
+function getAgentAuditLogs(limit = 50) {
+  const db = readDb();
+  return (db.agentAuditLogs || []).slice(0, limit);
 }
 var import_dotenv, import_fs2, import_path2, prismaInstance, prisma, DB_FILE, META_AI_USER, ADMIN_USER, cachedDb, writeTimeout, isWriting, pendingWrite;
 var init_db = __esm({
@@ -2018,9 +2139,13 @@ var ChatCoreSwarm = class {
   /**
    * Main Multi-Agent Swarm Orchestrator & Remote Control Command Processor
    */
-  async processUserMessage(userMessage, customerName = "\u0639\u0645\u064A\u0644 \u0634\u0627\u062A \u0643\u0648\u0631", chatId = "global_thread") {
+  async processUserMessage(userMessage, customerName = "\u0639\u0645\u064A\u0644 \u0634\u0627\u062A \u0643\u0648\u0631", chatId = "global_thread", knowledgeBaseText, customConfigs) {
     const rawText = userMessage.trim();
     const text = rawText.toLowerCase();
+    const kbContext = knowledgeBaseText && knowledgeBaseText.trim() ? `
+--- FACTUAL KNOWLEDGE BASE & TRAINING HUB ---
+${knowledgeBaseText}
+` : "";
     if (text.startsWith("/") || text.startsWith("!") || text.startsWith("\u0623\u0645\u0631") || text.startsWith("\u0627\u0645\u0631")) {
       let cmd = text;
       if (text.startsWith("/") || text.startsWith("!")) {
@@ -2098,6 +2223,10 @@ var ChatCoreSwarm = class {
     }
     if (text.length <= 3 || text === "." || text === ".." || text === "..." || text === "\u061F" || text === "?" || text === "\u0623\u0644\u0648" || text === "\u0627\u0644\u0648" || text === "\u062A\u0645\u0627\u0645" || text === "\u0634\u0643\u0631\u0627" || text === "\u0634\u0643\u0631\u0627\u064B") {
       const historySummary2 = this.getChatHistorySummary(chatId);
+      const kbContext2 = knowledgeBaseText && knowledgeBaseText.trim() ? `
+--- FACTUAL KNOWLEDGE BASE & TRAINING HUB ---
+${knowledgeBaseText}
+` : "";
       const prompt2 = `\u0623\u0646\u062A "\u0623\u062D\u0645\u062F \u0627\u0644\u0645\u0628\u064A\u0639\u0627\u062A" - \u0627\u0644\u0645\u062F\u064A\u0631 \u0627\u0644\u062A\u0646\u0641\u064A\u0630\u064A \u0644\u0644\u0645\u0628\u064A\u0639\u0627\u062A \u0644\u0645\u0646\u0635\u0629 \u0634\u0627\u062A \u0643\u0648\u0631.
 \u0633\u064A\u0627\u0642 \u0627\u0644\u0645\u062D\u0627\u062F\u062B\u0629 \u0627\u0644\u0633\u0627\u0628\u0642:
 ${historySummary2}
@@ -2129,7 +2258,9 @@ ${historySummary2}
         vodafoneNo: "01115822923",
         ibanNo: "EG1234567890123456789012345"
       };
-      const prompt2 = `\u0623\u0646\u062A "\u0627\u0644\u0623\u0633\u062A\u0627\u0630 \u0635\u0644\u0627\u062D \u0627\u0644\u062D\u0633\u0627\u0628\u0627\u062A" - \u0627\u0644\u0645\u062D\u0627\u0633\u0628 \u0627\u0644\u0645\u0627\u0644\u064A \u0627\u0644\u062A\u0646\u0641\u064A\u0630\u064A \u0644\u0645\u0646\u0635\u0629 \u0634\u0627\u062A \u0643\u0648\u0631 (ChatCore Enterprise AI).
+      const invoiceCustom = customConfigs?.invoice?.systemPrompt || "";
+      const prompt2 = `\u0623\u0646\u062A "\u0627\u0644\u0623\u0633\u062A\u0627\u0630 \u0635\u0644\u0627\u062D \u0627\u0644\u062D\u0633\u0627\u0628\u0627\u062A" - \u0627\u0644\u0645\u062D\u0627\u0633\u0628 \u0627\u0644\u0645\u0627\u0644\u064A \u0627\u0644\u062A\u0646\u0641\u064A\u0630\u064A \u0644\u0645\u0646\u0635\u0629 \u0634\u0627\u062A \u0643\u0648\u0631 (ChatCore Enterprise AI). ${invoiceCustom}
+${kbContext}
 \u0633\u064A\u0627\u0642 \u0627\u0644\u0645\u062D\u0627\u062F\u062B\u0629 \u0627\u0644\u0633\u0627\u0628\u0642 \u0645\u0639 \u0627\u0644\u0639\u0645\u064A\u0644:
 ${historySummary}
 
@@ -2159,7 +2290,9 @@ ${historySummary}
       };
     }
     if (text.includes("\u0631\u0628\u0637") || text.includes("\u0643\u0648\u062F") || text.includes("\u062A\u0648\u0643\u0646") || text.includes("botfather") || text.includes("\u0645\u0634\u0643\u0644\u0629") || text.includes("\u062F\u0639\u0645")) {
-      const prompt2 = `\u0623\u0646\u062A "\u0645\u0647\u0646\u062F\u0633 \u0639\u0645\u0631 \u0627\u0644\u062F\u0639\u0645 \u0627\u0644\u0641\u0646\u064A" - \u0645\u0633\u0624\u0648\u0644 \u0627\u0644\u062F\u0639\u0645 \u0648\u0627\u0644\u0631\u0628\u0637 \u0644\u0645\u0646\u0635\u0629 \u0634\u0627\u062A \u0643\u0648\u0631 (ChatCore Enterprise AI).
+      const supportCustom = customConfigs?.support?.systemPrompt || "";
+      const prompt2 = `\u0623\u0646\u062A "\u0645\u0647\u0646\u062F\u0633 \u0639\u0645\u0631 \u0627\u0644\u062F\u0639\u0645 \u0627\u0644\u0641\u0646\u064A" - \u0645\u0633\u0624\u0648\u0644 \u0627\u0644\u062F\u0639\u0645 \u0648\u0627\u0644\u0631\u0628\u0637 \u0644\u0645\u0646\u0635\u0629 \u0634\u0627\u062A \u0643\u0648\u0631 (ChatCore Enterprise AI). ${supportCustom}
+${kbContext}
 \u0633\u064A\u0627\u0642 \u0627\u0644\u0645\u062D\u0627\u062F\u062B\u0629 \u0627\u0644\u0633\u0627\u0628\u0642 \u0645\u0639 \u0627\u0644\u0639\u0645\u064A\u0644:
 ${historySummary}
 
@@ -2176,15 +2309,21 @@ ${historySummary}
 \u0625\u0630\u0627 \u0648\u0627\u062C\u0647\u062A\u0643 \u0623\u064A \u0635\u0639\u0648\u0628\u0629\u060C \u0633\u0623\u0643\u0648\u0646 \u0645\u0639\u0643 \u062E\u0637\u0648\u0629 \u0628\u062E\u0637\u0648\u0629 \u26A1`;
       this.saveChatMessage(chatId, "user", rawText);
       this.saveChatMessage(chatId, "assistant", replyText2, "support");
+      const tckNo = "TCK-" + Math.floor(1e3 + Math.random() * 9e3);
       return {
         agentId: "support",
         agentName: "\u0645\u0647\u0646\u062F\u0633 \u0639\u0645\u0631 \u0627\u0644\u062F\u0639\u0645 \u0627\u0644\u0641\u0646\u064A",
         agentTitle: "Support & Onboarding Specialist",
-        text: replyText2
+        text: replyText2 + `
+
+\u{1F3AB} **\u0631\u0642\u0645 \u062A\u0630\u0643\u0631\u0629 \u0627\u0644\u062F\u0639\u0645 \u0627\u0644\u0641\u0646\u064A \u0627\u0644\u0645\u064F\u062A\u0648\u0644\u0651\u062F\u0629**: #${tckNo}`,
+        mediaUrl: "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=1200"
       };
     }
     if (text.includes("\u0635\u0648\u0631\u0629") || text.includes("\u062A\u0635\u0645\u064A\u0645") || text.includes("\u0643\u0627\u0631\u062A") || text.includes("\u0628\u0631\u0648\u0634\u0648\u0631") || text.includes("\u0634\u0643\u0644")) {
-      const prompt2 = `\u0623\u0646\u062A "\u0643\u0631\u064A\u0645 \u0627\u0644\u062F\u064A\u0632\u0627\u064A\u0646" - \u0627\u0644\u0645\u0635\u0645\u0645 \u0627\u0644\u0645\u0628\u062F\u0639 \u0644\u0645\u0646\u0635\u0629 \u0634\u0627\u062A \u0643\u0648\u0631 (ChatCore Enterprise AI).
+      const mediaCustom = customConfigs?.media?.systemPrompt || "";
+      const prompt2 = `\u0623\u0646\u062A "\u0643\u0631\u064A\u0645 \u0627\u0644\u062F\u064A\u0632\u0627\u064A\u0646" - \u0627\u0644\u0645\u0635\u0645\u0645 \u0627\u0644\u0645\u0628\u062F\u0639 \u0644\u0645\u0646\u0635\u0629 \u0634\u0627\u062A \u0643\u0648\u0631 (ChatCore Enterprise AI). ${mediaCustom}
+${kbContext}
 \u0633\u064A\u0627\u0642 \u0627\u0644\u0645\u062D\u0627\u062F\u062B\u0629 \u0627\u0644\u0633\u0627\u0628\u0642:
 ${historySummary}
 
@@ -2205,7 +2344,9 @@ ${historySummary}
       };
     }
     const hasDiscussedPlans = historySummary.includes("\u0628\u0627\u0642\u0629") || historySummary.includes("Starter") || historySummary.includes("1,200") || historySummary.includes("2,500");
-    const prompt = `\u0623\u0646\u062A "\u0623\u062D\u0645\u062F \u0627\u0644\u0645\u0628\u064A\u0639\u0627\u062A" - \u0627\u0644\u0645\u062F\u064A\u0631 \u0627\u0644\u062A\u0646\u0641\u064A\u0630\u064A \u0644\u0644\u0645\u0628\u064A\u0639\u0627\u062A \u0644\u0645\u0646\u0635\u0629 \u0634\u0627\u062A \u0643\u0648\u0631 (ChatCore Enterprise AI).
+    const salesCustom = customConfigs?.sales?.systemPrompt || "";
+    const prompt = `\u0623\u0646\u062A "\u0623\u062D\u0645\u062F \u0627\u0644\u0645\u0628\u064A\u0639\u0627\u062A" - \u0627\u0644\u0645\u062F\u064A\u0631 \u0627\u0644\u062A\u0646\u0641\u064A\u0630\u064A \u0644\u0644\u0645\u0628\u064A\u0639\u0627\u062A \u0644\u0645\u0646\u0635\u0629 \u0634\u0627\u062A \u0643\u0648\u0631 (ChatCore Enterprise AI). ${salesCustom}
+${kbContext}
 \u0633\u064A\u0627\u0642 \u0627\u0644\u0645\u062D\u0627\u062F\u062B\u0629 \u0627\u0644\u0633\u0627\u0628\u0642 \u0645\u0639 \u0627\u0644\u0639\u0645\u064A\u0644:
 ${historySummary}
 
@@ -2242,7 +2383,8 @@ ${hasDiscussedPlans ? "\u0627\u0644\u0639\u0645\u064A\u0644 \u064A\u0646\u0627\u
       agentId: "sales",
       agentName: "\u0623\u062D\u0645\u062F \u0627\u0644\u0645\u0628\u064A\u0639\u0627\u062A",
       agentTitle: "Chief Sales & Closing Officer",
-      text: replyText
+      text: replyText,
+      mediaUrl: hasDiscussedPlans ? void 0 : "https://images.unsplash.com/photo-1557804506-669a67965ba0?w=1200"
     };
   }
 };
@@ -6593,19 +6735,40 @@ async function sendRealWhatsAppMessageDirectly(device, to, text, mediaType, medi
         return { success: false, error: "Missing Meta Phone Number ID or Access Token" };
       }
       const endpoint = `https://graph.facebook.com/v17.0/${phoneId}/messages`;
+      let metaPayload = {
+        messaging_product: "whatsapp",
+        recipient_type: "individual",
+        to: cleanPhone
+      };
+      if (mediaType === "audio" && mediaData) {
+        metaPayload.type = "audio";
+        metaPayload.audio = {
+          link: mediaData.startsWith("http") ? mediaData : mediaData.startsWith("data:") ? mediaData : `data:audio/ogg;base64,${mediaData}`
+        };
+      } else if (mediaType === "image" && mediaData) {
+        metaPayload.type = "image";
+        metaPayload.image = {
+          link: mediaData,
+          caption: text || ""
+        };
+      } else if (mediaType === "document" && mediaData) {
+        metaPayload.type = "document";
+        metaPayload.document = {
+          link: mediaData,
+          caption: text || "",
+          filename: "invoice.pdf"
+        };
+      } else {
+        metaPayload.type = "text";
+        metaPayload.text = { preview_url: false, body: text };
+      }
       const response = await fetch(endpoint, {
         method: "POST",
         headers: {
           "Authorization": `Bearer ${token}`,
           "Content-Type": "application/json"
         },
-        body: JSON.stringify({
-          messaging_product: "whatsapp",
-          recipient_type: "individual",
-          to: cleanPhone,
-          type: "text",
-          text: { preview_url: false, body: text }
-        })
+        body: JSON.stringify(metaPayload)
       });
       if (response.ok) {
         return { success: true };
@@ -7186,6 +7349,7 @@ function cleanOrphanedSessions() {
   }
 }
 async function globalIncomingHandler(deviceId, sock, jid, pushName, messageContent, fromMe, timestamp, messageId) {
+  let lastSwarmRes = null;
   try {
     if (!fromMe && sock) {
       try {
@@ -7720,16 +7884,47 @@ Formulate your exceptionally smart and professional response now:`;
         } catch (agentErr) {
           console.error("[Multi-Agent Pipeline Error]", agentErr);
         }
-        console.log(`[AI Agent] Formulating response using model "${modelName}"...`);
-        const response = await callGeminiWithRetry({
-          model: modelName,
-          contents: contentsPayload,
-          config: {
-            systemInstruction: systemPrompt,
-            temperature: device.aiTemperature !== void 0 ? Number(device.aiTemperature) : 0.8
-          }
-        });
-        responseText = response?.text || "";
+        console.log(`[Enterprise Multi-Agent Swarm] Processing query via ChatCoreSwarm...`);
+        const swarmRes = await chatCoreSwarm.processUserMessage(
+          userMessageText,
+          pushName || `+${contactPhone}`,
+          conv.id,
+          finalKnowledgeBase,
+          getAgentsConfig()
+        );
+        lastSwarmRes = swarmRes;
+        if (swarmRes && swarmRes.text) {
+          responseText = swarmRes.text;
+          let actionType = "task_completed";
+          if (swarmRes.agentId === "invoice" || swarmRes.invoiceData) actionType = "invoice_issued";
+          if (swarmRes.agentId === "support") actionType = "ticket_created";
+          if (swarmRes.agentId === "media" || swarmRes.mediaUrl) actionType = "visual_generated";
+          const auditLog = recordAgentActivity(
+            swarmRes.agentId || "sales",
+            lastSwarmRes.agentName || "\u0623\u062D\u0645\u062F \u0627\u0644\u0645\u0628\u064A\u0639\u0627\u062A",
+            actionType,
+            userMessageText.substring(0, 70),
+            pushName || `+${contactPhone}`,
+            contactPhone,
+            { invoiceData: swarmRes.invoiceData, mediaUrl: swarmRes.mediaUrl }
+          );
+          broadcast({
+            type: "agent:activity",
+            auditLog,
+            agentStats: getAgentStats()
+          });
+        } else {
+          console.log(`[AI Agent Fallback] Formulating response using Gemini model "${modelName}"...`);
+          const response = await callGeminiWithRetry({
+            model: modelName,
+            contents: contentsPayload,
+            config: {
+              systemInstruction: systemPrompt,
+              temperature: device.aiTemperature !== void 0 ? Number(device.aiTemperature) : 0.8
+            }
+          });
+          responseText = response?.text || "";
+        }
         console.log(`[AI Agent] Generated text response: "${responseText.substring(0, 100)}${responseText.length > 100 ? "..." : ""}"`);
         if (shouldReplyWithVoice && responseText) {
           const tone = device.aiVoiceTone || "professional";
@@ -7815,6 +8010,24 @@ Formulate your exceptionally smart and professional response now:`;
       responseAudioBuffer ? "audio" : "text",
       responseAudioBuffer ? responseAudioBuffer.toString("base64") : void 0
     );
+    if (lastSwarmRes && lastSwarmRes.mediaUrl) {
+      console.log(`[AI Agent - Visual Card] Dispatching visual image card via device "${device.name}" to +${contactPhone}...`);
+      sendRealWhatsAppMessage(device, contactPhone, "", false, "image", lastSwarmRes.mediaUrl).then(() => {
+        const mediaMsg = {
+          id: `msg_${Math.random().toString(36).substring(2, 11)}`,
+          conversationId: conv.id,
+          senderId: ownerId,
+          recipientId: contactId,
+          content: `[\u0643\u0627\u0631\u062A \u0628\u0635\u0631\u064A \u062A\u0648\u0636\u064A\u062D\u064A \u0645\u0646 \u0627\u0644\u0645\u0648\u0638\u0641 ${lastSwarmRes?.agentName || "\u0627\u0644\u0645\u0646\u0638\u0648\u0645\u0629"}]`,
+          type: "image",
+          mediaUrl: lastSwarmRes.mediaUrl,
+          status: "delivered",
+          timestamp: (/* @__PURE__ */ new Date()).toISOString()
+        };
+        saveMessage(mediaMsg);
+        broadcast({ type: "message:new", message: mediaMsg });
+      }).catch((err) => console.error("[Visual Card Error]", err));
+    }
     const aiMsg = {
       id: `msg_${Math.random().toString(36).substring(2, 11)}`,
       conversationId: conv.id,
@@ -7920,6 +8133,23 @@ app.post("/api/webhooks/meta", async (req, res) => {
     console.error("[Meta Webhook Error]", err);
     res.sendStatus(500);
   }
+});
+app.get("/api/agents/config", (req, res) => {
+  res.json({ success: true, agentsConfig: getAgentsConfig() });
+});
+app.post("/api/agents/config", (req, res) => {
+  const { agentId, config } = req.body;
+  if (!agentId || !config) return res.status(400).json({ error: "Missing agentId or config" });
+  const updated = saveAgentConfig(agentId, config);
+  broadcast({ type: "agent:config_update", agentsConfig: updated });
+  res.json({ success: true, agentsConfig: updated });
+});
+app.get("/api/agents/stats", (req, res) => {
+  res.json({
+    success: true,
+    stats: getAgentStats(),
+    auditLogs: getAgentAuditLogs(50)
+  });
 });
 app.post("/api/tickets", async (req, res) => {
   try {

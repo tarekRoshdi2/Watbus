@@ -23,7 +23,7 @@ import AiKnowledgeBase from './components/AiKnowledgeBase.js';
 import ExpoCoreAgent from './components/ExpoCoreAgent.js';
 import CustomerFlowBuilder from './components/CustomerFlowBuilder.js';
 import AgentsDashboard from './components/AgentsDashboard.js';
-import { LayoutDashboard, MessageSquare, Smartphone, Megaphone, LogOut, Loader2, Languages, Shield, Users, Group, Star, Brain, Bot, Workflow, CreditCard, Sparkles } from 'lucide-react';
+import { Menu, X, LayoutDashboard, MessageSquare, Smartphone, Megaphone, LogOut, Loader2, Languages, Shield, Users, Group, Star, Brain, Bot, Workflow, CreditCard, Sparkles } from 'lucide-react';
 import { translations } from './translations.js';
 
 // Subtle synthesizer chime for incoming message alerts
@@ -105,6 +105,7 @@ export default function App() {
   }, [lang]);
 
   const t = translations[lang];
+  const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false);
 
   const [conversations, setConversations] = useState<(Conversation & { recipient: User })[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
@@ -368,6 +369,11 @@ export default function App() {
 
             // Dispatch global event for CRM/Analytics page to update instantly
             window.dispatchEvent(new CustomEvent('whatsapp:message', { detail: message }));
+            break;
+          }
+
+          case 'agent:activity': {
+            window.dispatchEvent(new CustomEvent('ws-agent-activity', { detail: data }));
             break;
           }
 
@@ -1027,286 +1033,419 @@ export default function App() {
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-zinc-100 dark:bg-zinc-950 text-zinc-800 dark:text-zinc-100 font-sans">
       
-      {/* 1. SEPARATE VERTICAL SIDEBAR CONTROL RAIL (USER MANDATE: PREVENT CLUTTERED OVERHEAD PORTAL) */}
-      <div className="w-[72px] bg-zinc-950 border-r border-zinc-900/40 flex flex-col items-center justify-between py-5 flex-shrink-0 z-30 select-none">
-        <div className="flex flex-col items-center gap-6 w-full">
-          {/* Main Mini Brand Badge */}
-          <div className="w-11 h-11 bg-gradient-to-tr from-[#00a884] to-emerald-400 rounded-2xl flex items-center justify-center text-white shadow-lg shadow-emerald-500/10">
-            <svg className="w-6 h-6" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946C.003 5.323 5.322 0 11.82 0c3.148.001 6.107 1.228 8.332 3.457s3.453 5.186 3.451 8.336c-.004 6.502-5.323 11.825-11.822 11.825-1.996-.001-3.957-.512-5.7-1.481L0 24zm6.59-4.846c1.785 1.06 3.551 1.623 5.18 1.624 5.378 0 9.754-4.373 9.757-9.753.002-2.599-1.011-5.043-2.853-6.887C16.83 2.293 14.39 1.28 11.82 1.28c-5.378 0-9.752 4.373-9.755 9.754-.001 1.83.515 3.593 1.493 5.148l-1.012 3.693 3.799-1.014z" />
-            </svg>
+      {/* MOBILE & TABLET TOP HEADER BAR */}
+      <div className="md:hidden fixed top-0 left-0 right-0 h-14 bg-zinc-950 border-b border-zinc-800 flex items-center justify-between px-4 z-40">
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setIsMobileDrawerOpen(true)}
+            className="p-2 text-zinc-300 hover:text-white rounded-lg bg-zinc-900 border border-zinc-800 cursor-pointer"
+          >
+            <Menu className="w-5 h-5" />
+          </button>
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 bg-gradient-to-tr from-[#00a884] to-emerald-400 rounded-xl flex items-center justify-center text-white">
+              <Bot className="w-4 h-4" />
+            </div>
+            <span className="font-bold text-sm text-white tracking-wide">ChatCore HQ</span>
+          </div>
+        </div>
+        
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setLang(lang === 'ar' ? 'en' : 'ar')}
+            className="px-2 py-1 bg-zinc-900 border border-zinc-800 rounded-lg text-xs text-amber-400 font-bold cursor-pointer"
+          >
+            {lang === 'ar' ? 'EN' : 'عربي'}
+          </button>
+          <img
+            src={currentUser.avatarUrl}
+            alt="Avatar"
+            onClick={() => setShowProfileSettings(true)}
+            className="w-8 h-8 rounded-full border border-zinc-700 cursor-pointer"
+          />
+        </div>
+      </div>
+
+      {/* MOBILE SLIDE-OVER DRAWER BACKDROP & MENU */}
+      {isMobileDrawerOpen && (
+        <div className="md:hidden fixed inset-0 z-50 flex">
+          <div
+            className="fixed inset-0 bg-black/70 backdrop-blur-sm transition-opacity"
+            onClick={() => setIsMobileDrawerOpen(false)}
+          />
+          
+          <div className="relative w-80 max-w-[85vw] bg-zinc-950 border-r border-zinc-800 flex flex-col h-full z-10 py-5 px-4 overflow-y-auto">
+            <div className="flex items-center justify-between pb-4 mb-4 border-b border-zinc-800">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 bg-gradient-to-tr from-[#00a884] to-emerald-400 rounded-xl flex items-center justify-center text-white">
+                  <Bot className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm text-white">ChatCore HQ</h3>
+                  <p className="text-[10px] text-zinc-400">{t.mobileMenuTitle}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsMobileDrawerOpen(false)}
+                className="p-1.5 text-zinc-400 hover:text-white rounded-lg bg-zinc-900 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Mobile Drawer Grouped Nav */}
+            <div className="flex flex-col gap-6 flex-1">
+              {/* Group 1: Management */}
+              <div>
+                <h4 className="text-[11px] font-bold text-emerald-400 uppercase tracking-wider mb-2 px-2">
+                  {t.sidebarCategoryManagement}
+                </h4>
+                <div className="flex flex-col gap-1">
+                  <button
+                    onClick={() => { setViewMode('dashboard'); setIsMobileDrawerOpen(false); }}
+                    className={"flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-medium transition-all cursor-pointer " + (viewMode === 'dashboard' ? 'bg-[#00a884]/20 text-[#00a884] font-bold' : 'text-zinc-300 hover:bg-zinc-900')}
+                  >
+                    <LayoutDashboard className="w-4 h-4" />
+                    <span>{t.dashboardTab}</span>
+                  </button>
+
+                  <button
+                    onClick={() => { setViewMode('chat'); setIsMobileDrawerOpen(false); }}
+                    className={"flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-medium transition-all cursor-pointer " + (viewMode === 'chat' ? 'bg-[#00a884]/20 text-[#00a884] font-bold' : 'text-zinc-300 hover:bg-zinc-900')}
+                  >
+                    <MessageSquare className="w-4 h-4" />
+                    <span>{t.chatTab}</span>
+                  </button>
+
+                  <button
+                    onClick={() => { setViewMode('clients'); setIsMobileDrawerOpen(false); }}
+                    className={"flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-medium transition-all cursor-pointer " + (viewMode === 'clients' ? 'bg-[#00a884]/20 text-[#00a884] font-bold' : 'text-zinc-300 hover:bg-zinc-900')}
+                  >
+                    <Users className="w-4 h-4" />
+                    <span>{t.humanEmployees}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Group 2: AI & Swarm */}
+              <div>
+                <h4 className="text-[11px] font-bold text-indigo-400 uppercase tracking-wider mb-2 px-2">
+                  {t.sidebarCategoryAgents}
+                </h4>
+                <div className="flex flex-col gap-1">
+                  <button
+                    onClick={() => { setViewMode('agents_dashboard'); setIsMobileDrawerOpen(false); }}
+                    className={"flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-medium transition-all cursor-pointer " + (viewMode === 'agents_dashboard' ? 'bg-indigo-500/20 text-indigo-400 font-bold' : 'text-zinc-300 hover:bg-zinc-900')}
+                  >
+                    <Bot className="w-4 h-4 text-indigo-400" />
+                    <span>{t.aiEmployees}</span>
+                  </button>
+
+                  <button
+                    onClick={() => { setViewMode('knowledge_base'); setIsMobileDrawerOpen(false); }}
+                    className={"flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-medium transition-all cursor-pointer " + (viewMode === 'knowledge_base' ? 'bg-indigo-500/20 text-indigo-400 font-bold' : 'text-zinc-300 hover:bg-zinc-900')}
+                  >
+                    <Brain className="w-4 h-4 text-indigo-400" />
+                    <span>مركز التدريب المخصص</span>
+                  </button>
+
+                  <button
+                    onClick={() => { setViewMode('customer_flow'); setIsMobileDrawerOpen(false); }}
+                    className={"flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-medium transition-all cursor-pointer " + (viewMode === 'customer_flow' ? 'bg-amber-500/20 text-amber-400 font-bold' : 'text-zinc-300 hover:bg-zinc-900')}
+                  >
+                    <Workflow className="w-4 h-4 text-amber-400" />
+                    <span>رحلة العميل المخصصة</span>
+                  </button>
+
+                  <button
+                    onClick={() => { setActiveAgentsTab('playground'); setViewMode('agents_dashboard'); setIsMobileDrawerOpen(false); }}
+                    className={"flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-medium transition-all cursor-pointer " + (viewMode === 'agents_dashboard' && activeAgentsTab === 'playground' ? 'bg-amber-500/20 text-amber-400 font-bold' : 'text-zinc-300 hover:bg-zinc-900')}
+                  >
+                    <Sparkles className="w-4 h-4 text-amber-400" />
+                    <span>التطبيق العملي (Playground)</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Group 3: Channels & Marketing */}
+              <div>
+                <h4 className="text-[11px] font-bold text-amber-400 uppercase tracking-wider mb-2 px-2">
+                  {t.sidebarCategoryChannels}
+                </h4>
+                <div className="flex flex-col gap-1">
+                  <button
+                    onClick={() => { setViewMode('whatsapp_settings'); setIsMobileDrawerOpen(false); }}
+                    className={"flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-medium transition-all cursor-pointer " + (viewMode === 'whatsapp_settings' ? 'bg-[#00a884]/20 text-[#00a884] font-bold' : 'text-zinc-300 hover:bg-zinc-900')}
+                  >
+                    <Smartphone className="w-4 h-4" />
+                    <span>{t.connectTab}</span>
+                  </button>
+
+                  <button
+                    onClick={() => { setViewMode('marketing'); setIsMobileDrawerOpen(false); }}
+                    className={"flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-medium transition-all cursor-pointer " + (viewMode === 'marketing' ? 'bg-[#00a884]/20 text-[#00a884] font-bold' : 'text-zinc-300 hover:bg-zinc-900')}
+                  >
+                    <Megaphone className="w-4 h-4" />
+                    <span>{t.campaignsTab}</span>
+                  </button>
+
+                  <button
+                    onClick={() => { setViewMode('group_manager'); setIsMobileDrawerOpen(false); }}
+                    className={"flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-medium transition-all cursor-pointer " + (viewMode === 'group_manager' ? 'bg-[#00a884]/20 text-[#00a884] font-bold' : 'text-zinc-300 hover:bg-zinc-900')}
+                  >
+                    <Group className="w-4 h-4" />
+                    <span>سحب أعضاء الجروبات</span>
+                  </button>
+
+                  <button
+                    onClick={() => { setActiveAgentsTab('payments'); setViewMode('agents_dashboard'); setIsMobileDrawerOpen(false); }}
+                    className={"flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-medium transition-all cursor-pointer " + (viewMode === 'agents_dashboard' && activeAgentsTab === 'payments' ? 'bg-emerald-500/20 text-emerald-400 font-bold' : 'text-zinc-300 hover:bg-zinc-900')}
+                  >
+                    <CreditCard className="w-4 h-4 text-emerald-400" />
+                    <span>طرق المحافظ و InstaPay</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Logout Footer */}
+            <div className="pt-4 border-t border-zinc-800">
+              <button
+                onClick={handleLogout}
+                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs text-rose-400 bg-rose-500/10 font-bold cursor-pointer"
+              >
+                <LogOut className="w-4 h-4" />
+                <span>{t.logout}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MOBILE BOTTOM QUICK NAVIGATION BAR */}
+      <div className="md:hidden fixed bottom-0 left-0 right-0 h-16 bg-zinc-950 border-t border-zinc-800 flex items-center justify-around z-40 px-2 select-none">
+        <button
+          onClick={() => setViewMode('chat')}
+          className={"flex flex-col items-center gap-1 p-1 cursor-pointer " + (viewMode === 'chat' ? 'text-[#00a884]' : 'text-zinc-400')}
+        >
+          <MessageSquare className="w-5 h-5" />
+          <span className="text-[9px] font-bold">{t.chatTab}</span>
+        </button>
+
+        <button
+          onClick={() => setViewMode('agents_dashboard')}
+          className={"flex flex-col items-center gap-1 p-1 cursor-pointer " + (viewMode === 'agents_dashboard' ? 'text-indigo-400' : 'text-zinc-400')}
+        >
+          <Bot className="w-5 h-5" />
+          <span className="text-[9px] font-bold">{t.aiEmployees}</span>
+        </button>
+
+        <button
+          onClick={() => setViewMode('whatsapp_settings')}
+          className={"flex flex-col items-center gap-1 p-1 cursor-pointer " + (viewMode === 'whatsapp_settings' ? 'text-[#00a884]' : 'text-zinc-400')}
+        >
+          <Smartphone className="w-5 h-5" />
+          <span className="text-[9px] font-bold">{t.connectTab}</span>
+        </button>
+
+        <button
+          onClick={() => setIsMobileDrawerOpen(true)}
+          className="flex flex-col items-center gap-1 p-1 text-zinc-400 hover:text-white cursor-pointer"
+        >
+          <Menu className="w-5 h-5" />
+          <span className="text-[9px] font-bold">القائمة</span>
+        </button>
+      </div>
+
+      {/* 1. DESKTOP CATEGORIZED GROUPED SIDEBAR */}
+      <div className="hidden md:flex w-[230px] bg-zinc-950 border-r border-zinc-900/60 flex-col items-center justify-between py-5 px-3 flex-shrink-0 z-30 select-none overflow-y-auto">
+        <div className="flex flex-col gap-5 w-full">
+          {/* Main Brand Logo Badge */}
+          <div className="flex items-center gap-3 px-2 pb-3 border-b border-zinc-900/80">
+            <div className="w-10 h-10 bg-gradient-to-tr from-[#00a884] to-emerald-400 rounded-xl flex items-center justify-center text-white shadow-lg shadow-emerald-500/10 flex-shrink-0">
+              <Bot className="w-6 h-6" />
+            </div>
+            <div className="overflow-hidden">
+              <h2 className="font-extrabold text-sm text-white tracking-wide truncate">ChatCore HQ</h2>
+              <p className="text-[10px] text-zinc-400 truncate">Enterprise AI Swarm</p>
+            </div>
           </div>
 
-          {/* Action Tabs Stack */}
-          <div className="flex flex-col gap-3 w-full px-2">
+          {/* Categorized Nav Groups */}
+          <div className="flex flex-col gap-5 w-full">
             
-            {/* Dashboard Tab */}
-            <button
-              onClick={() => setViewMode('dashboard')}
-              className={`w-12 h-12 rounded-xl flex flex-col items-center justify-center transition-all cursor-pointer relative group ${
-                viewMode === 'dashboard'
-                  ? 'bg-white/10 text-[#00a884] font-bold'
-                  : 'text-zinc-400 hover:text-white hover:bg-white/5'
-              }`}
-              title={`${t.dashboardTab} | Dashboard`}
-            >
-              <LayoutDashboard className="w-5 h-5" />
-              <span className="text-[8px] mt-0.5 font-bold truncate max-w-full px-1">{t.dashboardTab}</span>
-              {viewMode === 'dashboard' && <span className="absolute left-0 top-1/4 bottom-1/4 w-1 bg-[#00a884] rounded-r-md" />}
-            </button>
-
-            {/* Admin Tab (Admins Only) */}
-            {currentUser.role === 'admin' && (
-              <button
-                onClick={() => setViewMode('admin')}
-                className={`w-12 h-12 rounded-xl flex flex-col items-center justify-center transition-all cursor-pointer relative group ${
-                  viewMode === 'admin'
-                    ? 'bg-white/10 text-[#00a884] font-bold'
-                    : 'text-zinc-400 hover:text-white hover:bg-white/5'
-                }`}
-                title={`${t.adminTab} | Admin`}
-              >
-                <Shield className="w-5 h-5" />
-                <span className="text-[8px] mt-0.5 font-bold truncate max-w-full px-1">{t.adminTab}</span>
-                {viewMode === 'admin' && <span className="absolute left-0 top-1/4 bottom-1/4 w-1 bg-[#00a884] rounded-r-md" />}
-              </button>
-            )}
-
-            {/* Employees & Staff Management Tab (Human Team Roster) */}
-            <button
-              onClick={() => setViewMode('clients')}
-              className={`w-12 h-12 rounded-xl flex flex-col items-center justify-center transition-all cursor-pointer relative group ${
-                viewMode === 'clients'
-                  ? 'bg-white/10 text-[#00a884] font-bold'
-                  : 'text-zinc-400 hover:text-white hover:bg-white/5'
-              }`}
-              title={lang === 'ar' ? 'إدارة الموظفين وفريق العمل البشر | Employees & Staff' : 'Employees & Staff'}
-            >
-              <Users className="w-5 h-5" />
-              <span className="text-[8px] mt-0.5 font-bold truncate max-w-full px-1">
-                {lang === 'ar' ? 'الموظفين' : 'Employees'}
-              </span>
-              {viewMode === 'clients' && <span className="absolute left-0 top-1/4 bottom-1/4 w-1 bg-[#00a884] rounded-r-md" />}
-            </button>
-
-            {/* Chats/CRM Tab */}
-            <button
-              onClick={() => setViewMode('chat')}
-              className={`w-12 h-12 rounded-xl flex flex-col items-center justify-center transition-all cursor-pointer relative group ${
-                viewMode === 'chat'
-                  ? 'bg-white/10 text-[#00a884] font-bold'
-                  : 'text-zinc-400 hover:text-white hover:bg-white/5'
-              }`}
-              title={`${t.chatTab} | CRM Inbox`}
-            >
-              <MessageSquare className="w-5 h-5" />
-              <span className="text-[8px] mt-0.5 font-bold truncate max-w-full px-1">{t.chatTab}</span>
-              {viewMode === 'chat' && <span className="absolute left-0 top-1/4 bottom-1/4 w-1 bg-[#00a884] rounded-r-md" />}
-            </button>
-
-            {/* WhatsApp settings/Devices Tab */}
-            <button
-              onClick={() => setViewMode('whatsapp_settings')}
-              className={`w-12 h-12 rounded-xl flex flex-col items-center justify-center transition-all cursor-pointer relative group ${
-                viewMode === 'whatsapp_settings'
-                  ? 'bg-white/10 text-[#00a884] font-bold'
-                  : 'text-zinc-400 hover:text-white hover:bg-white/5'
-              }`}
-              title={`${t.connectTab} | WhatsApp lines`}
-            >
-              <Smartphone className="w-5 h-5" />
-              <span className="text-[8px] mt-0.5 font-bold truncate max-w-full px-1">{t.connectTab}</span>
-              {viewMode === 'whatsapp_settings' && <span className="absolute left-0 top-1/4 bottom-1/4 w-1 bg-[#00a884] rounded-r-md" />}
-            </button>
-
-            {/* Bulk Campaigns marketing Tab */}
-            <button
-              onClick={() => setViewMode('marketing')}
-              className={`w-12 h-12 rounded-xl flex flex-col items-center justify-center transition-all cursor-pointer relative group ${
-                viewMode === 'marketing'
-                  ? 'bg-white/10 text-[#00a884] font-bold'
-                  : 'text-zinc-400 hover:text-white hover:bg-white/5'
-              }`}
-              title={`${t.campaignsTab} | Broadcast Rooms`}
-            >
-              <Megaphone className="w-5 h-5" />
-              <span className="text-[8px] mt-0.5 font-bold truncate max-w-full px-1">{t.campaignsTab}</span>
-              {viewMode === 'marketing' && <span className="absolute left-0 top-1/4 bottom-1/4 w-1 bg-[#00a884] rounded-r-md" />}
-            </button>
-
-            {/* Group Manager Tab */}
-            <button
-              onClick={() => setViewMode('group_manager')}
-              className={`w-12 h-12 rounded-xl flex flex-col items-center justify-center transition-all cursor-pointer relative group ${
-                viewMode === 'group_manager'
-                  ? 'bg-white/10 text-[#00a884] font-bold'
-                  : 'text-zinc-400 hover:text-white hover:bg-white/5'
-              }`}
-              title="سحب أعضاء الجروبات | Group Manager"
-            >
-              <Group className="w-5 h-5" />
-              <span className="text-[8px] mt-0.5 font-bold truncate max-w-full px-1">سحب أعضاء</span>
-              {viewMode === 'group_manager' && <span className="absolute left-0 top-1/4 bottom-1/4 w-1 bg-[#00a884] rounded-r-md" />}
-            </button>
-
-            {/* Feedback & Smart Analytics Tab */}
-            <button
-              onClick={() => setViewMode('feedback')}
-              className={`w-12 h-12 rounded-xl flex flex-col items-center justify-center transition-all cursor-pointer relative group ${
-                viewMode === 'feedback'
-                  ? 'bg-white/10 text-[#00a884] font-bold'
-                  : 'text-zinc-400 hover:text-white hover:bg-white/5'
-              }`}
-              title={lang === 'ar' ? 'التقييمات والتحليلات الذكية | Ratings & Smart AI' : 'Ratings & Smart AI'}
-            >
-              <Star className="w-5 h-5" />
-              <span className="text-[8px] mt-0.5 font-bold truncate max-w-full px-1">
-                {lang === 'ar' ? 'التحليلات الذكية' : 'Smart AI'}
-              </span>
-              {viewMode === 'feedback' && <span className="absolute left-0 top-1/4 bottom-1/4 w-1 bg-[#00a884] rounded-r-md" />}
-            </button>
-
-            {/* Customer Flow Journey Tab */}
-            <button
-              onClick={() => setViewMode('customer_flow')}
-              className={`w-12 h-12 rounded-xl flex flex-col items-center justify-center transition-all cursor-pointer relative group ${
-                viewMode === 'customer_flow'
-                  ? 'bg-white/10 text-amber-500 font-bold'
-                  : 'text-zinc-400 hover:text-white hover:bg-white/5'
-              }`}
-              title={lang === 'ar' ? 'رحلة العميل المخصصة | Customer Pipeline Flow' : 'Customer Journey Builder'}
-            >
-              <Workflow className="w-5 h-5 text-amber-500 animate-pulse" />
-              <span className="text-[8px] mt-0.5 font-bold truncate max-w-full px-1 text-amber-500">
-                {lang === 'ar' ? 'رحلة العميل' : 'Customer Flow'}
-              </span>
-              {viewMode === 'customer_flow' && <span className="absolute left-0 top-1/4 bottom-1/4 w-1 bg-amber-500 rounded-r-md" />}
-            </button>
-
-            {/* Custom AI Knowledge Base Tab */}
-            <button
-              onClick={() => setViewMode('knowledge_base')}
-              className={`w-12 h-12 rounded-xl flex flex-col items-center justify-center transition-all cursor-pointer relative group ${
-                viewMode === 'knowledge_base'
-                  ? 'bg-white/10 text-indigo-400 font-bold'
-                  : 'text-zinc-400 hover:text-white hover:bg-white/5'
-              }`}
-              title={lang === 'ar' ? 'مركز التدريب المخصص | Custom AI Knowledge Base' : 'Custom AI Knowledge Base'}
-            >
-              <Brain className="w-5 h-5 animate-pulse" />
-              <span className="text-[8px] mt-0.5 font-bold truncate max-w-full px-1">
-                {lang === 'ar' ? 'مركز التدريب' : 'AI Training'}
-              </span>
-              {viewMode === 'knowledge_base' && <span className="absolute left-0 top-1/4 bottom-1/4 w-1 bg-indigo-500 rounded-r-md" />}
-            </button>
-
-            
-            {/* Payment Methods & InstaPay Direct Sidebar Button */}
-            <button
-              onClick={() => {
-                setActiveAgentsTab('payments');
-                setViewMode('agents_dashboard');
-              }}
-              className={`w-12 h-12 rounded-xl flex flex-col items-center justify-center transition-all cursor-pointer relative group ${
-                viewMode === 'agents_dashboard' && activeAgentsTab === 'payments'
-                  ? 'bg-[#00a884]/20 text-[#00a884] font-bold border border-[#00a884]/40'
-                  : 'text-zinc-400 hover:text-white hover:bg-white/5'
-              }`}
-              title={lang === 'ar' ? 'طرق المحافظ و InstaPay | Payment Controls' : 'Payment Controls'}
-            >
-              <CreditCard className="w-5 h-5 text-emerald-400" />
-              <span className="text-[8px] mt-0.5 font-bold truncate max-w-full px-1 text-emerald-400">
-                {lang === 'ar' ? 'طرق الدفع' : 'Payments'}
-              </span>
-            </button>
-
-            {/* Live Playground Direct Sidebar Button */}
-            <button
-              onClick={() => {
-                setActiveAgentsTab('playground');
-                setViewMode('agents_dashboard');
-              }}
-              className={`w-12 h-12 rounded-xl flex flex-col items-center justify-center transition-all cursor-pointer relative group ${
-                viewMode === 'agents_dashboard' && activeAgentsTab === 'playground'
-                  ? 'bg-amber-500/20 text-amber-400 font-bold border border-amber-500/40'
-                  : 'text-zinc-400 hover:text-white hover:bg-white/5'
-              }`}
-              title={lang === 'ar' ? 'التطبيق العملي واختبار الرحلة | Live Multi-Agent Playground' : 'Live Playground'}
-            >
-              <Sparkles className="w-5 h-5 text-amber-400 animate-pulse" />
-              <span className="text-[8px] mt-0.5 font-bold truncate max-w-full px-1 text-amber-400">
-                {lang === 'ar' ? 'التطبيق العملي' : 'Playground'}
-              </span>
-            </button>
-  
-            {/* AI Agents Dashboard Tab */}
-            <button
-              onClick={() => setViewMode('agents_dashboard')}
-              className={`w-12 h-12 rounded-xl flex flex-col items-center justify-center transition-all cursor-pointer relative group ${
-                viewMode === 'agents_dashboard'
-                  ? 'bg-white/10 text-emerald-500 font-bold'
-                  : 'text-zinc-400 hover:text-white hover:bg-white/5'
-              }`}
-              title={lang === 'ar' ? 'الموظفين (الوكلاء)' : 'AI Agents'}
-            >
-              <Bot className={`w-5 h-5 transition-transform ${viewMode === 'agents_dashboard' ? 'scale-110' : 'group-hover:scale-110'}`} />
-              <span className="text-[8px] mt-0.5 font-bold truncate max-w-full px-1">
-                {lang === 'ar' ? 'الموظفين' : 'Agents'}
-              </span>
-              {viewMode === 'agents_dashboard' && <span className="absolute left-0 top-1/4 bottom-1/4 w-1 bg-emerald-500 rounded-r-md" />}
-            </button>
-
-            {/* ExpoCore WhatsApp Smart Agent Tab */}
-            {currentUser?.role === 'admin' && (
-              <button
-                onClick={() => setViewMode('expocore_agent')}
-                className={`w-12 h-12 rounded-xl flex flex-col items-center justify-center transition-all cursor-pointer relative group ${
-                  viewMode === 'expocore_agent'
-                    ? 'bg-white/10 text-emerald-400 font-bold'
-                    : 'text-zinc-400 hover:text-white hover:bg-white/5'
-                }`}
-                title={lang === 'ar' ? 'مساعد إكسبو كور | ExpoCore Smart Agent' : 'ExpoCore Smart Agent'}
-              >
-                <Bot className="w-5 h-5 text-emerald-400 animate-pulse" />
-                <span className="text-[8px] mt-0.5 font-bold truncate max-w-full px-1 text-emerald-400">
-                  {lang === 'ar' ? 'مساعد إكسبو' : 'Expo Agent'}
+            {/* GROUP 1: Management & CRM */}
+            <div className="flex flex-col gap-1 w-full">
+              <div className="flex items-center justify-between px-2.5 py-1">
+                <span className="text-[10px] font-extrabold text-emerald-400/90 uppercase tracking-wider">
+                  {t.sidebarCategoryManagement}
                 </span>
-                {viewMode === 'expocore_agent' && <span className="absolute left-0 top-1/4 bottom-1/4 w-1 bg-emerald-400 rounded-r-md" />}
+              </div>
+
+              <button
+                onClick={() => setViewMode('dashboard')}
+                className={"w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs transition-all cursor-pointer " + (viewMode === 'dashboard' ? 'bg-[#00a884]/20 text-[#00a884] font-bold border border-[#00a884]/30' : 'text-zinc-400 hover:text-white hover:bg-white/5')}
+              >
+                <LayoutDashboard className="w-4 h-4 flex-shrink-0" />
+                <span className="truncate">{t.dashboardTab}</span>
               </button>
-            )}
+
+              <button
+                onClick={() => setViewMode('chat')}
+                className={"w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs transition-all cursor-pointer " + (viewMode === 'chat' ? 'bg-[#00a884]/20 text-[#00a884] font-bold border border-[#00a884]/30' : 'text-zinc-400 hover:text-white hover:bg-white/5')}
+              >
+                <MessageSquare className="w-4 h-4 flex-shrink-0" />
+                <span className="truncate">{t.chatTab}</span>
+              </button>
+
+              <button
+                onClick={() => setViewMode('clients')}
+                className={"w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs transition-all cursor-pointer " + (viewMode === 'clients' ? 'bg-[#00a884]/20 text-[#00a884] font-bold border border-[#00a884]/30' : 'text-zinc-400 hover:text-white hover:bg-white/5')}
+              >
+                <Users className="w-4 h-4 flex-shrink-0" />
+                <span className="truncate">{t.humanEmployees}</span>
+              </button>
+
+              {currentUser.role === 'admin' && (
+                <button
+                  onClick={() => setViewMode('admin')}
+                  className={"w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs transition-all cursor-pointer " + (viewMode === 'admin' ? 'bg-[#00a884]/20 text-[#00a884] font-bold border border-[#00a884]/30' : 'text-zinc-400 hover:text-white hover:bg-white/5')}
+                >
+                  <Shield className="w-4 h-4 flex-shrink-0" />
+                  <span className="truncate">{t.adminTab}</span>
+                </button>
+              )}
+            </div>
+
+            {/* GROUP 2: AI Employees & Swarm */}
+            <div className="flex flex-col gap-1 w-full pt-2 border-t border-zinc-900/60">
+              <div className="flex items-center justify-between px-2.5 py-1">
+                <span className="text-[10px] font-extrabold text-indigo-400/90 uppercase tracking-wider">
+                  {t.sidebarCategoryAgents}
+                </span>
+              </div>
+
+              <button
+                onClick={() => setViewMode('agents_dashboard')}
+                className={"w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs transition-all cursor-pointer " + (viewMode === 'agents_dashboard' && activeAgentsTab !== 'playground' && activeAgentsTab !== 'payments' ? 'bg-indigo-500/20 text-indigo-400 font-bold border border-indigo-500/30' : 'text-zinc-400 hover:text-white hover:bg-white/5')}
+              >
+                <Bot className="w-4 h-4 text-indigo-400 flex-shrink-0" />
+                <span className="truncate">{t.aiEmployees}</span>
+              </button>
+
+              <button
+                onClick={() => setViewMode('knowledge_base')}
+                className={"w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs transition-all cursor-pointer " + (viewMode === 'knowledge_base' ? 'bg-indigo-500/20 text-indigo-400 font-bold border border-indigo-500/30' : 'text-zinc-400 hover:text-white hover:bg-white/5')}
+              >
+                <Brain className="w-4 h-4 text-indigo-400 flex-shrink-0" />
+                <span className="truncate">مركز التدريب المخصص</span>
+              </button>
+
+              <button
+                onClick={() => setViewMode('customer_flow')}
+                className={"w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs transition-all cursor-pointer " + (viewMode === 'customer_flow' ? 'bg-amber-500/20 text-amber-400 font-bold border border-amber-500/30' : 'text-zinc-400 hover:text-white hover:bg-white/5')}
+              >
+                <Workflow className="w-4 h-4 text-amber-400 flex-shrink-0" />
+                <span className="truncate">رحلة العميل المخصصة</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  setActiveAgentsTab('playground');
+                  setViewMode('agents_dashboard');
+                }}
+                className={"w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs transition-all cursor-pointer " + (viewMode === 'agents_dashboard' && activeAgentsTab === 'playground' ? 'bg-amber-500/20 text-amber-400 font-bold border border-amber-500/30' : 'text-zinc-400 hover:text-white hover:bg-white/5')}
+              >
+                <Sparkles className="w-4 h-4 text-amber-400 flex-shrink-0" />
+                <span className="truncate">التطبيق العملي</span>
+              </button>
+            </div>
+
+            {/* GROUP 3: Channels & Marketing */}
+            <div className="flex flex-col gap-1 w-full pt-2 border-t border-zinc-900/60">
+              <div className="flex items-center justify-between px-2.5 py-1">
+                <span className="text-[10px] font-extrabold text-amber-400/90 uppercase tracking-wider">
+                  {t.sidebarCategoryChannels}
+                </span>
+              </div>
+
+              <button
+                onClick={() => setViewMode('whatsapp_settings')}
+                className={"w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs transition-all cursor-pointer " + (viewMode === 'whatsapp_settings' ? 'bg-[#00a884]/20 text-[#00a884] font-bold border border-[#00a884]/30' : 'text-zinc-400 hover:text-white hover:bg-white/5')}
+              >
+                <Smartphone className="w-4 h-4 flex-shrink-0" />
+                <span className="truncate">{t.connectTab}</span>
+              </button>
+
+              <button
+                onClick={() => setViewMode('marketing')}
+                className={"w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs transition-all cursor-pointer " + (viewMode === 'marketing' ? 'bg-[#00a884]/20 text-[#00a884] font-bold border border-[#00a884]/30' : 'text-zinc-400 hover:text-white hover:bg-white/5')}
+              >
+                <Megaphone className="w-4 h-4 flex-shrink-0" />
+                <span className="truncate">{t.campaignsTab}</span>
+              </button>
+
+              <button
+                onClick={() => setViewMode('group_manager')}
+                className={"w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs transition-all cursor-pointer " + (viewMode === 'group_manager' ? 'bg-[#00a884]/20 text-[#00a884] font-bold border border-[#00a884]/30' : 'text-zinc-400 hover:text-white hover:bg-white/5')}
+              >
+                <Group className="w-4 h-4 flex-shrink-0" />
+                <span className="truncate">سحب أعضاء الجروبات</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  setActiveAgentsTab('payments');
+                  setViewMode('agents_dashboard');
+                }}
+                className={"w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs transition-all cursor-pointer " + (viewMode === 'agents_dashboard' && activeAgentsTab === 'payments' ? 'bg-emerald-500/20 text-emerald-400 font-bold border border-emerald-500/30' : 'text-zinc-400 hover:text-white hover:bg-white/5')}
+              >
+                <CreditCard className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                <span className="truncate">طرق المحافظ و InstaPay</span>
+              </button>
+
+              <button
+                onClick={() => setViewMode('feedback')}
+                className={"w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs transition-all cursor-pointer " + (viewMode === 'feedback' ? 'bg-[#00a884]/20 text-[#00a884] font-bold border border-[#00a884]/30' : 'text-zinc-400 hover:text-white hover:bg-white/5')}
+              >
+                <Star className="w-4 h-4 flex-shrink-0" />
+                <span className="truncate">التحليلات الذكية</span>
+              </button>
+            </div>
           </div>
         </div>
 
-        {/* Brand User Profile / Logout / Language switcher footer */}
-        <div className="flex flex-col items-center gap-4.5 w-full">
-          {/* Language Switcher */}
-          <button
-            onClick={() => setLang(lang === 'ar' ? 'en' : 'ar')}
-            className="w-12 h-12 rounded-xl flex flex-col items-center justify-center transition-all cursor-pointer text-amber-500 hover:text-amber-400 hover:bg-white/5 relative group"
-            title={lang === 'ar' ? 'Switch to English' : 'التحويل للعربية'}
-          >
-            <Languages className="w-5 h-5" />
-            <span className="text-[8px] mt-0.5 font-bold">{lang === 'ar' ? 'EN' : 'عربي'}</span>
-          </button>
-
-          <button
-            onClick={() => setShowProfileSettings(true)}
-            className="cursor-pointer hover:ring-2 hover:ring-emerald-500/50 rounded-full transition-all"
-            title={lang === 'ar' ? 'إعدادات الحساب' : 'Account Settings'}
-          >
+        {/* Footer Account Controls */}
+        <div className="flex items-center justify-between w-full pt-4 border-t border-zinc-900/60 px-1">
+          <div className="flex items-center gap-2">
             <img
               src={currentUser.avatarUrl}
-              alt="Brand Avatar"
-              className="w-9 h-9 rounded-full object-cover border border-zinc-800 shadow-sm"
+              alt="Avatar"
+              onClick={() => setShowProfileSettings(true)}
+              className="w-8 h-8 rounded-full border border-zinc-800 cursor-pointer hover:ring-2 hover:ring-[#00a884]"
             />
-          </button>
-          <button
-            onClick={handleLogout}
-            className="text-zinc-500 hover:text-rose-400 p-2 rounded-xl transition-colors cursor-pointer hover:bg-rose-500/5"
-            title={`${t.logout} | Log Out`}
-          >
-            <LogOut className="w-5 h-5" />
-          </button>
+            <div className="flex flex-col overflow-hidden">
+              <span className="text-xs font-bold text-white truncate max-w-[100px]">{currentUser.username}</span>
+              <span className="text-[9px] text-zinc-500 uppercase font-semibold">{currentUser.role}</span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setLang(lang === 'ar' ? 'en' : 'ar')}
+              className="p-1.5 text-amber-400 hover:bg-white/5 rounded-lg text-[10px] font-bold cursor-pointer"
+              title={lang === 'ar' ? 'Switch to English' : 'التحويل للعربية'}
+            >
+              {lang === 'ar' ? 'EN' : 'عربي'}
+            </button>
+            <button
+              onClick={handleLogout}
+              className="p-1.5 text-zinc-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg cursor-pointer"
+              title={t.logout}
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
+          </div>
         </div>
       </div>
 

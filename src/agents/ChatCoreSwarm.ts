@@ -94,9 +94,20 @@ export class ChatCoreSwarm {
   /**
    * Main Multi-Agent Swarm Orchestrator & Remote Control Command Processor
    */
-  async processUserMessage(userMessage: string, customerName: string = 'عميل شات كور', chatId: string = 'global_thread'): Promise<SwarmResponse> {
+  async processUserMessage(
+    userMessage: string,
+    customerName: string = 'عميل شات كور',
+    chatId: string = 'global_thread',
+    knowledgeBaseText?: string,
+    customConfigs?: Record<string, any>
+  ): Promise<SwarmResponse> {
     const rawText = userMessage.trim();
     const text = rawText.toLowerCase();
+
+    // Knowledge Base & Custom Employee Instructions Grounding
+    const kbContext = knowledgeBaseText && knowledgeBaseText.trim() 
+      ? `\n--- FACTUAL KNOWLEDGE BASE & TRAINING HUB ---\n${knowledgeBaseText}\n` 
+      : '';
 
     // -------------------------------------------------------------
     // 👑 ADMIN REMOTE CONTROL COMMAND SYSTEM (/command or !command)
@@ -186,6 +197,11 @@ export class ChatCoreSwarm {
     // 0. SHORT MESSAGES & PUNCTUATION HANDLER
     if (text.length <= 3 || text === '.' || text === '..' || text === '...' || text === '؟' || text === '?' || text === 'ألو' || text === 'الو' || text === 'تمام' || text === 'شكرا' || text === 'شكراً') {
       const historySummary = this.getChatHistorySummary(chatId);
+    // Knowledge Base & Custom Employee Instructions Grounding
+    const kbContext = knowledgeBaseText && knowledgeBaseText.trim() 
+      ? `\n--- FACTUAL KNOWLEDGE BASE & TRAINING HUB ---\n${knowledgeBaseText}\n` 
+      : '';
+
       const prompt = `أنت "أحمد المبيعات" - المدير التنفيذي للمبيعات لمنصة شات كور.
 سياق المحادثة السابق:
 ${historySummary}
@@ -226,7 +242,9 @@ ${historySummary}
         ibanNo: 'EG1234567890123456789012345'
       };
 
-      const prompt = `أنت "الأستاذ صلاح الحسابات" - المحاسب المالي التنفيذي لمنصة شات كور (ChatCore Enterprise AI).
+      const invoiceCustom = customConfigs?.invoice?.systemPrompt || "";
+      const prompt = `أنت "الأستاذ صلاح الحسابات" - المحاسب المالي التنفيذي لمنصة شات كور (ChatCore Enterprise AI). ${invoiceCustom}
+${kbContext}
 سياق المحادثة السابق مع العميل:
 ${historySummary}
 
@@ -262,7 +280,9 @@ ${historySummary}
     // 2. SUPPORT & TECH INTENT -> مهندس عمر الدعم
     // -------------------------------------------------------------
     if (text.includes('ربط') || text.includes('كود') || text.includes('توكن') || text.includes('botfather') || text.includes('مشكلة') || text.includes('دعم')) {
-      const prompt = `أنت "مهندس عمر الدعم الفني" - مسؤول الدعم والربط لمنصة شات كور (ChatCore Enterprise AI).
+      const supportCustom = customConfigs?.support?.systemPrompt || "";
+      const prompt = `أنت "مهندس عمر الدعم الفني" - مسؤول الدعم والربط لمنصة شات كور (ChatCore Enterprise AI). ${supportCustom}
+${kbContext}
 سياق المحادثة السابق مع العميل:
 ${historySummary}
 
@@ -281,11 +301,13 @@ ${historySummary}
 
       this.saveChatMessage(chatId, 'user', rawText);
       this.saveChatMessage(chatId, 'assistant', replyText, 'support');
+      const tckNo = 'TCK-' + Math.floor(1000 + Math.random() * 9000);
       return {
         agentId: 'support',
         agentName: 'مهندس عمر الدعم الفني',
         agentTitle: 'Support & Onboarding Specialist',
-        text: replyText
+        text: replyText + `\n\n🎫 **رقم تذكرة الدعم الفني المُتولّدة**: #${tckNo}`,
+        mediaUrl: 'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=1200'
       };
     }
 
@@ -293,7 +315,9 @@ ${historySummary}
     // 3. MEDIA / DESIGN INTENT -> كريم الديزاين
     // -------------------------------------------------------------
     if (text.includes('صورة') || text.includes('تصميم') || text.includes('كارت') || text.includes('بروشور') || text.includes('شكل')) {
-      const prompt = `أنت "كريم الديزاين" - المصمم المبدع لمنصة شات كور (ChatCore Enterprise AI).
+      const mediaCustom = customConfigs?.media?.systemPrompt || "";
+      const prompt = `أنت "كريم الديزاين" - المصمم المبدع لمنصة شات كور (ChatCore Enterprise AI). ${mediaCustom}
+${kbContext}
 سياق المحادثة السابق:
 ${historySummary}
 
@@ -321,7 +345,9 @@ ${historySummary}
     // -------------------------------------------------------------
     const hasDiscussedPlans = historySummary.includes('باقة') || historySummary.includes('Starter') || historySummary.includes('1,200') || historySummary.includes('2,500');
 
-    const prompt = `أنت "أحمد المبيعات" - المدير التنفيذي للمبيعات لمنصة شات كور (ChatCore Enterprise AI).
+    const salesCustom = customConfigs?.sales?.systemPrompt || "";
+      const prompt = `أنت "أحمد المبيعات" - المدير التنفيذي للمبيعات لمنصة شات كور (ChatCore Enterprise AI). ${salesCustom}
+${kbContext}
 سياق المحادثة السابق مع العميل:
 ${historySummary}
 
@@ -364,7 +390,8 @@ ${hasDiscussedPlans
       agentId: 'sales',
       agentName: 'أحمد المبيعات',
       agentTitle: 'Chief Sales & Closing Officer',
-      text: replyText
+      text: replyText,
+      mediaUrl: hasDiscussedPlans ? undefined : 'https://images.unsplash.com/photo-1557804506-669a67965ba0?w=1200'
     };
   }
 }

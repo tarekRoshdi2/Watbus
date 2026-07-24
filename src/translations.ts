@@ -16,6 +16,12 @@ export interface SystemTranslations {
   connectTab: string;
   campaignsTab: string;
   logout: string;
+  sidebarCategoryManagement: string;
+  sidebarCategoryAgents: string;
+  sidebarCategoryChannels: string;
+  mobileMenuTitle: string;
+  humanEmployees: string;
+  aiEmployees: string;
 
   // General Dashboard / Sidebar
   unifiedInbox: string;
@@ -140,6 +146,12 @@ export const translations: Record<'ar' | 'en', SystemTranslations> = {
     connectTab: 'الربط',
     campaignsTab: 'الحملات',
     logout: 'تسجيل الخروج',
+    sidebarCategoryManagement: 'الإدارة والإنبوكس',
+    sidebarCategoryAgents: 'مركز الذكاء الاصطناعي',
+    sidebarCategoryChannels: 'التسويق والقنوات',
+    mobileMenuTitle: 'قائمة الملاحة الرئيسية',
+    humanEmployees: 'الموظفين البشر',
+    aiEmployees: 'الموظفين الأذكياء',
 
     unifiedInbox: 'صندوق محادثات ChatCore الموحد',
     unifiedInboxSub: 'تغذية صندوق الوارد الموحد',
@@ -255,6 +267,12 @@ export const translations: Record<'ar' | 'en', SystemTranslations> = {
     connectTab: 'Connect',
     campaignsTab: 'Campaigns',
     logout: 'Log Out',
+    sidebarCategoryManagement: 'Management & CRM',
+    sidebarCategoryAgents: 'AI & Swarm HQ',
+    sidebarCategoryChannels: 'Channels & Marketing',
+    mobileMenuTitle: 'Main Navigation Menu',
+    humanEmployees: 'Human Staff',
+    aiEmployees: 'AI Staff Roster',
 
     unifiedInbox: 'ChatCore Unified Inbox',
     unifiedInboxSub: 'ChatCore CRM Inbox Feed',

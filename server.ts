@@ -110,7 +110,12 @@ import {
   saveLead,
   getLeads,
   initializeDbFromPrisma,
-  prisma
+  prisma,
+  getAgentsConfig,
+  saveAgentConfig,
+  getAgentStats,
+  recordAgentActivity,
+  getAgentAuditLogs
 } from './src/db.js';
 import { initializeQueues, enqueueIncomingWebhook, setDirectWebhookProcessor } from './src/queues/messageQueue.js';
 import { initializeWorkers } from './src/queues/workers.js';
@@ -4105,19 +4110,43 @@ async function sendRealWhatsAppMessageDirectly(
         return { success: false, error: 'Missing Meta Phone Number ID or Access Token' };
       }
       const endpoint = `https://graph.facebook.com/v17.0/${phoneId}/messages`;
+      
+      let metaPayload: any = {
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to: cleanPhone
+      };
+
+      if (mediaType === 'audio' && mediaData) {
+        metaPayload.type = 'audio';
+        metaPayload.audio = {
+          link: mediaData.startsWith('http') ? mediaData : (mediaData.startsWith('data:') ? mediaData : `data:audio/ogg;base64,${mediaData}`)
+        };
+      } else if (mediaType === 'image' && mediaData) {
+        metaPayload.type = 'image';
+        metaPayload.image = {
+          link: mediaData,
+          caption: text || ''
+        };
+      } else if (mediaType === 'document' && mediaData) {
+        metaPayload.type = 'document';
+        metaPayload.document = {
+          link: mediaData,
+          caption: text || '',
+          filename: 'invoice.pdf'
+        };
+      } else {
+        metaPayload.type = 'text';
+        metaPayload.text = { preview_url: false, body: text };
+      }
+
       const response = await fetch(endpoint, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({
-          messaging_product: 'whatsapp',
-          recipient_type: 'individual',
-          to: cleanPhone,
-          type: 'text',
-          text: { preview_url: false, body: text }
-        })
+        body: JSON.stringify(metaPayload)
       });
       if (response.ok) {
         return { success: true };
@@ -4858,6 +4887,7 @@ function cleanOrphanedSessions() {
 
 // Vite integration & Production assets serving
   export async function globalIncomingHandler(deviceId: string, sock: any, jid: string, pushName: string | undefined, messageContent: any, fromMe: boolean, timestamp: number, messageId: string) {
+  let lastSwarmRes: any = null;
     try {
       // Humanization: Send read receipt and activate typing immediately on incoming messages from clients
       if (!fromMe && sock) {
@@ -5483,18 +5513,56 @@ Formulate your exceptionally smart and professional response now:`;
             console.error('[Multi-Agent Pipeline Error]', agentErr);
           }
 
-          console.log(`[AI Agent] Formulating response using model "${modelName}"...`);
+          console.log(`[Enterprise Multi-Agent Swarm] Processing query via ChatCoreSwarm...`);
           
-          const response = await callGeminiWithRetry({
-            model: modelName,
-            contents: contentsPayload,
-            config: {
-              systemInstruction: systemPrompt,
-              temperature: device.aiTemperature !== undefined ? Number(device.aiTemperature) : 0.8,
-            }
-          });
-          
-          responseText = response?.text || '';
+          // Delegate to ChatCoreSwarm Multi-Agent Engine
+          const swarmRes = await chatCoreSwarm.processUserMessage(
+            userMessageText,
+            pushName || `+${contactPhone}`,
+            conv.id,
+            finalKnowledgeBase,
+            getAgentsConfig()
+          );
+
+          lastSwarmRes = swarmRes;
+          if (swarmRes && swarmRes.text) {
+            responseText = swarmRes.text;
+
+            // Determine Action Type for Live Metrics
+            let actionType: any = 'task_completed';
+            if (swarmRes.agentId === 'invoice' || swarmRes.invoiceData) actionType = 'invoice_issued';
+            if (swarmRes.agentId === 'support') actionType = 'ticket_created';
+            if (swarmRes.agentId === 'media' || swarmRes.mediaUrl) actionType = 'visual_generated';
+
+            // Record Live Activity & Increment Stats
+            const auditLog = recordAgentActivity(
+              swarmRes.agentId || 'sales',
+              lastSwarmRes.agentName || 'أحمد المبيعات',
+              actionType,
+              userMessageText.substring(0, 70),
+              pushName || `+${contactPhone}`,
+              contactPhone,
+              { invoiceData: swarmRes.invoiceData, mediaUrl: swarmRes.mediaUrl }
+            );
+
+            // Broadcast Live Swarm Telemetry to Enterprise AI Headquarters UI
+            broadcast({
+              type: 'agent:activity',
+              auditLog,
+              agentStats: getAgentStats()
+            });
+          } else {
+            console.log(`[AI Agent Fallback] Formulating response using Gemini model "${modelName}"...`);
+            const response = await callGeminiWithRetry({
+              model: modelName,
+              contents: contentsPayload,
+              config: {
+                systemInstruction: systemPrompt,
+                temperature: device.aiTemperature !== undefined ? Number(device.aiTemperature) : 0.8,
+              }
+            });
+            responseText = response?.text || '';
+          }
           console.log(`[AI Agent] Generated text response: "${responseText.substring(0, 100)}${responseText.length > 100 ? '...' : ''}"`);
 
           // 5b. If voice responses are enabled, synthesize the text response into a real voice note (TTS)
@@ -5593,6 +5661,26 @@ Formulate your exceptionally smart and professional response now:`;
         responseAudioBuffer ? 'audio' : 'text',
         responseAudioBuffer ? responseAudioBuffer.toString('base64') : undefined
       );
+
+      // Dispatch Visual Image Card if generated by Swarm Agent
+      if (lastSwarmRes && lastSwarmRes.mediaUrl) {
+        console.log(`[AI Agent - Visual Card] Dispatching visual image card via device "${device.name}" to +${contactPhone}...`);
+        sendRealWhatsAppMessage(device, contactPhone, '', false, 'image', lastSwarmRes.mediaUrl).then(() => {
+          const mediaMsg: Message = {
+            id: `msg_${Math.random().toString(36).substring(2, 11)}`,
+            conversationId: conv.id,
+            senderId: ownerId,
+            recipientId: contactId,
+            content: `[كارت بصري توضيحي من الموظف ${lastSwarmRes?.agentName || 'المنظومة'}]`,
+            type: 'image',
+            mediaUrl: lastSwarmRes.mediaUrl,
+            status: 'delivered',
+            timestamp: new Date().toISOString()
+          };
+          saveMessage(mediaMsg);
+          broadcast({ type: 'message:new', message: mediaMsg });
+        }).catch(err => console.error('[Visual Card Error]', err));
+      }
       
       // 8. Save and Sync the outgoing AI response to our local database and notify the UI
       const aiMsg: Message = {
@@ -5725,6 +5813,30 @@ app.post('/api/webhooks/meta', async (req, res) => {
 // ==========================================
 // Phase 4: Ticketing & Performance API
 // ==========================================
+
+// ==========================================
+// Enterprise AI Staff Roster API Endpoints
+// ==========================================
+app.get('/api/agents/config', (req, res) => {
+  res.json({ success: true, agentsConfig: getAgentsConfig() });
+});
+
+app.post('/api/agents/config', (req, res) => {
+  const { agentId, config } = req.body;
+  if (!agentId || !config) return res.status(400).json({ error: 'Missing agentId or config' });
+  const updated = saveAgentConfig(agentId, config);
+  broadcast({ type: 'agent:config_update', agentsConfig: updated });
+  res.json({ success: true, agentsConfig: updated });
+});
+
+app.get('/api/agents/stats', (req, res) => {
+  res.json({
+    success: true,
+    stats: getAgentStats(),
+    auditLogs: getAgentAuditLogs(50)
+  });
+});
+
 app.post('/api/tickets', async (req, res) => {
   try {
     const { title, priority, conversationId } = req.body;

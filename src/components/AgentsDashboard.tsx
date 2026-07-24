@@ -99,6 +99,36 @@ export default function AgentsDashboard({ lang, initialTab = 'roster' }: { lang:
   const [directTaskInput, setDirectTaskInput] = useState('');
   const [isExecutingDirectTask, setIsExecutingDirectTask] = useState(false);
   const [directTaskResult, setDirectTaskResult] = useState<any>(null);
+
+  // Live Agent Stats & Audit Logs State
+  const [liveAgentStats, setLiveAgentStats] = useState<Record<string, any>>({});
+  const [liveAuditLogs, setLiveAuditLogs] = useState<any[]>([]);
+
+  // Load Live Telemetry from API
+  useEffect(() => {
+    fetch('/api/agents/stats')
+      .then(res => res.json())
+      .then(data => {
+        if (data.success) {
+          if (data.stats) setLiveAgentStats(data.stats);
+          if (data.auditLogs) setLiveAuditLogs(data.auditLogs);
+        }
+      })
+      .catch(err => console.warn('Failed loading live agent telemetry:', err));
+
+    const handleAgentActivity = (e: any) => {
+      const { auditLog, agentStats } = e.detail || {};
+      if (auditLog) {
+        setLiveAuditLogs(prev => [auditLog, ...prev.slice(0, 49)]);
+      }
+      if (agentStats) {
+        setLiveAgentStats(agentStats);
+      }
+    };
+
+    window.addEventListener('ws-agent-activity', handleAgentActivity);
+    return () => window.removeEventListener('ws-agent-activity', handleAgentActivity);
+  }, []);
   
   // Ticketing System States
   const [ticketSearch, setTicketSearch] = useState('');

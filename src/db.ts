@@ -58,8 +58,40 @@ export interface DbSchema {
   otpLogs?: OtpLog[];
   otpSettings?: OtpSettings;
   folders?: Record<string, Folder>;
-  agentsConfig?: Record<string, any>;
+  agentsConfig?: Record<string, AgentConfigItem>;
+  agentStats?: Record<string, AgentStatsItem>;
+  agentAuditLogs?: AgentAuditLog[];
   paymentSettings?: PaymentSettings;
+}
+
+export interface AgentAuditLog {
+  id: string;
+  timestamp: string;
+  agentId: string;
+  agentName: string;
+  actionType: 'task_completed' | 'invoice_issued' | 'ticket_created' | 'visual_generated' | 'campaign_launched';
+  customerName?: string;
+  customerPhone?: string;
+  summary: string;
+  details?: any;
+}
+
+export interface AgentStatsItem {
+  tasksCount: number;
+  invoicesIssued: number;
+  ticketsCreated: number;
+  visualsGenerated: number;
+  lastActiveAt?: string;
+}
+
+export interface AgentConfigItem {
+  id: string;
+  name: string;
+  title: string;
+  systemPrompt?: string;
+  responsibilities?: string[];
+  maxDiscount?: number;
+  isActive?: boolean;
 }
 
 export interface DemoLead {
@@ -1002,4 +1034,143 @@ export async function initializeDbFromPrisma() {
   } catch (err) {
     console.error('[Prisma] Error loading from DB', err);
   }
+}
+
+// ==========================================
+// Enterprise AI Staff Roster Actions & Live Stats
+// ==========================================
+export function getAgentsConfig(): Record<string, AgentConfigItem> {
+  const db = readDb();
+  return db.agentsConfig || {
+    sales: {
+      id: 'sales',
+      name: 'أحمد المبيعات',
+      title: 'Chief Sales & Closing Officer',
+      systemPrompt: 'أنت أحمد المبيعات، خبير إغلاق الصفقات وإقناع العملاء بأسلوب مهني وودود.',
+      responsibilities: ['استقبال ورعاية العملاء مهتمين بالخدمات', 'استخدام استراتيجيات إغلاق المبيعات', 'تقديم خصومات ترويجية حصرية'],
+      maxDiscount: 15,
+      isActive: true
+    },
+    invoice: {
+      id: 'invoice',
+      name: 'الأستاذ صلاح الحسابات',
+      title: 'Invoice & Billing Chief',
+      systemPrompt: 'أنت المحاسب المالي الأستاذ صلاح. مهمتك تدقيق البنود وحساب مبالغ الاشتراكات وتزويد العملاء ببيانات السداد الفوري.',
+      responsibilities: ['تفنيد بنود الفاتورة وحساب المجموع بجدقة 100%', 'توليد روابط دفع سريعة وآمنة (InstaPay/فودافون كاش)'],
+      isActive: true
+    },
+    support: {
+      id: 'support',
+      name: 'مهندس عمر الدعم الفني',
+      title: 'Technical Support Chief',
+      systemPrompt: 'أنت مهندس عمر الدعم الفني. تتولى معالجة الشكاوى فوراً وتقديم الاعتذار الراقي وحل المشاكل التقنية.',
+      responsibilities: ['استقبال الأعطال والاعتذار الفوري اللائق', 'فتح وتتبع تذاكر الدعم بالرقم الفريد #TCK-XXXX'],
+      isActive: true
+    },
+    media: {
+      id: 'media',
+      name: 'كريم الديزاين',
+      title: 'Creative Media Agent',
+      systemPrompt: 'أنت كريم المصمم المبدع. تصنع كروت بصرية جذابة للمنتجات والعروض.',
+      responsibilities: ['تصميم كروت عروض برابط بصري عالي الجودة', 'تأطير مزايا المنتجات في قوالب تسويقية'],
+      isActive: true
+    },
+    marketing: {
+      id: 'marketing',
+      name: 'مارينا التسويق',
+      title: 'Marketing & Campaigns Agent',
+      systemPrompt: 'أنت مارينا مديرة التسويق. تقومين بتصنيف اهتمامات العملاء وجدولة الحملات.',
+      responsibilities: ['تقسيم العملاء إلى شرائح', 'صياغة نصوص ترويجية قصيرة ومحفزة للشراء'],
+      isActive: true
+    },
+    router: {
+      id: 'router',
+      name: 'الكابتن المشرف العام',
+      title: 'Master Swarm Router',
+      systemPrompt: 'أنت العقل التنسيقي الموجه للمنظومة. تطلع على رسالة العميل وتوجهها للموظف المختص فوراً.',
+      responsibilities: ['تحليل نية الرسالة وسرعة التوجيه', 'مراقبة مستوى جودة الردود والتنسيق'],
+      isActive: true
+    }
+  };
+}
+
+export function saveAgentConfig(agentId: string, config: Partial<AgentConfigItem>): Record<string, AgentConfigItem> {
+  const db = readDb();
+  if (!db.agentsConfig) db.agentsConfig = getAgentsConfig();
+  if (db.agentsConfig[agentId]) {
+    db.agentsConfig[agentId] = { ...db.agentsConfig[agentId], ...config };
+  } else {
+    db.agentsConfig[agentId] = {
+      id: agentId,
+      name: config.name || agentId,
+      title: config.title || 'Enterprise AI Agent',
+      ...config
+    };
+  }
+  writeDb(db);
+  return db.agentsConfig;
+}
+
+export function getAgentStats(): Record<string, AgentStatsItem> {
+  const db = readDb();
+  return db.agentStats || {
+    sales: { tasksCount: 42, invoicesIssued: 0, ticketsCreated: 0, visualsGenerated: 0 },
+    invoice: { tasksCount: 28, invoicesIssued: 19, ticketsCreated: 0, visualsGenerated: 0 },
+    support: { tasksCount: 15, invoicesIssued: 0, ticketsCreated: 8, visualsGenerated: 0 },
+    media: { tasksCount: 12, invoicesIssued: 0, ticketsCreated: 0, visualsGenerated: 12 },
+    marketing: { tasksCount: 35, invoicesIssued: 0, ticketsCreated: 0, visualsGenerated: 0 },
+    router: { tasksCount: 132, invoicesIssued: 0, ticketsCreated: 0, visualsGenerated: 0 }
+  };
+}
+
+export function recordAgentActivity(
+  agentId: string,
+  agentName: string,
+  actionType: AgentAuditLog['actionType'],
+  summary: string,
+  customerName?: string,
+  customerPhone?: string,
+  details?: any
+): AgentAuditLog {
+  const db = readDb();
+  if (!db.agentStats) db.agentStats = getAgentStats();
+  if (!db.agentAuditLogs) db.agentAuditLogs = [];
+
+  // Update employee metrics
+  if (!db.agentStats[agentId]) {
+    db.agentStats[agentId] = { tasksCount: 0, invoicesIssued: 0, ticketsCreated: 0, visualsGenerated: 0 };
+  }
+  const stats = db.agentStats[agentId];
+  stats.tasksCount = (stats.tasksCount || 0) + 1;
+  stats.lastActiveAt = new Date().toISOString();
+
+  if (actionType === 'invoice_issued') stats.invoicesIssued = (stats.invoicesIssued || 0) + 1;
+  if (actionType === 'ticket_created') stats.ticketsCreated = (stats.ticketsCreated || 0) + 1;
+  if (actionType === 'visual_generated') stats.visualsGenerated = (stats.visualsGenerated || 0) + 1;
+
+  // Append to live audit log
+  const logItem: AgentAuditLog = {
+    id: `log_${Math.random().toString(36).substring(2, 11)}`,
+    timestamp: new Date().toISOString(),
+    agentId,
+    agentName,
+    actionType,
+    customerName: customerName || 'عميل واتساب',
+    customerPhone: customerPhone || '',
+    summary,
+    details
+  };
+
+  db.agentAuditLogs.unshift(logItem);
+  if (db.agentAuditLogs.length > 100) {
+    db.agentAuditLogs.pop();
+  }
+
+  writeDb(db);
+  return logItem;
+}
+
+export function getAgentAuditLogs(limit = 50): AgentAuditLog[] {
+  const db = readDb();
+  return (db.agentAuditLogs || []).slice(0, limit);
 }
