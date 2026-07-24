@@ -343,6 +343,17 @@ export default function ChatArea({
     };
   }, [activeContact.id, activeConversation?.id]);
 
+  // Handle Escape key to close Lightbox modal
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && lightboxImage) {
+        setLightboxImage(null);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [lightboxImage]);
+
   // Smooth scroll to bottom upon new messages or typing changes
   useEffect(() => {
     const isNewMessage = messages.length > prevMessagesLengthRef.current;

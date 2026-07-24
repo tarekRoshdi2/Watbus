@@ -201,6 +201,9 @@ app.use('/api', (req, res, next) => {
   next();
 });
 
+// Initialize Queue infrastructure with fallback
+initializeQueues().catch(e => console.warn('[Queues] Queue init bypassed:', e));
+
 // Trigger Supabase Cloud Sync on startup
 syncDatabaseWithSupabase().then(ok => {
   if (ok) console.log('🟢 [Supabase Cloud] Central database restored & synced from Supabase cloud on startup!');
@@ -357,16 +360,9 @@ async function callGeminiWithRetry(
   let lastError: any = null;
   
   // Define fallback chain based on the starting model
-  let modelsToTry = [params.model];
-  if (params.model === 'gemini-3.5-flash') {
-    modelsToTry = ['gemini-3.5-flash', 'gemini-3.1-flash-lite', 'gemini-3.1-pro-preview'];
-  } else if (params.model === 'gemini-3.1-flash-lite') {
-    modelsToTry = ['gemini-3.1-flash-lite', 'gemini-3.5-flash', 'gemini-3.1-pro-preview'];
-  } else if (params.model === 'gemini-3.1-pro-preview') {
-    modelsToTry = ['gemini-3.1-pro-preview', 'gemini-3.5-flash', 'gemini-3.1-flash-lite'];
-  } else {
-    // For other specialized models (like TTS, image, etc.), just retry the same model
-    modelsToTry = [params.model, params.model, params.model];
+  let modelsToTry = [params.model, 'gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-2.0-flash-lite'];
+  if (params.model.includes('3.5') || params.model.includes('3.1')) {
+    modelsToTry = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-2.0-flash-lite', 'gemini-1.5-flash-latest'];
   }
 
   while (attempts < maxAttempts) {
@@ -4161,6 +4157,91 @@ class OutgoingMessageQueue {
 
 const outgoingQueue = new OutgoingMessageQueue();
 
+const uploadsDir = path.join(process.cwd(), 'public', 'uploads');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
+app.use('/uploads', express.static(uploadsDir));
+
+function saveMediaDataToPublicUrl(mediaData: string, prefix: string = 'media'): string {
+  if (!mediaData) return '';
+  if (mediaData.startsWith('http://') || mediaData.startsWith('https://')) {
+    return mediaData;
+  }
+  
+  try {
+    let buffer: Buffer;
+    let ext = '.png';
+
+    if (mediaData.startsWith('data:image/svg+xml')) {
+      const svgString = mediaData.startsWith('data:image/svg+xml;base64,')
+        ? Buffer.from(mediaData.replace('data:image/svg+xml;base64,', ''), 'base64').toString('utf-8')
+        : decodeURIComponent(mediaData.replace(/^data:image\/svg\+xml;utf8,/, ''));
+      const resvg = new Resvg(svgString, { fitTo: { mode: 'width', value: 1200 } });
+      buffer = resvg.render().asPng();
+      ext = '.png';
+    } else if (mediaData.startsWith('data:audio/')) {
+      const matches = mediaData.match(/^data:audio\/([^;]+);base64,(.+)$/);
+      if (matches) {
+        ext = matches[1] === 'ogg' ? '.ogg' : matches[1] === 'mp3' ? '.mp3' : '.wav';
+        buffer = Buffer.from(matches[2], 'base64');
+      } else {
+        buffer = Buffer.from(mediaData.split(',')[1] || '', 'base64');
+        ext = '.ogg';
+      }
+    } else if (mediaData.startsWith('data:')) {
+      const matches = mediaData.match(/^data:([^;]+);base64,(.+)$/);
+      if (matches) {
+        ext = matches[1].includes('jpeg') || matches[1].includes('jpg') ? '.jpg' : '.png';
+        buffer = Buffer.from(matches[2], 'base64');
+      } else {
+        buffer = Buffer.from(mediaData.split(',')[1] || '', 'base64');
+      }
+    } else {
+      buffer = Buffer.from(mediaData, 'base64');
+    }
+
+    const filename = `${prefix}_${Date.now()}_${Math.floor(Math.random() * 1000)}${ext}`;
+    const filePath = path.join(uploadsDir, filename);
+    fs.writeFileSync(filePath, buffer);
+
+    const baseUrl = process.env.APP_URL || 'https://chat.expocore.net';
+    const publicUrl = `${baseUrl.replace(/\/$/, '')}/uploads/${filename}`;
+    console.log(`[Public Media Host] Saved media to public URL: ${publicUrl}`);
+    return publicUrl;
+  } catch (err) {
+    console.error('[Public Media Host Error]', err);
+    return mediaData;
+  }
+}
+
+async function downloadMetaMediaBuffer(mediaId: string, accessToken: string): Promise<{ buffer: Buffer; mimeType: string } | null> {
+  try {
+    const metaRes = await fetch(`https://graph.facebook.com/v20.0/${mediaId}`, {
+      headers: { 'Authorization': `Bearer ${accessToken}` }
+    });
+    if (!metaRes.ok) return null;
+    const metaData = await metaRes.json();
+    const downloadUrl = metaData.url;
+    const mimeType = metaData.mime_type || 'audio/ogg';
+
+    if (!downloadUrl) return null;
+
+    const audioRes = await fetch(downloadUrl, {
+      headers: { 'Authorization': `Bearer ${accessToken}` }
+    });
+    if (!audioRes.ok) return null;
+
+    const arrayBuffer = await audioRes.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    console.log(`[Meta Media Download Success] Downloaded ${buffer.length} bytes for media ID ${mediaId}`);
+    return { buffer, mimeType };
+  } catch (err) {
+    console.error('[Meta Media Download Error]', err);
+    return null;
+  }
+}
+
 async function uploadMediaToMetaCloudApi(
   device: DeviceLink,
   buffer: Buffer,
@@ -4227,7 +4308,9 @@ async function sendRealWhatsAppMessageDirectly(
         payload.interactive = interactiveData;
       } else if (mediaType === 'image' && mediaData) {
         let mediaId: string | null = null;
+        let publicUrl = mediaData;
         if (mediaData.startsWith('data:')) {
+          publicUrl = saveMediaDataToPublicUrl(mediaData, 'card');
           let imageBuffer: Buffer;
           let mimeType = 'image/png';
 
@@ -4236,22 +4319,13 @@ async function sendRealWhatsAppMessageDirectly(
               const svgString = mediaData.startsWith('data:image/svg+xml;base64,')
                 ? Buffer.from(mediaData.replace('data:image/svg+xml;base64,', ''), 'base64').toString('utf-8')
                 : decodeURIComponent(mediaData.replace(/^data:image\/svg\+xml;utf8,/, ''));
-              
               const resvg = new Resvg(svgString, { fitTo: { mode: 'width', value: 1200 } });
               imageBuffer = resvg.render().asPng();
-              mimeType = 'image/png';
             } catch (e) {
-              const base64Str = mediaData.split(',')[1] || '';
-              imageBuffer = Buffer.from(base64Str, 'base64');
-            }
-          } else {
-            const matches = mediaData.match(/^data:([^;]+);base64,(.+)$/);
-            if (matches) {
-              mimeType = matches[1];
-              imageBuffer = Buffer.from(matches[2], 'base64');
-            } else {
               imageBuffer = Buffer.from(mediaData.split(',')[1] || '', 'base64');
             }
+          } else {
+            imageBuffer = Buffer.from(mediaData.split(',')[1] || '', 'base64');
           }
 
           mediaId = await uploadMediaToMetaCloudApi(device, imageBuffer, mimeType, 'card.png');
@@ -4261,14 +4335,17 @@ async function sendRealWhatsAppMessageDirectly(
         if (mediaId) {
           payload.image = { id: mediaId, caption: text };
         } else {
-          payload.image = { link: mediaData, caption: text };
+          payload.image = { link: publicUrl, caption: text };
         }
       } else if (mediaType === 'document' && mediaData) {
+        const publicUrl = saveMediaDataToPublicUrl(mediaData, 'doc');
         payload.type = 'document';
-        payload.document = { link: mediaData, caption: text };
+        payload.document = { link: publicUrl, caption: text };
       } else if (mediaType === 'audio' && mediaData) {
         let mediaId: string | null = null;
+        let publicUrl = mediaData;
         if (mediaData.startsWith('data:')) {
+          publicUrl = saveMediaDataToPublicUrl(mediaData, 'voice');
           const matches = mediaData.match(/^data:([^;]+);base64,(.+)$/);
           if (matches) {
             const mimeType = matches[1];
@@ -4281,7 +4358,7 @@ async function sendRealWhatsAppMessageDirectly(
         if (mediaId) {
           payload.audio = { id: mediaId };
         } else {
-          payload.audio = { link: mediaData };
+          payload.audio = { link: publicUrl };
         }
       } else {
         payload.type = 'text';

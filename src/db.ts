@@ -201,6 +201,12 @@ export function readDb(): DbSchema {
     if (!parsed.folders) {
       parsed.folders = {};
     }
+    if (!parsed.tickets) {
+      parsed.tickets = {};
+    }
+    if (!parsed.agentsConfig) {
+      parsed.agentsConfig = {};
+    }
     
     cachedDb = parsed as DbSchema;
     return cachedDb;
