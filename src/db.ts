@@ -1,17 +1,34 @@
-/**
- * @license
- * SPDX-License-Identifier: Apache-2.0
- */
-
+import { PrismaClient } from '@prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
+import pg from 'pg';
+import dotenv from 'dotenv';
 import fs from 'fs';
 import path from 'path';
 import { User, Conversation, Message, StatusStory, DeviceLink, Campaign, CatalogItem, OtpLog, OtpSettings, Folder } from './types.js';
 import { backupDbToSupabase } from './supabase.js';
 
+dotenv.config();
+
+const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
+const adapter = new PrismaPg(pool);
+export const prisma = new PrismaClient({ adapter });
 
 const DB_FILE = path.join(process.cwd(), 'db-store.json');
 
-interface DbSchema {
+
+export interface PaymentSettings {
+  vodafoneCashNumber: string;
+  instaPayAddress: string;
+  bankAccountIban: string;
+  accountHolderName: string;
+  bankName: string;
+  transferNotes: string;
+  telegramBotToken?: string;
+  telegramBotEnabled?: boolean;
+  telegramBotInfo?: any;
+}
+
+export interface DbSchema {
   users: Record<string, User>;
   conversations: Record<string, Conversation>;
   messages: Message[];
@@ -23,6 +40,8 @@ interface DbSchema {
   otpLogs?: OtpLog[];
   otpSettings?: OtpSettings;
   folders?: Record<string, Folder>;
+  agentsConfig?: Record<string, any>;
+  paymentSettings?: PaymentSettings;
 }
 
 export interface DemoLead {
@@ -37,12 +56,11 @@ export interface DemoLead {
   extractedNeeds?: string[];
 }
 
-// Meta AI Special Seed User
 const META_AI_USER: User = {
   id: 'meta-ai',
   username: 'Meta AI',
   role: 'user',
-  avatarUrl: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=150&q=80', // Beautiful futuristic gradient
+  avatarUrl: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=150&q=80',
   statusText: 'with Gemini AI. Type anything to start talking!',
   isOnline: true,
   lastSeenAt: new Date().toISOString(),
@@ -110,8 +128,6 @@ export function readDb(): DbSchema {
     }
     const data = fs.readFileSync(DB_FILE, 'utf-8');
     const parsed = JSON.parse(data) as any;
-    
-    // Ensure Meta AI user is always seeded
     if (!parsed.users) parsed.users = {};
     if (!parsed.users['meta-ai']) {
       parsed.users['meta-ai'] = META_AI_USER;
@@ -218,6 +234,21 @@ export function saveUser(user: User): User {
   
   db.users[user.id] = user;
   writeDb(db);
+  
+  // Async Prisma Sync
+  prisma.users.upsert({
+    where: { id: user.id },
+    update: {
+      username: user.username,
+      password_hash: user.password || '',
+    },
+    create: {
+      id: user.id,
+      username: user.username,
+      password_hash: user.password || '',
+    }
+  }).catch(e => console.error('[Prisma Sync] Error saving user', e));
+
   return user;
 }
 
@@ -284,6 +315,28 @@ export function getOrCreateConversation(userA: string, userB: string, deviceId?:
   
   db.conversations[newId] = newConv;
   writeDb(db);
+
+  // Async Prisma Sync
+  prisma.conversation.upsert({
+    where: { id: newConv.id },
+    update: {
+      deviceId: newConv.deviceId || 'default',
+      contactPhone: newConv.participantIds.find(id => id.startsWith('contact_')) || newConv.participantIds[1] || 'unknown',
+      status: 'open',
+      label: newConv.label || 'None',
+      updatedAt: new Date(newConv.updatedAt)
+    },
+    create: {
+      id: newConv.id,
+      deviceId: newConv.deviceId || 'default',
+      contactPhone: newConv.participantIds.find(id => id.startsWith('contact_')) || newConv.participantIds[1] || 'unknown',
+      status: 'open',
+      label: newConv.label || 'None',
+      createdAt: new Date(newConv.createdAt),
+      updatedAt: new Date(newConv.updatedAt)
+    }
+  }).catch(e => console.error('[Prisma Sync] Error saving conversation', e));
+
   return newConv;
 }
 
@@ -302,6 +355,27 @@ export function saveConversation(conv: Conversation): Conversation {
   const db = readDb();
   db.conversations[conv.id] = conv;
   writeDb(db);
+
+  prisma.conversation.upsert({
+    where: { id: conv.id },
+    update: {
+      deviceId: conv.deviceId || 'default',
+      contactPhone: conv.participantIds.find(id => id.startsWith('contact_')) || conv.participantIds[1] || 'unknown',
+      status: 'open',
+      label: conv.label || 'None',
+      updatedAt: new Date(conv.updatedAt)
+    },
+    create: {
+      id: conv.id,
+      deviceId: conv.deviceId || 'default',
+      contactPhone: conv.participantIds.find(id => id.startsWith('contact_')) || conv.participantIds[1] || 'unknown',
+      status: 'open',
+      label: conv.label || 'None',
+      createdAt: new Date(conv.createdAt),
+      updatedAt: new Date(conv.updatedAt)
+    }
+  }).catch(e => console.error('[Prisma Sync] Error saving conversation', e));
+
   return conv;
 }
 
@@ -322,6 +396,21 @@ export function saveMessage(message: Message): Message {
   }
   
   writeDb(db);
+
+  prisma.message.create({
+    data: {
+      id: message.id,
+      conversationId: message.conversationId,
+      senderId: message.senderId,
+      recipientId: message.recipientId,
+      content: message.content || '',
+      type: message.type,
+      mediaUrl: message.mediaUrl,
+      status: message.status,
+      timestamp: new Date(message.timestamp)
+    }
+  }).catch(e => console.error('[Prisma Sync] Error saving message', e));
+
   return message;
 }
 
@@ -402,6 +491,32 @@ export function saveDevice(device: DeviceLink): DeviceLink {
   if (!db.devices) db.devices = {};
   db.devices[device.id] = device;
   writeDb(db);
+
+  const validUserId = (device.ownerId && !device.ownerId.includes('admin') && !device.ownerId.includes('meta')) ? device.ownerId : null;
+
+  prisma.device.upsert({
+    where: { id: device.id },
+    update: {
+      name: device.name,
+      phoneNumber: device.phoneNumber,
+      phoneId: device.phoneId,
+      method: device.method,
+      status: device.status,
+      tenantId: 'default',
+      userId: validUserId
+    },
+    create: {
+      id: device.id,
+      name: device.name,
+      phoneNumber: device.phoneNumber,
+      phoneId: device.phoneId,
+      method: device.method,
+      status: device.status,
+      tenantId: 'default',
+      userId: validUserId
+    }
+  }).catch(e => console.error('[Prisma Sync] Error saving device', e));
+
   return device;
 }
 
@@ -797,3 +912,66 @@ export function saveLead(lead: DemoLead): void {
 }
 
 
+
+
+export function getPaymentSettings(): PaymentSettings {
+  const db = readDb();
+  return db.paymentSettings || {
+    vodafoneCashNumber: '01115822923',
+    instaPayAddress: 'trkroshdi@instapay',
+    bankAccountIban: 'EG1234567890123456789012345',
+    accountHolderName: 'طارق رشدي (Tarek Roshdi)',
+    bankName: 'البنك الأهلي المصري (NBE)',
+    transferNotes: 'يرجى إرسال المبلغ باسم طارق رشدي عبر إنستا باي أو محفظة فودافون كاش ورفع سكرين شوت الإيصال لتأكيد الفاتورة فورا.',
+    telegramBotToken: '',
+    telegramBotEnabled: false
+  };
+}
+
+export function savePaymentSettings(settings: PaymentSettings): PaymentSettings {
+  const db = readDb();
+  db.paymentSettings = settings;
+  writeDb(db);
+  return settings;
+}
+
+export async function initializeDbFromPrisma() {
+  console.log('[Prisma] Loading database from PostgreSQL into memory cache...');
+  try {
+    const users = await prisma.users.findMany();
+    const devices = await prisma.device.findMany();
+    const conversations = await prisma.conversation.findMany();
+    const messages = await prisma.message.findMany();
+    
+    const db = readDb(); // load from local json first to get legacy data
+    
+    // Override with Postgres data
+    users.forEach(u => {
+      if (db.users[u.id]) {
+        db.users[u.id].username = u.username;
+      }
+    });
+    
+    messages.forEach(m => {
+      const exists = db.messages.find(existing => existing.id === m.id);
+      if (!exists) {
+        db.messages.push({
+          id: m.id,
+          conversationId: m.conversationId,
+          senderId: m.senderId,
+          recipientId: m.recipientId,
+          content: m.content || '',
+          type: m.type as any,
+          mediaUrl: m.mediaUrl || undefined,
+          status: m.status as any,
+          timestamp: m.timestamp.toISOString()
+        });
+      }
+    });
+    
+    writeDb(db);
+    console.log('[Prisma] Database loaded successfully.');
+  } catch (err) {
+    console.error('[Prisma] Error loading from DB', err);
+  }
+}

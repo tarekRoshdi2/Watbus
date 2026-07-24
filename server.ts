@@ -3,6 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import dns from 'dns';
+dns.setDefaultResultOrder('ipv4first');
 import { randomUUID } from 'crypto';
 import express from 'express';
 import http from 'http';
@@ -13,10 +15,13 @@ import dotenv from 'dotenv';
 import { GoogleGenAI } from '@google/genai';
 import jwt from 'jsonwebtoken';
 
+import { chatCoreSwarm } from './src/agents/ChatCoreSwarm.js';
+import { initTelegramBot, testTelegramBot } from './src/telegram.js';
+
 const JWT_SECRET = process.env.JWT_SECRET || 'watbus-super-secret-key-2026';
 
 
-// CRITICAL HOSTINGER DEBUGGING LOGIC
+// CRITICAL HOSTINGER DEBUGGING LOGIC - Reloaded 2026-07-22
 const debugLogPath = path.join(process.cwd(), 'startup-error.log');
 export const memoryLogs: string[] = [];
 const maxMemoryLogs = 1000;
@@ -97,12 +102,18 @@ import {
   saveOtpLog,
   getOtpSettings,
   saveOtpSettings,
+  getPaymentSettings,
+  savePaymentSettings,
   getAllFolders,
   saveFolder,
   deleteFolder,
   saveLead,
-  getLeads
+  getLeads,
+  initializeDbFromPrisma,
+  prisma
 } from './src/db.js';
+import { initializeQueues, enqueueIncomingWebhook } from './src/queues/messageQueue.js';
+import { initializeWorkers } from './src/queues/workers.js';
 import { Folder } from './src/types.js';
 import { RouterAgent } from './src/agents/RouterAgent.js';
 import { RagAgent } from './src/agents/RagAgent.js';
@@ -191,7 +202,8 @@ const publicRoutes = [
   '/api/expocore/webhook',
   '/api/whatsapp/qr',
   '/api/catalog',
-  '/api/webhooks'
+  '/api/webhooks',
+  '/api/agents'
 ];
 
 app.use('/api', (req, res, next) => {
@@ -5582,80 +5594,86 @@ app.get('/api/webhooks/meta', (req, res) => {
   }
 });
 
-app.post('/api/webhooks/meta', async (req, res) => {
-  try {
-    const body = req.body;
-    console.log('[Meta Webhook Received]', JSON.stringify(body));
-    if (body.object === 'whatsapp_business_account') {
-      for (const entry of body.entry) {
-        for (const change of entry.changes) {
-          if (change.value) {
-            const phoneNumberId = change.value.metadata?.phone_number_id;
-            if (!phoneNumberId) continue;
-            
-            // Find device with this phoneId (with robust string coercion and fallback)
-            const devices = getAllDevices();
-            const device = devices.find(d => d.method === 'cloud_api' && String(d.phoneId || '').trim() === String(phoneNumberId).trim())
-              || devices.find(d => d.method === 'cloud_api');
-            if (device) {
-              if (change.value.messages) {
-                for (const msg of change.value.messages) {
-                  const contactPhone = msg.from;
-                  const jid = `${contactPhone}@s.whatsapp.net`;
-                  const pushName = change.value.contacts?.[0]?.profile?.name || contactPhone;
-                  const timestamp = parseInt(msg.timestamp) * 1000;
-                  const messageId = msg.id;
-                  
-                  let messageContent: any = {};
-                  if (msg.type === 'text') {
-                    messageContent = { conversation: msg.text.body };
-                  } else if (msg.type === 'image') {
-                    messageContent = { imageMessage: { caption: msg.image?.caption || '' } };
-                  } else if (msg.type === 'audio') {
-                    messageContent = { audioMessage: { mimetype: 'audio/ogg' } };
-                  } else if (msg.type === 'interactive') {
-                     // For interactive list/button responses
-                     if (msg.interactive.type === 'button_reply') {
-                       messageContent = { conversation: msg.interactive.button_reply.title };
-                     } else if (msg.interactive.type === 'list_reply') {
-                       messageContent = { conversation: msg.interactive.list_reply.title };
-                     }
-                  } else {
-                    messageContent = { conversation: `[Unsupported Meta Message Type: ${msg.type}]` };
-                  }
-                  
-                  // Route to global incoming handler
-                  await globalIncomingHandler(device.id, null, jid, pushName, messageContent, false, timestamp, messageId);
+async function processMetaWebhook(body: any) {
+  if (body.object === 'whatsapp_business_account') {
+    for (const entry of body.entry) {
+      for (const change of entry.changes) {
+        if (change.value) {
+          const phoneNumberId = change.value.metadata?.phone_number_id;
+          if (!phoneNumberId) continue;
+          
+          // Find device with this phoneId (with robust string coercion and fallback)
+          const devices = getAllDevices();
+          const device = devices.find(d => d.method === 'cloud_api' && String(d.phoneId || '').trim() === String(phoneNumberId).trim())
+            || devices.find(d => d.method === 'cloud_api');
+          if (device) {
+            if (change.value.messages) {
+              for (const msg of change.value.messages) {
+                const contactPhone = msg.from;
+                const jid = `${contactPhone}@s.whatsapp.net`;
+                const pushName = change.value.contacts?.[0]?.profile?.name || contactPhone;
+                const timestamp = parseInt(msg.timestamp) * 1000;
+                const messageId = msg.id;
+                
+                let messageContent: any = {};
+                if (msg.type === 'text') {
+                  messageContent = { conversation: msg.text.body };
+                } else if (msg.type === 'image') {
+                  messageContent = { imageMessage: { caption: msg.image?.caption || '' } };
+                } else if (msg.type === 'audio') {
+                  messageContent = { audioMessage: { mimetype: 'audio/ogg' } };
+                } else if (msg.type === 'interactive') {
+                   // For interactive list/button responses
+                   if (msg.interactive.type === 'button_reply') {
+                     messageContent = { conversation: msg.interactive.button_reply.title };
+                   } else if (msg.interactive.type === 'list_reply') {
+                     messageContent = { conversation: msg.interactive.list_reply.title };
+                   }
+                } else {
+                  messageContent = { conversation: `[Unsupported Meta Message Type: ${msg.type}]` };
                 }
+                
+                // Route to global incoming handler
+                await globalIncomingHandler(device.id, null, jid, pushName, messageContent, false, timestamp, messageId);
               }
-
-              // Handle message statuses (delivered, read)
-              if (change.value.statuses) {
-                for (const statusObj of change.value.statuses) {
-                  const messageId = statusObj.id;
-                  const status = statusObj.status; // sent, delivered, read, failed
-                  updateMessageStatus(messageId, status);
-                  // Find conversationId for the message
-                  const allMsgs = readDb().messages || [];
-                  const msg = allMsgs.find(m => m.id === messageId);
-                  if (msg) {
-                    broadcast({
-                      type: 'message:receipt',
-                      messageId,
-                      status,
-                      conversationId: msg.conversationId
-                    });
-                  }
-                }
-              }
-
-            } else {
-              console.warn(`[Meta Webhook] No cloud_api device found for phoneId ${phoneNumberId}`);
             }
+
+            // Handle message statuses (delivered, read)
+            if (change.value.statuses) {
+              for (const statusObj of change.value.statuses) {
+                const messageId = statusObj.id;
+                const status = statusObj.status; // sent, delivered, read, failed
+                updateMessageStatus(messageId, status);
+                // Find conversationId for the message
+                const allMsgs = readDb().messages || [];
+                const msg = allMsgs.find(m => m.id === messageId);
+                if (msg) {
+                  broadcast({
+                    type: 'message:receipt',
+                    messageId,
+                    status,
+                    conversationId: msg.conversationId
+                  });
+                }
+              }
+            }
+
+          } else {
+            console.warn(`[Meta Webhook] No cloud_api device found for phoneId ${phoneNumberId}`);
           }
         }
       }
-      res.sendStatus(200);
+    }
+  }
+}
+
+app.post('/api/webhooks/meta', async (req, res) => {
+  try {
+    const body = req.body;
+    console.log('[Meta Webhook Received] Enqueuing payload...');
+    if (body.object === 'whatsapp_business_account') {
+      res.sendStatus(200); // Immediately respond to Meta to prevent timeout/retries
+      enqueueIncomingWebhook(body); // Send to pg-boss queue
     } else {
       res.sendStatus(404);
     }
@@ -5665,7 +5683,79 @@ app.post('/api/webhooks/meta', async (req, res) => {
   }
 });
 
+// ==========================================
+// Phase 4: Ticketing & Performance API
+// ==========================================
+app.post('/api/tickets', async (req, res) => {
+  try {
+    const { title, priority, conversationId } = req.body;
+    if (!title || !conversationId) return res.status(400).send('Missing fields');
+    
+    // Save to Prisma directly or via db store
+    if (prisma) {
+      const ticket = await prisma.ticket.create({
+        data: {
+          title,
+          priority: priority || 'normal',
+          conversationId,
+        }
+      });
+      res.json(ticket);
+    } else {
+      res.status(500).send('Prisma not connected');
+    }
+  } catch (err) {
+    console.error('[Tickets API Error]', err);
+    res.status(500).send('Server Error');
+  }
+});
+
+app.get('/api/tickets/:conversationId', async (req, res) => {
+  try {
+    const { conversationId } = req.params;
+    if (prisma) {
+      const tickets = await prisma.ticket.findMany({
+        where: { conversationId },
+        orderBy: { createdAt: 'desc' }
+      });
+      res.json(tickets);
+    } else {
+      res.json([]);
+    }
+  } catch (err) {
+    console.error('[Tickets API Error]', err);
+    res.status(500).send('Server Error');
+  }
+});
+
+app.get('/api/performance', async (req, res) => {
+  try {
+    // Generate an AI-powered performance report based on recent DB metrics
+    const db = readDb();
+    const totalMsgs = db.messages?.length || 0;
+    const totalConvs = Object.keys(db.conversations || {}).length;
+    const activeConvs = Object.values(db.conversations || {}).filter((c: any) => c.status === 'open').length;
+    
+    // Simulate AI summary
+    const summary = `تم تحليل ${totalMsgs} رسالة عبر ${totalConvs} محادثة. المحادثات النشطة حالياً: ${activeConvs}. مستوى الأداء العام ممتاز.`;
+    
+    res.json({
+      totalMessages: totalMsgs,
+      totalConversations: totalConvs,
+      activeConversations: activeConvs,
+      aiSummary: summary,
+      timestamp: new Date().toISOString()
+    });
+  } catch (err) {
+    console.error('[Performance API Error]', err);
+    res.status(500).send('Server Error');
+  }
+});
+
 async function startServer() {
+  await initializeDbFromPrisma();
+  await initializeQueues();
+  await initializeWorkers(processMetaWebhook);
   // If Supabase is configured, restore the database from Supabase on startup
   if (isSupabaseConfigured()) {
     console.log('[Supabase Startup] Checking for central database backup in Supabase...');
@@ -6088,6 +6178,344 @@ ${eventDetails.parking}. 📍`;
         success: false,
         error: error.message || 'Internal error sending WhatsApp message'
       });
+    }
+  });
+
+  // AI Employee Agents Management APIs
+  
+  
+  // TELEGRAM BOT ENGINE & POLLING INTEGRATION
+  let cachedTelegramBotInfo: any = null;
+  let telegramOffset = 0;
+  let telegramTimer: any = null;
+
+  
+  // Helper to format text for Telegram with HTML parsing and safe entity escaping
+  function formatTelegramHTML(text: string): { formattedText: string; parseMode?: string } {
+    if (!text) return { formattedText: '' };
+    try {
+      // 1. Escape HTML special characters
+      let safe = text
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+      
+      // 2. Convert **bold** to <b>bold</b>
+      safe = safe.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
+
+      // 3. Convert *bold* to <b>bold</b>
+      safe = safe.replace(/(?<!\*)\*(?!\*)(.*?)(?<!\*)\*(?!\*)/g, '<b>$1</b>');
+
+      return { formattedText: safe, parseMode: 'HTML' };
+    } catch (err) {
+      return { formattedText: text.replace(/\*/g, '') };
+    }
+  }
+
+  async function startTelegramBotEngine(token: string) {
+    if (telegramTimer) clearInterval(telegramTimer);
+    if (!token || !token.trim()) return;
+
+    console.log('🤖 Telegram Bot Engine initialized with Token:', token.slice(0, 10) + '...');
+
+    telegramTimer = setInterval(async () => {
+      try {
+        const res = await fetch(`https://api.telegram.org/bot${token}/getUpdates?offset=${telegramOffset}&timeout=2`);
+        const data = await res.json();
+        if (data.ok && Array.isArray(data.result)) {
+          for (const update of data.result) {
+            telegramOffset = update.update_id + 1;
+            if (update.message && update.message.text) {
+              try {
+                const chatId = update.message.chat.id;
+                const userText = update.message.text;
+                const senderName = update.message.from.first_name || 'عميل تليجرام';
+
+                // Process via Multi-Agent Swarm
+                let agentReplyText = '';
+                let photoUrl = '';
+
+                try {
+                  const swarmResult = await chatCoreSwarm.processUserMessage(userText, senderName, String(chatId));
+                  agentReplyText = swarmResult.text || `أهلاً بك يا فندم (${senderName})! تم استلام رسالتك وتوجيهها للموظف المختص.`;
+                  if (swarmResult.mediaUrl) {
+                    photoUrl = swarmResult.mediaUrl;
+                  }
+                } catch (e) {
+                  agentReplyText = `أهلاً بك يا فندم (${senderName})! تم استلام رسالتك وتوجيهها للموظف المختص.`;
+                }
+
+                // Format text for Telegram with HTML bold tags
+                const { formattedText, parseMode } = formatTelegramHTML(agentReplyText);
+
+                let sent = false;
+
+                // Send Photo if available
+                if (photoUrl) {
+                  try {
+                    const photoPayload: any = { chat_id: chatId, photo: photoUrl, caption: formattedText };
+                    if (parseMode) photoPayload.parse_mode = parseMode;
+                    const tgRes = await fetch(`https://api.telegram.org/bot${token}/sendPhoto`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify(photoPayload)
+                    });
+                    const tgData = await tgRes.json();
+                    if (tgData.ok) sent = true;
+                  } catch (e) {}
+                }
+
+                // Send Text Message if photo failed or not provided
+                if (!sent) {
+                  try {
+                    const msgPayload: any = { chat_id: chatId, text: formattedText };
+                    if (parseMode) msgPayload.parse_mode = parseMode;
+                    const tgRes = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify(msgPayload)
+                    });
+                    const tgData = await tgRes.json();
+                    if (!tgData.ok) {
+                      // Fallback: Send plain text without parse_mode if HTML failed
+                      await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ chat_id: chatId, text: agentReplyText.replace(/\*/g, '') })
+                      });
+                    }
+                  } catch (e) {
+                    // Ultimate Fallback: Send raw text
+                    await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ chat_id: chatId, text: agentReplyText.replace(/\*/g, '') })
+                    });
+                  }
+                }
+              } catch (msgErr) {
+                console.error('[Telegram Msg Processing Error]', msgErr);
+              }
+            }
+          }
+        }
+      } catch (err) {
+        // quiet fallback for polling
+      }
+    }, 3000);
+  }
+
+  // AUTO-START TELEGRAM BOT ENGINE ON SERVER BOOT IF TOKEN EXISTS IN DB
+  try {
+    const pSet = getPaymentSettings();
+    if (pSet && pSet.telegramBotToken && pSet.telegramBotToken.trim()) {
+      startTelegramBotEngine(pSet.telegramBotToken.trim());
+      console.log('🚀 Auto-started Telegram Bot Engine on server boot!');
+    }
+  } catch (err) {}
+
+  // Initialize Telegram Bot on server boot if token saved
+  try {
+    const pSet = getPaymentSettings();
+    if (pSet && pSet.telegramBotToken) {
+      startTelegramBotEngine(pSet.telegramBotToken);
+    }
+  } catch (err) {}
+
+  app.post('/api/telegram/test-bot', async (req, res) => {
+    try {
+      const { token } = req.body;
+      if (!token) return res.status(400).json({ error: 'Token is required' });
+      const tgRes = await fetch(`https://api.telegram.org/bot${token}/getMe`);
+      const data = await tgRes.json();
+      if (data.ok) {
+        startTelegramBotEngine(token);
+        res.json({ success: true, bot: data.result });
+      } else {
+        res.status(400).json({ error: 'invalid token' });
+      }
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/payment-settings', (req, res) => {
+    try {
+      res.json({ success: true, settings: getPaymentSettings() });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/payment-settings', (req, res) => {
+    try {
+      const saved = savePaymentSettings(req.body);
+      res.json({ success: true, settings: saved });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/agents/config', (req, res) => {
+    try {
+      const db = readDb();
+      res.json({ success: true, agentsConfig: db.agentsConfig || {} });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/agents/config', (req, res) => {
+    try {
+      const { agentId, config } = req.body;
+      const db = readDb();
+      if (!db.agentsConfig) db.agentsConfig = {};
+      db.agentsConfig[agentId] = { ...(db.agentsConfig[agentId] || {}), ...config, updatedAt: new Date().toISOString() };
+      writeDb(db);
+      res.json({ success: true, agentId, config: db.agentsConfig[agentId] });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/agents/config', (req, res) => {
+    try {
+      const db = readDb();
+      res.json({ success: true, configs: db.agentsConfig || {} });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/agents/config', (req, res) => {
+    try {
+      const { agentId, config } = req.body;
+      const db = readDb();
+      if (!db.agentsConfig) db.agentsConfig = {};
+      if (agentId) {
+        db.agentsConfig[agentId] = config;
+      } else if (config) {
+        db.agentsConfig = { ...db.agentsConfig, ...config };
+      }
+      writeDb(db);
+      res.json({ success: true, configs: db.agentsConfig });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  const handleRecommendationsRoute = async (req: express.Request, res: express.Response) => {
+    try {
+      let DevelopmentAgent;
+      try {
+        const mod = await import('./src/agents/DevelopmentAgent.js');
+        DevelopmentAgent = mod.DevelopmentAgent;
+      } catch {
+        const mod = await import('./src/agents/DevelopmentAgent');
+        DevelopmentAgent = mod.DevelopmentAgent;
+      }
+      const devAgent = new DevelopmentAgent();
+      const result = await devAgent.generateSystemRecommendations(req.body);
+      res.json({ success: true, ...result });
+    } catch (err: any) {
+      console.error('[Generate Recommendations Error]', err);
+      res.status(500).json({ error: err.message });
+    }
+  };
+
+  app.post('/api/agents/generate-recommendations', handleRecommendationsRoute);
+  app.post('/api/agents/recommendations', handleRecommendationsRoute);
+
+  app.post('/api/agents/generate-invoice', async (req, res) => {
+    try {
+      const { promptText, customerName, currency } = req.body;
+      const { InvoiceAgent } = await import('./src/agents/InvoiceAgent.js');
+      const invoiceAgent = new InvoiceAgent();
+      const result = await invoiceAgent.generateInvoice(promptText || 'فاتورة استشارية', customerName || 'العميل المميز', currency || 'EGP');
+      res.json({ success: true, ...result });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/agents/generate-media', async (req, res) => {
+    try {
+      const { promptText } = req.body;
+      const { MediaAgent } = await import('./src/agents/MediaAgent.js');
+      const mediaAgent = new MediaAgent();
+      const result = await mediaAgent.generateMediaCard(promptText || 'عرض خاص');
+      res.json({ success: true, ...result });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/agents/dispatch', async (req, res) => {
+    try {
+      const { messageText, customerName, conversationId } = req.body;
+      const { appGraph } = await import('./src/agents/GraphOrchestrator.js');
+      
+      const config = { configurable: { thread_id: conversationId || `test_${Date.now()}` } };
+      const output = await appGraph.invoke({
+        inputMessage: messageText || 'أهلاً بك',
+        customerName: customerName || 'العميل المميز'
+      }, config);
+
+      res.json({
+        success: true,
+        finalResponse: output.finalResponse,
+        intent: output.intent,
+        suggestedAgent: output.suggestedAgent,
+        confidence: output.confidence,
+        metadata: output.metadata
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+
+
+
+  // Payment Settings API
+  app.get('/api/payment-settings', (req, res) => {
+    try {
+      res.json({ success: true, settings: getPaymentSettings() });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/payment-settings', (req, res) => {
+    try {
+      const saved = savePaymentSettings(req.body);
+      if (saved && saved.telegramBotToken) {
+        startTelegramBotEngine(saved.telegramBotToken);
+      }
+      res.json({ success: true, settings: saved });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Telegram Bot Test & Activation API
+  app.post('/api/telegram/test-bot', async (req, res) => {
+    try {
+      const { token } = req.body;
+      if (!token) return res.status(400).json({ error: 'Token is required' });
+      const tgRes = await fetch(`https://api.telegram.org/bot${token}/getMe`);
+      const data = await tgRes.json();
+      if (data.ok) {
+        startTelegramBotEngine(token);
+        const pSet = getPaymentSettings();
+        cachedTelegramBotInfo = data.result;
+        savePaymentSettings({ ...pSet, telegramBotToken: token, telegramBotEnabled: true, telegramBotInfo: data.result });
+        res.json({ success: true, bot: data.result });
+      } else {
+        res.status(400).json({ error: 'invalid telegram bot token' });
+      }
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
     }
   });
 
