@@ -57,6 +57,7 @@ interface FunnelCustomer {
   phoneNumber: string;
   avatarColor: string;
   stage: string;
+  deviceId?: string;
   lastMessageTime: string;
   unread: boolean;
   sentiment: 'positive' | 'neutral' | 'negative' | 'excited';

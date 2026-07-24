@@ -10,7 +10,7 @@ interface GroupManagerProps {
 
 export default function GroupManager({ currentUser, devices, lang }: GroupManagerProps) {
   const [selectedDeviceId, setSelectedDeviceId] = useState<string>('');
-  const [groups, setGroups] = useState<{id: string, name: string}[]>([]);
+  const [groups, setGroups] = useState<{id: string, name: string, memberCount?: number}[]>([]);
   const [selectedGroupId, setSelectedGroupId] = useState<string>('');
   
   const [isExtracting, setIsExtracting] = useState(false);

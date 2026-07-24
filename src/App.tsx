@@ -22,7 +22,8 @@ import CustomerFeedback from './components/CustomerFeedback.js';
 import AiKnowledgeBase from './components/AiKnowledgeBase.js';
 import ExpoCoreAgent from './components/ExpoCoreAgent.js';
 import CustomerFlowBuilder from './components/CustomerFlowBuilder.js';
-import { LayoutDashboard, MessageSquare, Smartphone, Megaphone, LogOut, Loader2, Languages, Shield, Users, Group, Star, Brain, Bot, Workflow } from 'lucide-react';
+import AgentsDashboard from './components/AgentsDashboard.js';
+import { LayoutDashboard, MessageSquare, Smartphone, Megaphone, LogOut, Loader2, Languages, Shield, Users, Group, Star, Brain, Bot, Workflow, CreditCard, Sparkles } from 'lucide-react';
 import { translations } from './translations.js';
 
 // Subtle synthesizer chime for incoming message alerts
@@ -89,7 +90,8 @@ function playOutgoingSound() {
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [authMode, setAuthMode] = useState<'landing' | 'login' | 'register' | 'demo'>('landing');
-  const [viewMode, setViewMode] = useState<'dashboard' | 'admin' | 'clients' | 'chat' | 'whatsapp_settings' | 'marketing' | 'group_manager' | 'feedback' | 'knowledge_base' | 'expocore_agent' | 'customer_flow'>('dashboard');
+  const [activeAgentsTab, setActiveAgentsTab] = useState<'roster' | 'payments' | 'playground'>('roster');
+  const [viewMode, setViewMode] = useState<'dashboard' | 'admin' | 'clients' | 'chat' | 'whatsapp_settings' | 'marketing' | 'group_manager' | 'feedback' | 'knowledge_base' | 'expocore_agent' | 'customer_flow' | 'agents_dashboard'>('dashboard');
 
   const [lang, setLang] = useState<'ar' | 'en'>(() => {
     const saved = localStorage.getItem('system_lang');
@@ -1198,6 +1200,62 @@ export default function App() {
               {viewMode === 'knowledge_base' && <span className="absolute left-0 top-1/4 bottom-1/4 w-1 bg-indigo-500 rounded-r-md" />}
             </button>
 
+            
+            {/* Payment Methods & InstaPay Direct Sidebar Button */}
+            <button
+              onClick={() => {
+                setActiveAgentsTab('payments');
+                setViewMode('agents_dashboard');
+              }}
+              className={`w-12 h-12 rounded-xl flex flex-col items-center justify-center transition-all cursor-pointer relative group ${
+                viewMode === 'agents_dashboard' && activeAgentsTab === 'payments'
+                  ? 'bg-[#00a884]/20 text-[#00a884] font-bold border border-[#00a884]/40'
+                  : 'text-zinc-400 hover:text-white hover:bg-white/5'
+              }`}
+              title={lang === 'ar' ? 'طرق المحافظ و InstaPay | Payment Controls' : 'Payment Controls'}
+            >
+              <CreditCard className="w-5 h-5 text-emerald-400" />
+              <span className="text-[8px] mt-0.5 font-bold truncate max-w-full px-1 text-emerald-400">
+                {lang === 'ar' ? 'طرق الدفع' : 'Payments'}
+              </span>
+            </button>
+
+            {/* Live Playground Direct Sidebar Button */}
+            <button
+              onClick={() => {
+                setActiveAgentsTab('playground');
+                setViewMode('agents_dashboard');
+              }}
+              className={`w-12 h-12 rounded-xl flex flex-col items-center justify-center transition-all cursor-pointer relative group ${
+                viewMode === 'agents_dashboard' && activeAgentsTab === 'playground'
+                  ? 'bg-amber-500/20 text-amber-400 font-bold border border-amber-500/40'
+                  : 'text-zinc-400 hover:text-white hover:bg-white/5'
+              }`}
+              title={lang === 'ar' ? 'التطبيق العملي واختبار الرحلة | Live Multi-Agent Playground' : 'Live Playground'}
+            >
+              <Sparkles className="w-5 h-5 text-amber-400 animate-pulse" />
+              <span className="text-[8px] mt-0.5 font-bold truncate max-w-full px-1 text-amber-400">
+                {lang === 'ar' ? 'التطبيق العملي' : 'Playground'}
+              </span>
+            </button>
+  
+            {/* AI Agents Dashboard Tab */}
+            <button
+              onClick={() => setViewMode('agents_dashboard')}
+              className={`w-12 h-12 rounded-xl flex flex-col items-center justify-center transition-all cursor-pointer relative group ${
+                viewMode === 'agents_dashboard'
+                  ? 'bg-white/10 text-emerald-500 font-bold'
+                  : 'text-zinc-400 hover:text-white hover:bg-white/5'
+              }`}
+              title={lang === 'ar' ? 'الموظفين (الوكلاء)' : 'AI Agents'}
+            >
+              <Bot className={`w-5 h-5 transition-transform ${viewMode === 'agents_dashboard' ? 'scale-110' : 'group-hover:scale-110'}`} />
+              <span className="text-[8px] mt-0.5 font-bold truncate max-w-full px-1">
+                {lang === 'ar' ? 'الموظفين' : 'Agents'}
+              </span>
+              {viewMode === 'agents_dashboard' && <span className="absolute left-0 top-1/4 bottom-1/4 w-1 bg-emerald-500 rounded-r-md" />}
+            </button>
+
             {/* ExpoCore WhatsApp Smart Agent Tab */}
             {currentUser?.role === 'admin' && (
               <button
@@ -1539,6 +1597,12 @@ export default function App() {
             lang={lang}
             onUpdateDeviceAgent={handleUpdateDeviceAgent}
           />
+        )}
+
+
+        {/* VIEW 10: AI AGENTS DASHBOARD */}
+        {viewMode === 'agents_dashboard' && (
+          <AgentsDashboard lang={lang} initialTab={activeAgentsTab} />
         )}
       </div>
 

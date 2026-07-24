@@ -5,13 +5,20 @@
 
 import { GoogleGenAI } from '@google/genai';
 
-export type CustomerIntent = 'general_faq' | 'catalog_inquiry' | 'order_support' | 'human_handoff';
+export type CustomerIntent = 
+  | 'general_faq' 
+  | 'catalog_inquiry' 
+  | 'order_support' 
+  | 'invoice_request' 
+  | 'media_request' 
+  | 'support_request' 
+  | 'human_handoff';
 
 export interface RouteResult {
   intent: CustomerIntent;
   confidence: number;
   reasoning: string;
-  suggestedAgent: 'router' | 'rag' | 'voice' | 'human';
+  suggestedAgent: 'router' | 'rag' | 'voice' | 'human' | 'invoice' | 'media' | 'support';
 }
 
 export class RouterAgent {
@@ -41,8 +48,35 @@ export class RouterAgent {
       return {
         intent: 'catalog_inquiry',
         confidence: 0.95,
-        reasoning: 'Image attached (Computer Vision required), routing to RagAgent',
+        reasoning: 'Image attached, routing to RagAgent',
         suggestedAgent: 'rag'
+      };
+    }
+
+    // Quick regex triggers for instant high-confidence routing
+    const lower = messageText.toLowerCase();
+    if (lower.includes('فاتورة') || lower.includes('فاتوره') || lower.includes('عرض سعر') || lower.includes('سعر الطلب') || lower.includes('رابط الدفع') || lower.includes('invoice')) {
+      return {
+        intent: 'invoice_request',
+        confidence: 0.98,
+        reasoning: 'Invoice keywords detected',
+        suggestedAgent: 'invoice'
+      };
+    }
+    if (lower.includes('صورة') || lower.includes('صوره') || lower.includes('تصميم') || lower.includes('ارسم') || lower.includes('صورة المنتج') || lower.includes('شكل العرض') || lower.includes('banner')) {
+      return {
+        intent: 'media_request',
+        confidence: 0.98,
+        reasoning: 'Media design keywords detected',
+        suggestedAgent: 'media'
+      };
+    }
+    if (lower.includes('مشكلة') || lower.includes('عطل') || lower.includes('تذكرة') || lower.includes('تذكره') || lower.includes('دعم فني') || lower.includes('تتبع المشكلة') || lower.includes('ticket')) {
+      return {
+        intent: 'support_request',
+        confidence: 0.98,
+        reasoning: 'Technical support keywords detected',
+        suggestedAgent: 'support'
       };
     }
 
@@ -58,18 +92,21 @@ export class RouterAgent {
     try {
       const response = await this.ai.models.generateContent({
         model: 'gemini-2.5-flash',
-        contents: `You are an AI Routing Agent for an e-commerce WhatsApp business.
-Classify the following customer message into EXACTLY ONE of these categories:
+        contents: `You are an AI Routing Agent for an enterprise WhatsApp multi-agent system.
+Classify the customer message into EXACTLY ONE category:
 - general_faq (greeting, policy, location, working hours)
 - catalog_inquiry (product prices, stock, sizes, colors, recommendation)
 - order_support (delivery status, returns, refunds, order tracking)
-- human_handoff (asking for human agent, angry complaint, complex issue)
+- invoice_request (requesting bill, pricing breakdown, invoice PDF, payment link)
+- media_request (requesting visual photo, design card, offer banner, image mockup)
+- support_request (reporting technical issue, system bug, ticket creation)
+- human_handoff (asking for human agent, complaint escalation)
 
-Return JSON ONLY in this format:
+Return JSON ONLY:
 {
-  "intent": "general_faq" | "catalog_inquiry" | "order_support" | "human_handoff",
-  "confidence": number between 0 and 1,
-  "reasoning": "brief explanation"
+  "intent": "general_faq" | "catalog_inquiry" | "order_support" | "invoice_request" | "media_request" | "support_request" | "human_handoff",
+  "confidence": number,
+  "reasoning": "explanation"
 }
 
 Customer Message: "${messageText}"`
@@ -79,10 +116,11 @@ Customer Message: "${messageText}"`
       const cleanJson = text.replace(/```json/g, '').replace(/```/g, '').trim();
       const parsed = JSON.parse(cleanJson);
 
-      let suggestedAgent: 'router' | 'rag' | 'voice' | 'human' = 'rag';
-      if (parsed.intent === 'human_handoff') {
-        suggestedAgent = 'human';
-      }
+      let suggestedAgent: 'router' | 'rag' | 'voice' | 'human' | 'invoice' | 'media' | 'support' = 'rag';
+      if (parsed.intent === 'human_handoff') suggestedAgent = 'human';
+      else if (parsed.intent === 'invoice_request') suggestedAgent = 'invoice';
+      else if (parsed.intent === 'media_request') suggestedAgent = 'media';
+      else if (parsed.intent === 'support_request') suggestedAgent = 'support';
 
       return {
         intent: parsed.intent || 'general_faq',

@@ -37,7 +37,7 @@ interface Props {
 
 export default function AdminPage({ currentUser, lang }: Props) {
   const [data, setData] = useState<{users: User[], demoLeads: DemoLead[]} | null>(null);
-  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'security' | 'logs' | 'settings'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'security' | 'logs' | 'settings' | 'otp'>('overview');
   
   // Modals state
   const [isAddUserOpen, setIsAddUserOpen] = useState(false);

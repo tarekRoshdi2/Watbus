@@ -34,6 +34,7 @@ import {
 } from 'lucide-react';
 import { User, Message, Conversation, Folder } from '../types.js';
 import { translations } from '../translations.js';
+import TicketModal from './TicketModal.tsx';
 
 // Generates a beautiful 100% compliant WAV chime (C5 -> E5 -> G5) to avoid playback errors in sandbox/iframe
 function generateSimulatedVoiceWav(): string {
@@ -219,8 +220,9 @@ export default function ChatArea({
   const [isAiSpeaking, setIsAiSpeaking] = useState<boolean>(false);
   const [isCallResponding, setIsCallResponding] = useState<boolean>(false);
   
-  // Administrative Report Drawer States
+  // Administrative Report Drawer & Ticketing States
   const [showReportDrawer, setShowReportDrawer] = useState<boolean>(false);
+  const [showTicketModal, setShowTicketModal] = useState<boolean>(false);
   const [isGeneratingReport, setIsGeneratingReport] = useState<boolean>(false);
   const [currentAdminReport, setCurrentAdminReport] = useState<{ content: string; updatedAt: string } | null>(null);
 
@@ -518,21 +520,33 @@ export default function ChatArea({
   };
 
   // Real-Time Call Simulated Actions
-  const handleStartCall = () => {
+  const handleStartCall = async () => {
     setShowCallModal(true);
     setCallStatus('calling');
     setCallDuration(0);
-    setCallTranscript([{ sender: 'ai', text: lang === 'ar' ? 'جاري رنين الاتصال...' : 'Calling...' }]);
+    setCallTranscript([{ sender: 'ai', text: lang === 'ar' ? 'جاري الاتصال عبر خوادم Meta...' : 'Connecting via Meta API...' }]);
     setIsCallResponding(false);
     setIsAiSpeaking(false);
 
     if (callTimerRef.current) clearInterval(callTimerRef.current);
     if (callRingingTimerRef.current) clearTimeout(callRingingTimerRef.current);
 
-    // After 1.8 seconds transition to active
-    callRingingTimerRef.current = window.setTimeout(async () => {
-      setCallStatus('active');
-      setCallTranscript([{ sender: 'ai', text: lang === 'ar' ? 'مكالمة نشطة الآن مع الوكيل الذكي' : 'Live conversation with AI Agent' }]);
+    try {
+      const res = await fetch('/api/calls/initiate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          conversationId: activeConversation?.id,
+          phoneNumber: activeContact.phoneNumber
+        })
+      });
+
+      if (!res.ok) throw new Error('Meta API Call Failed');
+
+      // After API success, transition to active (simulating user answered)
+      callRingingTimerRef.current = window.setTimeout(async () => {
+        setCallStatus('active');
+        setCallTranscript([{ sender: 'ai', text: lang === 'ar' ? 'مكالمة نشطة الآن عبر WhatsApp Cloud' : 'Live conversation via WhatsApp Cloud' }]);
       
       // Start duration ticker
       callTimerRef.current = window.setInterval(() => {
@@ -581,6 +595,10 @@ export default function ChatArea({
         setIsCallResponding(false);
       }
     }, 1800);
+    } catch (err: unknown) {
+      console.error('Initiate call error:', err);
+      setCallStatus('ended');
+    }
   };
 
   const handleSendCallMessage = async (textToSay: string) => {
@@ -876,6 +894,13 @@ export default function ChatArea({
             </button>
           )}
           <button 
+            onClick={() => setShowTicketModal(true)}
+            className="p-1 hover:text-indigo-500 transition-colors cursor-pointer" 
+            title={lang === 'ar' ? 'نظام التذاكر والدعم' : 'Ticketing & Support'}
+          >
+            <Activity className="w-4.5 h-4.5 md:w-5 md:h-5" />
+          </button>
+          <button 
             onClick={handleExportChat}
             className="p-1 hover:text-emerald-500 transition-colors cursor-pointer" 
             title={lang === 'ar' ? 'تصدير سجل المحادثة' : 'Export Chat Logs'}
@@ -1133,6 +1158,67 @@ export default function ChatArea({
 
       {/* Bottom Message Input Bar */}
       <div className="bg-zinc-100 dark:bg-zinc-900 border-t border-zinc-200 dark:border-zinc-800 p-3 z-10 shadow-md relative">
+        {/* AI Employee Actions Quick Bar */}
+        <div className="mb-2.5 flex items-center gap-2 overflow-x-auto pb-1 custom-scrollbar text-xs">
+          <span className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider flex items-center gap-1 shrink-0">
+            <Sparkles className="w-3 h-3 text-emerald-500" />
+            {lang === 'ar' ? 'أفعال الذكاء الاصطناعي:' : 'AI Agent Actions:'}
+          </span>
+          <button
+            type="button"
+            onClick={async () => {
+              try {
+                const res = await fetch('/api/agents/generate-invoice', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ promptText: inputText || 'طلب فاتورة جديدة', customerName: activeContact.username })
+                });
+                const data = await res.json();
+                if (data.textResponse) setInputText(data.textResponse);
+              } catch (e) { console.error(e); }
+            }}
+            className="px-2.5 py-1 rounded-full bg-sky-50 dark:bg-sky-950/50 text-sky-700 dark:text-sky-300 border border-sky-200 dark:border-sky-800 font-medium hover:bg-sky-100 flex items-center gap-1.5 shrink-0 cursor-pointer transition-colors"
+          >
+            <FileText className="w-3.5 h-3.5 text-sky-500" />
+            {lang === 'ar' ? '🧾 طلب فاتورة' : '🧾 Generate Invoice'}
+          </button>
+          <button
+            type="button"
+            onClick={async () => {
+              try {
+                const res = await fetch('/api/agents/generate-media', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ promptText: inputText || 'تصميم كارت عرض للمنتج' })
+                });
+                const data = await res.json();
+                if (data.textResponse) setInputText(data.textResponse);
+              } catch (e) { console.error(e); }
+            }}
+            className="px-2.5 py-1 rounded-full bg-purple-50 dark:bg-purple-950/50 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800 font-medium hover:bg-purple-100 flex items-center gap-1.5 shrink-0 cursor-pointer transition-colors"
+          >
+            <Image className="w-3.5 h-3.5 text-purple-500" />
+            {lang === 'ar' ? '🎨 تصميم كارت عرض' : '🎨 Generate Offer Card'}
+          </button>
+          <button
+            type="button"
+            onClick={async () => {
+              try {
+                const res = await fetch('/api/agents/dispatch', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ messageText: inputText || 'بلاغ عن مشكلة تقنية', customerName: activeContact.username })
+                });
+                const data = await res.json();
+                if (data.finalResponse) setInputText(data.finalResponse);
+              } catch (e) { console.error(e); }
+            }}
+            className="px-2.5 py-1 rounded-full bg-amber-50 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800 font-medium hover:bg-amber-100 flex items-center gap-1.5 shrink-0 cursor-pointer transition-colors"
+          >
+            <Activity className="w-3.5 h-3.5 text-amber-500" />
+            {lang === 'ar' ? '🛠️ إنشاء تذكرة دعم' : '🛠️ Create Support Ticket'}
+          </button>
+        </div>
         {/* Human Takeover Warning Banner */}
         {activeConversation?.aiPaused && (
           <div className="mb-2 px-3 py-2 bg-red-50 dark:bg-red-950/30 border border-red-100 dark:border-red-900/30 rounded-lg flex items-center justify-between text-[11px] md:text-xs text-red-700 dark:text-red-400">
@@ -1682,6 +1768,14 @@ export default function ChatArea({
           background: rgba(255, 255, 255, 0.3);
         }
       `}</style>
+      {/* Ticket Modal */}
+      {showTicketModal && activeConversation && (
+        <TicketModal 
+          conversationId={activeConversation.id} 
+          onClose={() => setShowTicketModal(false)} 
+          lang={lang} 
+        />
+      )}
     </div>
   );
 }

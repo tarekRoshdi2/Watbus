@@ -98,6 +98,19 @@ export default function MarketingCampaigns({
   const [aiPrompt, setAiPrompt] = useState('');
   const [selectedTone, setSelectedTone] = useState<'professional' | 'creative' | 'friendly' | 'urgent'>('professional');
   const [isGeneratingAI, setIsGeneratingAI] = useState(false);
+
+  // Meta Cloud API Official Template Builder states
+  const [showMetaTemplateModal, setShowMetaTemplateModal] = useState(false);
+  const [metaTemplateName, setMetaTemplateName] = useState('summer_promo_offer');
+  const [metaCategory, setMetaCategory] = useState<'MARKETING' | 'UTILITY' | 'AUTHENTICATION'>('MARKETING');
+  const [metaLanguage, setMetaLanguage] = useState<'ar' | 'en_US'>('ar');
+  const [metaHeader, setMetaHeader] = useState('🔥 عرض خاص ومحدود');
+  const [metaBody, setMetaBody] = useState('أهلاً بك يا {{1}}، يسعدنا أن نقدم لك خصم بقيمة {{2}} على كافة الخدمات لهذا الشهر!');
+  const [metaFooter, setMetaFooter] = useState('ChatCore Official WhatsApp Partner');
+  const [metaButtonType, setMetaButtonType] = useState<'NONE' | 'URL' | 'QUICK_REPLY'>('URL');
+  const [metaButtonText, setMetaButtonText] = useState('زيارة الموقع والتفعيل');
+  const [metaButtonUrl, setMetaButtonUrl] = useState('https://watbus.com/promo');
+  const [isDraftingTemplateAI, setIsDraftingTemplateAI] = useState(false);
   const [aiError, setAiError] = useState('');
 
   // Call API to generate smart WhatsApp marketing copy using Gemini
@@ -640,13 +653,23 @@ export default function MarketingCampaigns({
           </p>
         </div>
 
-        <button
-          onClick={() => setShowAddModal(true)}
-          className="bg-gradient-to-r from-[#00a884] to-emerald-500 hover:from-[#008f6f] hover:to-emerald-600 text-white text-xs font-bold px-6 py-3.5 rounded-2xl shadow-lg shadow-emerald-500/10 transition-all cursor-pointer flex items-center justify-center gap-2 self-start md:self-auto hover:-translate-y-0.5 active:translate-y-0"
-        >
-          <span>{t.newCampaignButton}</span>
-          <Plus className="w-4.5 h-4.5" />
-        </button>
+        <div className="flex items-center gap-3 self-start md:self-auto flex-wrap">
+          <button
+            onClick={() => setShowMetaTemplateModal(true)}
+            className="bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-bold px-4 py-3.5 rounded-2xl border border-zinc-700 transition-all cursor-pointer flex items-center justify-center gap-2"
+          >
+            <Sparkles className="w-4 h-4 text-emerald-400" />
+            <span>{lang === 'ar' ? 'منشئ قوالب Meta المعتمدة' : 'Meta Template Builder'}</span>
+          </button>
+
+          <button
+            onClick={() => setShowAddModal(true)}
+            className="bg-gradient-to-r from-[#00a884] to-emerald-500 hover:from-[#008f6f] hover:to-emerald-600 text-white text-xs font-bold px-6 py-3.5 rounded-2xl shadow-lg shadow-emerald-500/10 transition-all cursor-pointer flex items-center justify-center gap-2 hover:-translate-y-0.5 active:translate-y-0"
+          >
+            <span>{t.newCampaignButton}</span>
+            <Plus className="w-4.5 h-4.5" />
+          </button>
+        </div>
       </div>
 
       {/* Professional Bento-Grid Analytics Summary */}
@@ -1301,7 +1324,151 @@ export default function MarketingCampaigns({
             </p>
           </div>
         )}
-      </div>
+        {/* Meta Cloud API Official Template Builder Modal */}
+      {showMetaTemplateModal && (
+        <div className="fixed inset-0 bg-black/75 backdrop-blur-xs z-50 flex items-center justify-center p-4 animate-fade-in" dir={lang === 'ar' ? 'rtl' : 'ltr'}>
+          <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden shadow-2xl">
+            
+            {/* Header */}
+            <div className="px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between bg-zinc-50 dark:bg-zinc-800/50">
+              <h3 className="font-bold text-base text-zinc-900 dark:text-white flex items-center gap-2">
+                <Sparkles className="w-5 h-5 text-emerald-500" />
+                {lang === 'ar' ? 'منشئ قوالب الواتساب الرسمية المعتمدة (Meta Official Template)' : 'Meta Official WhatsApp Template Builder'}
+              </h3>
+              <button 
+                onClick={() => setShowMetaTemplateModal(false)}
+                className="text-zinc-400 hover:text-zinc-600 dark:hover:text-white text-xl font-bold"
+              >
+                ×
+              </button>
+            </div>
+
+            {/* Content Body */}
+            <div className="p-6 overflow-y-auto space-y-4 flex-1 text-xs">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1">
+                    {lang === 'ar' ? 'اسم القالب (تسمية Meta):' : 'Template Name:'}
+                  </label>
+                  <input
+                    type="text"
+                    value={metaTemplateName}
+                    onChange={e => setMetaTemplateName(e.target.value.toLowerCase().replace(/s+/g, '_'))}
+                    className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-white rounded-lg p-2.5 outline-none font-mono"
+                    placeholder="promo_offer_2026"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1">
+                    {lang === 'ar' ? 'تصنيف القالب:' : 'Category:'}
+                  </label>
+                  <select
+                    value={metaCategory}
+                    onChange={e => setMetaCategory(e.target.value as any)}
+                    className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-white rounded-lg p-2.5 outline-none"
+                  >
+                    <option value="MARKETING">MARKETING (تسويق وعروض)</option>
+                    <option value="UTILITY">UTILITY (تنبيهات وفواتير)</option>
+                    <option value="AUTHENTICATION">AUTHENTICATION (تحقق وOTP)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1">
+                  {lang === 'ar' ? 'ترويسة القالب (Header Optional):' : 'Template Header:'}
+                </label>
+                <input
+                  type="text"
+                  value={metaHeader}
+                  onChange={e => setMetaHeader(e.target.value)}
+                  className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-white rounded-lg p-2.5 outline-none font-sans"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1">
+                  {lang === 'ar' ? 'محتوى الرسالة (Body مع متغيرات {{1}}, {{2}}):' : 'Template Body:'}
+                </label>
+                <textarea
+                  rows={4}
+                  value={metaBody}
+                  onChange={e => setMetaBody(e.target.value)}
+                  className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-white rounded-lg p-3 outline-none font-sans resize-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1">
+                    {lang === 'ar' ? 'تذييل الرسالة (Footer):' : 'Footer:'}
+                  </label>
+                  <input
+                    type="text"
+                    value={metaFooter}
+                    onChange={e => setMetaFooter(e.target.value)}
+                    className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-white rounded-lg p-2.5 outline-none font-sans"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1">
+                    {lang === 'ar' ? 'نص الأزرار التفاعلية (Call to Action Button):' : 'CTA Button:'}
+                  </label>
+                  <input
+                    type="text"
+                    value={metaButtonText}
+                    onChange={e => setMetaButtonText(e.target.value)}
+                    className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-white rounded-lg p-2.5 outline-none font-sans"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Footer Actions */}
+            <div className="px-6 py-4 border-t border-zinc-200 dark:border-zinc-800 flex justify-between items-center bg-zinc-50 dark:bg-zinc-800/50">
+              <button
+                type="button"
+                onClick={() => {
+                  setMetaHeader('⚡ عرض حصري لفترة محدودة');
+                  setMetaBody('عزيزي {{1}}، يسعدنا تقديم خصم خاص بقيمة {{2}} على باقتك. اضغط على الزر أدناه للاستفادة فوراً!');
+                }}
+                className="px-3 py-1.5 bg-purple-50 dark:bg-purple-950/40 text-purple-600 dark:text-purple-400 rounded-lg text-xs font-semibold flex items-center gap-1"
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                {lang === 'ar' ? 'صياغة بالذكاء الاصطناعي' : 'AI Auto-Draft'}
+              </button>
+
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowMetaTemplateModal(false)}
+                  className="px-4 py-2 bg-zinc-200 dark:bg-zinc-700 text-zinc-800 dark:text-zinc-200 rounded-lg font-semibold"
+                >
+                  {lang === 'ar' ? 'إلغاء' : 'Cancel'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMessage(`${metaHeader ? `*${metaHeader}*
+
+` : ''}${metaBody}
+
+_${metaFooter}_
+
+👉 ${metaButtonText}: ${metaButtonUrl}`);
+                    setShowMetaTemplateModal(false);
+                    alert(lang === 'ar' ? 'تم اعتماد قالب Meta ونقله بنجاح إلى صندوق الحملة!' : 'Meta Template applied to campaign!');
+                  }}
+                  className="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg font-bold"
+                >
+                  {lang === 'ar' ? 'اعتماد والقالب بالحملة' : 'Apply Meta Template'}
+                </button>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      )}
 
       {/* NEW INTUITIVE BROADCAST CAMPAIGN MODAL */}
       <AnimatePresence>
@@ -1327,472 +1494,108 @@ export default function MarketingCampaigns({
                 </h3>
               </div>
 
-              {/* Split Content Form */}
-              <div className="overflow-y-auto p-6 flex-1 grid grid-cols-1 lg:grid-cols-12 gap-8">
-                
-                {/* Right Side: Form Configuration */}
-                <form onSubmit={handleCreateCampaign} className="lg:col-span-7 space-y-5 rtl:text-right ltr:text-left">
-                  
-                  {/* Name Input */}
-                  <div className="space-y-1.5">
-                    <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-wider">
-                      {t.campaignName}
+              {/* Form Body */}
+              <form onSubmit={handleCreateCampaign} className="flex-1 overflow-y-auto p-6 space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-2">
+                      {lang === 'ar' ? 'اسم الحملة التسويقية:' : 'Campaign Name:'}
                     </label>
                     <input
                       type="text"
                       required
-                      placeholder={lang === 'ar' ? "مثال: عروض الجمعة البيضاء 2026" : "e.g. Black Friday Offers 2026"}
                       value={name}
-                      onChange={(e) => setName(e.target.value)}
-                      className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-2xl px-4 py-3 text-xs outline-none focus:border-[#00a884] font-medium transition-all"
+                      onChange={e => setName(e.target.value)}
+                      className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-white rounded-xl p-3 text-xs outline-none focus:border-[#00a884]"
+                      placeholder={lang === 'ar' ? 'حملة عروض الصيف المميزة' : 'Summer Promo 2026'}
                     />
                   </div>
 
-                  {/* Device Gateway Select */}
-                  <div className="space-y-1.5">
-                    <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-wider">
-                      {lang === 'ar' ? 'بوابة الإرسال الرقمية' : 'Sending Gateway Account'}
+                  <div>
+                    <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-2">
+                      {lang === 'ar' ? 'خط الواتساب المرسل:' : 'Sender WhatsApp Line:'}
                     </label>
                     <select
                       value={selectedDeviceId}
-                      onChange={(e) => setSelectedDeviceId(e.target.value)}
-                      className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-2xl px-4 py-3 text-xs outline-none focus:border-[#00a884] font-bold cursor-pointer"
+                      onChange={e => setSelectedDeviceId(e.target.value)}
+                      className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-white rounded-xl p-3 text-xs outline-none focus:border-[#00a884]"
                     >
-                      <option value="">{lang === 'ar' ? 'محاكاة البوابة العامة السريعة' : 'Simulated Fast Public Gateway'}</option>
-                      {devices.map((d) => (
-                        <option key={d.id} value={d.id}>
-                          {d.name} ({d.phoneNumber || d.method})
-                        </option>
+                      <option value="">{lang === 'ar' ? 'بوابة المحاكاة السحابية (Sandbox Gateway)' : 'Public Sandbox Gateway'}</option>
+                      {devices.map(d => (
+                        <option key={d.id} value={d.id}>{d.name} ({d.phoneId || d.status})</option>
                       ))}
                     </select>
                   </div>
+                </div>
 
-                  {/* Delay Slider */}
-                  <div className="space-y-1.5">
-                    <div className="flex justify-between items-center">
-                      <span className="text-[10px] font-mono text-zinc-400 font-bold">{delay} {lang === 'ar' ? 'ثوانٍ' : 'seconds'}</span>
-                      <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-wider">
-                        {t.sendRate}
-                      </label>
-                    </div>
+                <div>
+                  <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-2">
+                    {lang === 'ar' ? 'نص الرسالة البث:' : 'Broadcast Message Text:'}
+                  </label>
+                  <textarea
+                    rows={4}
+                    required
+                    value={message}
+                    onChange={e => setMessage(e.target.value)}
+                    className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-white rounded-xl p-3 text-xs outline-none focus:border-[#00a884] resize-none"
+                    placeholder={lang === 'ar' ? 'مرحباً {name}، يسعدنا أن نقدم لك خصم خاص...' : 'Hello {name}, we are happy to offer you...'}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-2">
+                    {lang === 'ar' ? 'قائمة المستهدفين (اسم, رقم الهاتف في كل سطر أو رفع إكسيل):' : 'Target Recipients (Name, Phone per line or Excel upload):'}
+                  </label>
+                  <div className="flex gap-2 mb-2">
                     <input
-                      type="range"
-                      min="3"
-                      max="60"
-                      value={delay}
-                      onChange={(e) => setDelay(parseInt(e.target.value))}
-                      className="w-full accent-[#00a884] bg-zinc-100 dark:bg-zinc-800 h-1.5 rounded-lg appearance-none cursor-pointer"
+                      type="file"
+                      accept=".xlsx,.xls,.csv"
+                      onChange={handleExcelUpload}
+                      className="hidden"
+                      id="excel-file-input"
                     />
-                    <span className="block text-[8px] text-zinc-400">
-                      {lang === 'ar' ? '* نوصي بفاصل 5-8 ثوانٍ لتجنب حظر الرقم عند إرسال كميات هائلة.' : '* We recommend 5-8s interval to avoid spam blocks on heavy lists.'}
-                    </span>
-                  </div>
-
-                  {/* Target Tab Selection */}
-                  <div className="space-y-2">
-                    <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-wider">
-                      {lang === 'ar' ? 'تحديد جهات الاتصال المستهدفة' : 'Choose Target Audience'}
-                    </label>
-                    
-                    <div className="grid grid-cols-2 gap-2 p-1 bg-zinc-50 dark:bg-zinc-950 rounded-2xl border border-zinc-200/40 dark:border-zinc-800/40">
-                      <button
-                        type="button"
-                        onClick={() => setTargetTab('manual')}
-                        className={`text-[11px] py-2.5 rounded-xl font-bold cursor-pointer transition-all flex items-center justify-center gap-1.5 ${
-                          targetTab === 'manual' 
-                            ? 'bg-white dark:bg-zinc-900 text-[#00a884] shadow-xs' 
-                            : 'text-zinc-400'
-                        }`}
-                      >
-                        <Layers className="w-3.5 h-3.5" />
-                        <span>{lang === 'ar' ? 'إدخال يدوي للأرقام' : 'Manual Input'}</span>
-                      </button>
-                      
-                      <button
-                        type="button"
-                        onClick={() => setTargetTab('contacts')}
-                        className={`text-[11px] py-2.5 rounded-xl font-bold cursor-pointer transition-all flex items-center justify-center gap-1.5 ${
-                          targetTab === 'contacts' 
-                            ? 'bg-white dark:bg-zinc-900 text-[#00a884] shadow-xs' 
-                            : 'text-zinc-400'
-                        }`}
-                      >
-                        <Users className="w-3.5 h-3.5" />
-                        <span>{lang === 'ar' ? 'تحديد من جهات الاتصال' : 'Select from Contacts'}</span>
-                      </button>
-                    </div>
-
-                    {/* Conditional Target UI */}
-                    {targetTab === 'manual' ? (
-                      <div className="space-y-4">
-                        {/* Excel Upload Section */}
-                        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-4 bg-[#00a884]/5 dark:bg-[#00a884]/5 border border-[#00a884]/15 rounded-2xl">
-                          <div className="rtl:text-right ltr:text-left">
-                            <span className="block text-xs font-extrabold text-zinc-700 dark:text-zinc-200">
-                              {lang === 'ar' ? 'رفع شيت إكسيل (Excel/CSV)' : 'Upload Excel Sheet (Excel/CSV)'}
-                            </span>
-                            <span className="block text-[10px] text-zinc-400 mt-0.5">
-                              {lang === 'ar' ? 'يقوم النظام باستخراج الأسماء والأرقام تلقائياً لتسهيل الإرسال.' : 'The system will parse names and phones automatically for fast scheduling.'}
-                            </span>
-                          </div>
-                          <label className="bg-[#00a884] hover:bg-[#008f6f] text-white text-[10px] font-bold px-4 py-2.5 rounded-xl cursor-pointer flex items-center gap-1.5 transition-all shadow-xs shrink-0 select-none">
-                            <UploadCloud className="w-3.5 h-3.5" />
-                            <span>{lang === 'ar' ? 'اختر ملف الإكسيل' : 'Select Excel File'}</span>
-                            <input 
-                              type="file" 
-                              accept=".xlsx, .xls, .csv" 
-                              className="hidden" 
-                              onChange={handleExcelUpload} 
-                            />
-                          </label>
-                        </div>
-
-                        {/* Format illustrative example */}
-                        <div className="bg-zinc-50 dark:bg-zinc-950 p-4 rounded-2xl border border-zinc-200/50 dark:border-zinc-800/80 text-xs">
-                          <span className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                            <Info className="w-4 h-4 text-[#00a884]" />
-                            <span>{lang === 'ar' ? 'الطريقة الصحيحة لكتابة الاسم ورقم الهاتف:' : 'Correct Format Guide for Name & Phone Number:'}</span>
-                          </span>
-                          <p className="text-[10px] text-zinc-400 leading-relaxed mb-3">
-                            {lang === 'ar' 
-                              ? 'يمكنك إدخال الأرقام مباشرةً، أو كتابة الاسم متبوعاً بفصلة (,) ثم الرقم، لتمكين تخصيص الرسالة بالاسم تلقائياً في شاشات الإرسال.' 
-                              : 'You can input numbers alone, or specify Name followed by comma (,) then Phone to automatically customize messages.'}
-                          </p>
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                            <div className="bg-white dark:bg-zinc-900 border border-zinc-100 dark:border-zinc-800/50 p-3 rounded-xl">
-                              <span className="block text-[10px] font-bold text-[#00a884] mb-1">
-                                {lang === 'ar' ? 'مثال الطريقة اليدوية (الاسم، الرقم):' : 'Manual Input Example (Name, Phone):'}
-                              </span>
-                              <pre className="font-mono text-[9px] bg-zinc-50 dark:bg-zinc-950 p-2 rounded-lg text-zinc-600 dark:text-zinc-400 leading-tight">
-                                {lang === 'ar' 
-                                  ? "أحمد علي, 201012345678\nسحر محمود, 201198765432" 
-                                  : "John Doe, 201012345678\nSarah Smith, 201198765432"}
-                              </pre>
-                            </div>
-                            <div className="bg-white dark:bg-zinc-900 border border-zinc-100 dark:border-zinc-800/50 p-3 rounded-xl flex flex-col justify-between">
-                              <span className="block text-[10px] font-bold text-emerald-500 mb-1">
-                                {lang === 'ar' ? 'أعمدة الإكسيل المدعومة:' : 'Supported Excel Columns:'}
-                              </span>
-                              <div className="overflow-x-auto">
-                                <table className="w-full text-[9px] border-collapse text-zinc-500 dark:text-zinc-400">
-                                  <thead>
-                                    <tr className="bg-zinc-50 dark:bg-zinc-950 font-bold border-b border-zinc-200 dark:border-zinc-800">
-                                      <th className="p-0.5 text-center">{lang === 'ar' ? 'الاسم' : 'Name'}</th>
-                                      <th className="p-0.5 text-center">{lang === 'ar' ? 'الهاتف' : 'Phone'}</th>
-                                    </tr>
-                                  </thead>
-                                  <tbody>
-                                    <tr className="border-b border-zinc-100 dark:border-zinc-800/40">
-                                      <td className="p-0.5 text-center">{lang === 'ar' ? 'محمد صابر' : 'Alex Johnson'}</td>
-                                      <td className="p-0.5 text-center font-mono">201244556677</td>
-                                    </tr>
-                                  </tbody>
-                                </table>
-                              </div>
-                              <span className="block text-[8px] text-zinc-400 mt-1">
-                                {lang === 'ar' ? '* يقرأ النظام أي عمود باسم (الاسم، الهاتف) تلقائياً.' : '* The system automatically maps columns matching name/phone.'}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Textarea Input */}
-                        <div className="space-y-1.5">
-                          <textarea
-                            rows={4}
-                            required={targetTab === 'manual'}
-                            placeholder={lang === 'ar' ? "أدخل الأرقام هنا أو انسخها من شيت خارجي...\nأحمد علي, 201012345678" : "Enter names and numbers here...\nJohn Doe, 201012345678"}
-                            value={targetsRaw}
-                            onChange={(e) => setTargetsRaw(e.target.value)}
-                            className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-2xl px-4 py-3 text-xs outline-none focus:border-[#00a884] font-mono leading-relaxed"
-                          />
-                          <span className="text-[9px] text-zinc-400 block">
-                            {lang === 'ar' 
-                              ? '* أضف كود الدولة قبل كل رقم (مثال: 2010...) وكل رقم في سطر مستقل.' 
-                              : '* Add country code prefix (e.g. 2010...) and write one phone per line.'}
-                          </span>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="border border-zinc-200 dark:border-zinc-800 rounded-2xl overflow-hidden bg-zinc-50 dark:bg-zinc-950">
-                        <div className="bg-zinc-100/50 dark:bg-zinc-900/50 p-2 border-b border-zinc-200 dark:border-zinc-800 flex justify-between items-center text-[10px] font-bold text-zinc-500">
-                          <span>{selectedContactIds.length} / {conversations.length} {lang === 'ar' ? 'محدد' : 'Selected'}</span>
-                          <button
-                            type="button"
-                            onClick={handleSelectAllContacts}
-                            className="text-[#00a884] hover:underline cursor-pointer"
-                          >
-                            {selectedContactIds.length === conversations.length 
-                              ? (lang === 'ar' ? 'إلغاء الكل' : 'Deselect All') 
-                              : (lang === 'ar' ? 'تحديد الكل' : 'Select All')}
-                          </button>
-                        </div>
-                        <div className="max-h-36 overflow-y-auto divide-y divide-zinc-200 dark:divide-zinc-800">
-                          {conversations.map((c) => {
-                            const isSelected = selectedContactIds.includes(c.recipient.id);
-                            return (
-                              <div
-                                key={c.recipient.id}
-                                onClick={() => toggleContactSelection(c.recipient.id)}
-                                className="p-2.5 flex items-center justify-between hover:bg-zinc-100 dark:hover:bg-zinc-900 cursor-pointer text-xs"
-                              >
-                                <div className="flex items-center gap-2">
-                                  <img 
-                                    src={c.recipient.avatarUrl} 
-                                    className="w-7 h-7 rounded-full object-cover border border-zinc-200 dark:border-zinc-800" 
-                                    alt=""
-                                    referrerPolicy="no-referrer"
-                                  />
-                                  <div className="text-right">
-                                    <div className="font-extrabold text-zinc-700 dark:text-zinc-200">{c.recipient.username}</div>
-                                    <div className="text-[9px] text-zinc-400 font-mono">+{cleanPhoneFromRecipient(c.recipient)}</div>
-                                  </div>
-                                </div>
-                                <div className={`w-5 h-5 rounded-lg border flex items-center justify-center transition-all ${
-                                  isSelected 
-                                    ? 'bg-[#00a884] border-[#00a884] text-white' 
-                                    : 'border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-950'
-                                }`}>
-                                  {isSelected && <Check className="w-3.5 h-3.5" />}
-                                </div>
-                              </div>
-                            );
-                          })}
-                          {conversations.length === 0 && (
-                            <div className="text-center p-6 text-zinc-400 text-xs font-bold">
-                              {lang === 'ar' ? 'لم يتم العثور على جهات اتصال نشطة!' : 'No active contacts found!'}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Gemini AI Content Writer Assistant widget */}
-                  <div className="bg-emerald-500/5 dark:bg-emerald-500/5 border border-emerald-500/10 p-4.5 rounded-2xl space-y-3.5 shadow-xs">
-                    <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-600 dark:text-emerald-400">
-                      <Sparkles className="w-4 h-4 text-emerald-500" />
-                      <span>{lang === 'ar' ? 'صياغة المحتوى التسويقي بالذكاء الاصطناعي (Gemini)' : 'Gemini AI Intelligent Copilot Writer'}</span>
-                    </div>
-                    <p className="text-[10px] text-zinc-400 leading-relaxed font-medium">
-                      {lang === 'ar' 
-                        ? 'اكتب مسودة موجزة لفكرتك (مثال: عروض الجمعة بنصف السعر)، وسوف يقوم الذكاء الاصطناعي بصياغة رسالة احترافية لواتساب.' 
-                        : 'Enter a simple campaign topic or concept, and our AI writer will craft an eye-catching WhatsApp promotional message.'}
-                    </p>
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        placeholder={lang === 'ar' ? 'مثال: خصم 30% على الملابس الرياضية بمناسبة العام الجديد' : 'e.g. New Year 30% discount on athletic gear'}
-                        value={aiPrompt}
-                        onChange={(e) => setAiPrompt(e.target.value)}
-                        className="flex-1 bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3 py-2 text-xs outline-none focus:border-[#00a884] font-medium"
-                      />
-                      <select
-                        value={selectedTone}
-                        onChange={(e: any) => setSelectedTone(e.target.value)}
-                        className="bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-2 py-2 text-xs outline-none focus:border-[#00a884] font-bold cursor-pointer text-zinc-700 dark:text-zinc-200"
-                      >
-                        <option value="professional">{lang === 'ar' ? 'مهني' : 'Professional'}</option>
-                        <option value="creative">{lang === 'ar' ? 'إبداعي' : 'Creative'}</option>
-                        <option value="friendly">{lang === 'ar' ? 'ودود' : 'Friendly'}</option>
-                        <option value="urgent">{lang === 'ar' ? 'عاجل' : 'Urgent'}</option>
-                      </select>
-                    </div>
-                    <button
-                      type="button"
-                      disabled={isGeneratingAI || !aiPrompt.trim()}
-                      onClick={handleGenerateAIMessage}
-                      className="w-full bg-emerald-500 hover:bg-emerald-600 disabled:bg-zinc-100 disabled:text-zinc-400 text-white font-extrabold py-2.5 rounded-xl text-xs flex justify-center items-center gap-1.5 cursor-pointer transition-all shadow-xs"
+                    <label
+                      htmlFor="excel-file-input"
+                      className="px-3 py-1.5 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800 rounded-lg text-xs font-bold cursor-pointer hover:bg-emerald-100 flex items-center gap-1.5"
                     >
-                      {isGeneratingAI ? (
-                        <>
-                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                          <span>{lang === 'ar' ? 'جاري صياغة النص الإبداعي...' : 'Crafting creative copy...'}</span>
-                        </>
-                      ) : (
-                        <>
-                          <Sparkles className="w-3.5 h-3.5" />
-                          <span>{lang === 'ar' ? 'توليد صياغة ذكية جذابة ✨' : 'Generate Smart Marketing Text ✨'}</span>
-                        </>
-                      )}
-                    </button>
-                    {aiError && (
-                      <p className="text-[10px] text-rose-500 font-bold">{aiError}</p>
-                    )}
-                  </div>
-
-                  {/* Message Input text */}
-                  <div className="space-y-1.5">
-                    <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-wider">
-                      {t.campaignMessage}
+                      <UploadCloud className="w-4 h-4" />
+                      {lang === 'ar' ? 'استيراد من شيت Excel' : 'Import from Excel Sheet'}
                     </label>
-                    <textarea
-                      rows={3}
-                      required
-                      placeholder={t.campaignMessagePlaceholder}
-                      value={message}
-                      onChange={(e) => setMessage(e.target.value)}
-                      className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-2xl px-4 py-3 text-xs outline-none focus:border-[#00a884] leading-relaxed font-medium"
-                    />
-                    <span className="block text-[9px] text-zinc-400">
-                      {lang === 'ar' ? '* استخدم {name} ليتم استبداله تلقائياً باسم العميل لكل رسالة بشكل مخصص.' : '* Insert {name} to personalize each message with the client\'s custom name.'}
-                    </span>
                   </div>
+                  <textarea
+                    rows={5}
+                    required
+                    value={targetsRaw}
+                    onChange={e => setTargetsRaw(e.target.value)}
+                    className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-white rounded-xl p-3 text-xs outline-none focus:border-[#00a884] font-mono resize-none"
+                    placeholder="أحمد علي, 201123456789&#10;محمد محمود, 201098765432"
+                  />
+                </div>
 
-                  {/* WhatsApp Anti-Block Check */}
-                  {message.trim().length > 0 && (
-                    <div className="bg-zinc-50 dark:bg-zinc-950/60 border border-zinc-200/50 dark:border-zinc-800/80 p-4 rounded-2xl space-y-3 shadow-inner">
-                      <div className="flex justify-between items-center">
-                        <span className="text-[10px] font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-                          {lang === 'ar' ? 'مؤشر الحظر وأمان الإرسال' : 'WhatsApp Ban Safety Advisor'}
-                        </span>
-                        <span className={`text-[10px] font-black px-2.5 py-1 rounded-lg ${
-                          calculateAntiBlockScore().score >= 80 
-                            ? 'bg-emerald-500/10 text-emerald-500' 
-                            : calculateAntiBlockScore().score >= 50 
-                            ? 'bg-amber-500/10 text-amber-500' 
-                            : 'bg-rose-500/10 text-rose-500'
-                        }`}>
-                          {calculateAntiBlockScore().score}% {
-                            calculateAntiBlockScore().score >= 80 
-                              ? (lang === 'ar' ? 'أمان ممتاز' : 'Very Safe') 
-                              : calculateAntiBlockScore().score >= 50 
-                              ? (lang === 'ar' ? 'أمان متوسط' : 'Moderate Risk') 
-                              : (lang === 'ar' ? 'خطورة حظر عالية' : 'High Risk of Ban')
-                          }
-                        </span>
-                      </div>
-                      
-                      <div className="w-full bg-zinc-100 dark:bg-zinc-800 h-1.5 rounded-full overflow-hidden">
-                        <div 
-                          className={`h-full rounded-full transition-all duration-500 ${
-                            calculateAntiBlockScore().score >= 80 
-                              ? 'bg-emerald-500' 
-                              : calculateAntiBlockScore().score >= 50 
-                              ? 'bg-amber-500' 
-                              : 'bg-rose-500'
-                          }`}
-                          style={{ width: `${calculateAntiBlockScore().score}%` }}
-                        />
-                      </div>
-
-                      {calculateAntiBlockScore().tips.length > 0 && (
-                        <div className="space-y-1 bg-white dark:bg-zinc-900/60 p-3 rounded-xl border border-zinc-100 dark:border-zinc-800/50 text-[10px] text-zinc-400 font-medium">
-                          <p className="font-extrabold text-zinc-600 dark:text-zinc-300 mb-1">
-                            {lang === 'ar' ? '💡 نصائح لتعزيز أمان خط واتساب الخاص بك:' : '💡 Steps to safeguard your sending lines:'}
-                          </p>
-                          {calculateAntiBlockScore().tips.map((tip, idx) => (
-                            <div key={idx} className="flex gap-1 items-start">
-                              <span className="text-[#00a884] font-bold">•</span>
-                              <p className="leading-tight">{tip}</p>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Submit Button */}
+                <div className="flex justify-end gap-3 pt-4 border-t border-zinc-200 dark:border-zinc-800">
+                  <button
+                    type="button"
+                    onClick={() => { setShowAddModal(false); setEditingCampaignId(null); }}
+                    className="px-5 py-2.5 bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 rounded-xl text-xs font-bold"
+                  >
+                    {lang === 'ar' ? 'إلغاء' : 'Cancel'}
+                  </button>
                   <button
                     type="submit"
                     disabled={isAdding}
-                    className="w-full bg-gradient-to-r from-[#00a884] to-emerald-500 hover:from-[#008f6f] hover:to-emerald-600 disabled:from-zinc-100 disabled:to-zinc-100 text-white font-extrabold py-3.5 rounded-2xl transition-all cursor-pointer text-xs flex justify-center items-center gap-1.5 shadow-lg shadow-emerald-500/10 mt-3"
+                    className="px-6 py-2.5 bg-[#00a884] hover:bg-[#008f6f] text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-lg shadow-emerald-500/20"
                   >
-                    {isAdding && <Loader2 className="w-4 h-4 animate-spin" />}
-                    <span>{editingCampaignId ? (lang === 'ar' ? 'تعديل وتحديث الحملة السابقة' : 'Update & Re-save Campaign') : t.scheduleCampaign}</span>
+                    {isAdding ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                    {lang === 'ar' ? 'حفظ وإطلاق الحملة' : 'Save & Launch Campaign'}
                   </button>
-                </form>
-
-                {/* Left Side: Live Preview & Template Shortcuts */}
-                <div className="lg:col-span-5 space-y-5 flex flex-col justify-between">
-                  
-                  {/* Template Shortcuts */}
-                  <div className="space-y-2">
-                    <span className="block text-[10px] font-bold text-zinc-400 uppercase tracking-wider">
-                      {lang === 'ar' ? 'قوالب بث تسويقية سريعة التطبيق:' : 'Quick Outreach Templates:'}
-                    </span>
-                    <div className="grid grid-cols-1 gap-2">
-                      {templates.map((temp, idx) => (
-                        <button
-                          key={idx}
-                          type="button"
-                          onClick={() => handleApplyTemplate(temp.text)}
-                          className="w-full text-right bg-zinc-50 hover:bg-[#00a884]/10 dark:bg-zinc-950 dark:hover:bg-zinc-900 border border-zinc-200/50 dark:border-zinc-800/80 p-3 rounded-2xl transition-all cursor-pointer text-[10px] font-bold text-zinc-600 dark:text-zinc-300 block rtl:text-right ltr:text-left shadow-xs"
-                        >
-                          <div className="text-zinc-800 dark:text-zinc-100 flex items-center gap-1 mb-1 font-extrabold">
-                            <Sparkles className="w-3.5 h-3.5 text-[#00a884]" />
-                            <span>{temp.title}</span>
-                          </div>
-                          <div className="truncate opacity-80">{temp.text}</div>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* High Fidelity Phone Mockup Live Preview */}
-                  <div className="space-y-2 flex-1 flex flex-col justify-end min-h-[250px]">
-                    <span className="block text-[10px] font-bold text-zinc-400 uppercase tracking-wider">
-                      {lang === 'ar' ? 'المعاينة التفاعلية الفورية (شاشة هاتف)' : 'Live Interactive Phone Screen Preview'}
-                    </span>
-                    
-                    {/* Phone Container */}
-                    <div className="bg-zinc-100 dark:bg-zinc-950 border-4 border-zinc-300 dark:border-zinc-800 rounded-[30px] p-2 relative flex-1 flex flex-col overflow-hidden max-h-[280px]">
-                      
-                      {/* Notch Pill */}
-                      <div className="w-20 h-4 bg-zinc-800 absolute top-2 left-1/2 -translate-x-1/2 rounded-full z-20 flex items-center justify-center">
-                        <span className="w-2 h-2 rounded-full bg-blue-900" />
-                      </div>
-
-                      {/* Phone Screen Mock */}
-                      <div className="flex-1 rounded-[22px] bg-[#efeae2] dark:bg-zinc-900 overflow-hidden flex flex-col relative pt-4">
-                        
-                        {/* WhatsApp Header inside preview */}
-                        <div className="bg-[#075e54] dark:bg-zinc-950 text-white p-2.5 flex items-center justify-between z-10">
-                          <div className="flex items-center gap-1.5">
-                            <div className="w-6 h-6 rounded-full bg-zinc-200 border border-white/20" />
-                            <div className="text-right">
-                              <span className="text-[10px] font-black block leading-none">Tarek Roshdi</span>
-                              <span className="text-[7px] text-emerald-300 font-bold block leading-none mt-0.5">online</span>
-                            </div>
-                          </div>
-                          <div className="flex gap-1">
-                            <span className="w-1.5 h-1.5 rounded-full bg-white opacity-80" />
-                            <span className="w-1.5 h-1.5 rounded-full bg-white opacity-80" />
-                            <span className="w-1.5 h-1.5 rounded-full bg-white opacity-80" />
-                          </div>
-                        </div>
-
-                        {/* WhatsApp Chat Bubbles Screen Area */}
-                        <div className="flex-1 p-3 bg-[url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png')] opacity-95 flex flex-col justify-end relative">
-                          <div className="absolute inset-0 bg-[#efeae2]/85 dark:bg-zinc-900/90" />
-                          
-                          {/* Chat bubble */}
-                          <div className="bg-white dark:bg-[#128c7e] text-zinc-800 dark:text-white rounded-2xl rounded-tr-none p-3 shadow-sm max-w-[85%] self-start z-10 text-[9px] relative leading-relaxed">
-                            <p>{getLivePreviewText()}</p>
-                            <span className="block text-[7px] text-zinc-400 dark:text-emerald-200 mt-1.5 text-left font-mono font-bold">
-                              10:45 AM ✔✔
-                            </span>
-                          </div>
-                        </div>
-
-                        {/* Text Area input in phone */}
-                        <div className="bg-zinc-50 dark:bg-zinc-950 p-1.5 border-t border-zinc-200/50 dark:border-zinc-800 flex items-center gap-1">
-                          <div className="bg-zinc-200 dark:bg-zinc-900 rounded-full flex-1 px-3 py-1 text-[8px] text-zinc-400">
-                            Type a message
-                          </div>
-                          <div className="w-5 h-5 rounded-full bg-[#00a884] flex items-center justify-center text-white">
-                            <Send className="w-2.5 h-2.5" />
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
                 </div>
-              </div>
+              </form>
             </motion.div>
           </div>
         )}
       </AnimatePresence>
+
+    </div>
     </div>
   );
 }
