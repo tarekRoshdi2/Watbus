@@ -468,12 +468,14 @@ ${historySummary}
 
       this.saveChatMessage(chatId, 'user', rawText);
       this.saveChatMessage(chatId, 'assistant', replyText, 'media');
+      const shouldSendImage = text.includes('صورة') || text.includes('كارت') || text.includes('تصميم') || text.includes('ارسل الكارت') || text.includes('ابعت الكارت');
+
       return {
         agentId: 'media',
         agentName: 'كريم الديزاين',
         agentTitle: 'Creative Media & Graphic Officer',
         text: replyText,
-        mediaUrl: generatePricingPlansSvg()
+        mediaUrl: shouldSendImage ? generatePricingPlansSvg() : undefined
       };
     }
 

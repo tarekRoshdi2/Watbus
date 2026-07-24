@@ -13,7 +13,7 @@ export interface VoiceProcessResult {
 
 export class VoiceAgent {
   private ai: GoogleGenAI | null = null;
-  private fallbackModels = ['gemini-3.5-flash', 'gemini-3.1-flash-lite', 'gemini-2.5-flash', 'gemini-1.5-flash'];
+  private fallbackModels = ['gemini-2.5-flash', 'gemini-1.5-flash', 'gemini-2.0-flash-exp'];
 
   constructor(customAiClient?: GoogleGenAI) {
     if (customAiClient) {
@@ -49,43 +49,52 @@ export class VoiceAgent {
       };
     }
 
-    const cleanBase64 = base64Audio.replace(/^data:audio\/\w+;base64,/, '');
+    let cleanBase64 = base64Audio;
+    if (base64Audio.includes(',')) {
+      cleanBase64 = base64Audio.split(',')[1];
+    }
+    const cleanMime = mimeType.split(';')[0].trim() || 'audio/ogg';
 
     // Try model fallback chain
     for (const model of this.fallbackModels) {
       try {
-        console.log(`[VoiceAgent] Transcribing voice note using model "${model}"...`);
+        console.log(`[VoiceAgent] Transcribing voice note using model "${model}" with mime "${cleanMime}"...`);
         const response = await client.models.generateContent({
           model,
           contents: [
             {
               inlineData: {
                 data: cleanBase64,
-                mimeType
+                mimeType: cleanMime
               }
             },
-            `You are an expert Arabic Speech-to-Text (STT) AI Agent.
-1. Listen carefully to the spoken voice recording.
-2. Transcribe the spoken text accurately and verbatim in natural Arabic script (Egyptian/Gulf/MSA as spoken).
-3. Do NOT summarize or shorten the spoken words; provide the full transcription.
-
-Return JSON ONLY:
-{
-  "transcription": "الفرغ النصي الكامل والدقيق للرسالة الصوتية",
-  "responseReply": "رد مختصر ولطيف بالعامية المصرية"
-}`
+            `أنت خبير تفريغ ونطق الرسائل الصوتية بالعامية المصرية والعربية.
+استمع إلى التسجيل الصوتي جيداً واكتب النص المطلوب بالضبط:
+قم بتفريغ المضمون المنطوق بالكامل بدقة عالية وبدون تلخيص.`
           ]
         });
 
-        const text = response.text || '';
-        const cleanJson = text.replace(/```json/g, '').replace(/```/g, '').trim();
-        const parsed = JSON.parse(cleanJson);
+        const rawOutput = response.text || '';
+        let transcriptionText = rawOutput.trim();
 
-        if (parsed && parsed.transcription) {
-          console.log(`[VoiceAgent Success] Model "${model}" transcribed audio: "${parsed.transcription}"`);
+        if (transcriptionText.includes('{') && transcriptionText.includes('}')) {
+          try {
+            const cleanJson = transcriptionText.replace(/```json/g, '').replace(/```/g, '').trim();
+            const parsed = JSON.parse(cleanJson);
+            if (parsed && (parsed.transcription || parsed.text)) {
+              transcriptionText = (parsed.transcription || parsed.text).trim();
+            }
+          } catch (jsonErr) {}
+        }
+
+        // Clean markdown quotes if any
+        transcriptionText = transcriptionText.replace(/^"|"$/g, '').trim();
+
+        if (transcriptionText && transcriptionText.length > 1 && !transcriptionText.includes('Error')) {
+          console.log(`[VoiceAgent Success] Model "${model}" transcribed audio: "${transcriptionText}"`);
           return {
-            transcription: parsed.transcription.trim(),
-            responseReply: parsed.responseReply || 'شكراً لرسالتك الصوتية! جاري مساعدتك فوراً.'
+            transcription: transcriptionText,
+            responseReply: `فهمت من رسالتك الصوتية: "${transcriptionText}". جاري تنفيذ طلبك فوراً!`
           };
         }
       } catch (err: any) {
@@ -95,7 +104,7 @@ Return JSON ONLY:
 
     return {
       transcription: '[رسالة صوتية]',
-      responseReply: 'شكراً لتواصلك معنا عبر الرسالة الصوتية! سيقوم أحد ممثلي الخدمة بالرد عليك قريباً.'
+      responseReply: 'أهلاً بك! استلمت رسالتك الصوتية وجارِ معالجتها بواسطة المساعد الذكي.'
     };
   }
 

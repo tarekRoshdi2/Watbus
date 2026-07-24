@@ -30,7 +30,8 @@ import {
   Activity,
   VolumeX,
   PhoneOff,
-  Loader2
+  Loader2,
+  Eye
 } from 'lucide-react';
 import { User, Message, Conversation, Folder } from '../types.js';
 import { translations } from '../translations.js';
@@ -299,7 +300,8 @@ export default function ChatArea({
     document.body.removeChild(element);
   };
   
-  // Voice Recording states
+  // Voice Recording & Lightbox states
+  const [lightboxImage, setLightboxImage] = useState<string | null>(null);
   const [isRecording, setIsRecording] = useState<boolean>(false);
   const [recordDuration, setRecordDuration] = useState<number>(0);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -1032,20 +1034,27 @@ export default function ChatArea({
                 }`}
               >
                 {/* Image Media Message */}
-                {msg.type === 'image' && msg.mediaUrl && (
-                  <div className="mb-2 rounded-lg overflow-hidden border border-black/10 max-h-[250px] flex justify-center bg-zinc-950">
+                {(msg.type === 'image' || msg.mediaUrl) && msg.mediaUrl && (
+                  <div className="mb-2 rounded-lg overflow-hidden border border-black/10 max-h-[300px] flex justify-center bg-zinc-950/90 relative group">
                     <img
                       src={msg.mediaUrl}
                       alt="Shared Media Attachment"
                       referrerPolicy="no-referrer"
-                      className="max-h-[250px] object-cover cursor-pointer hover:scale-[1.02] transition-transform"
-                      onClick={() => window.dispatchEvent(new CustomEvent('expand-image', { detail: msg.mediaUrl }))}
+                      className="max-h-[300px] w-auto object-contain cursor-pointer hover:scale-[1.02] transition-transform"
+                      onClick={() => setLightboxImage(msg.mediaUrl || null)}
                     />
+                    <div 
+                      onClick={() => setLightboxImage(msg.mediaUrl || null)}
+                      className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity cursor-pointer text-white font-semibold text-xs gap-1"
+                    >
+                      <Eye className="w-4 h-4" />
+                      {lang === 'ar' ? 'تضخيم واستعراض' : 'Expand Image'}
+                    </div>
                   </div>
                 )}
 
                 {/* Voice Note Media Message */}
-                {msg.type === 'audio' && msg.mediaUrl && (
+                {(msg.type === 'audio' || msg.content?.includes('[رسالة صوتية]') || msg.content?.includes('🎤')) && (
                   <div className="flex flex-col gap-1.5 min-w-[220px]">
                     <div className="flex items-center gap-3 py-1">
                       <button
@@ -1073,26 +1082,23 @@ export default function ChatArea({
                         <div className="flex justify-between items-center mt-1 text-[10px] opacity-75">
                           <span className="flex items-center gap-1 font-semibold">
                             <Volume2 className="w-3 h-3 text-emerald-500 animate-pulse" />
-                            {lang === 'ar' ? 'رسالة صوتية' : 'Voice Message'}
+                            {lang === 'ar' ? 'رسالة صوتية (Voice Note)' : 'Voice Message'}
                           </span>
-                          <span>{msg.content && msg.content !== 'Voice Message' && msg.content !== 'Simulated Voice Note' ? `${Math.round(msg.content.length / 15) || 2}s` : '3s'}</span>
+                          <span>{msg.content && msg.content !== 'Voice Message' && msg.content !== 'Simulated Voice Note' ? `${Math.round(msg.content.length / 12) || 2}s` : '3s'}</span>
                         </div>
                       </div>
                     </div>
                     {/* Render transcribed text / translation if present in content */}
-                    {msg.content && msg.content !== 'Voice Message' && msg.content !== 'Simulated Voice Note' && (() => {
-                      const isArabic = /[\u0600-\u06FF]/.test(msg.content);
-                      return (
-                        <div className="border-t border-black/5 dark:border-white/5 pt-1.5 mt-0.5">
-                          <p 
-                            className={`text-[12px] leading-relaxed font-normal whitespace-pre-wrap opacity-95 ${isArabic ? 'text-right' : 'text-left'}`}
-                            dir={isArabic ? 'rtl' : 'ltr'}
-                          >
-                            {msg.content}
-                          </p>
-                        </div>
-                      );
-                    })()}
+                    {msg.content && (
+                      <div className="border-t border-black/10 dark:border-white/10 pt-1.5 mt-0.5">
+                        <p 
+                          className="text-[12px] leading-relaxed font-normal whitespace-pre-wrap opacity-95 text-right dir-rtl"
+                          dir="rtl"
+                        >
+                          {msg.content}
+                        </p>
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -1775,6 +1781,30 @@ export default function ChatArea({
           onClose={() => setShowTicketModal(false)} 
           lang={lang} 
         />
+      )}
+
+      {/* Lightbox Fullscreen Image Preview */}
+      {lightboxImage && (
+        <div 
+          className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex flex-col items-center justify-center p-4"
+          onClick={() => setLightboxImage(null)}
+        >
+          <div className="relative max-w-4xl max-h-[90vh] flex flex-col items-center">
+            <button
+              onClick={() => setLightboxImage(null)}
+              className="absolute -top-12 right-0 text-white bg-white/20 hover:bg-white/40 p-2 rounded-full transition-all cursor-pointer"
+              title="Close"
+            >
+              <X className="w-6 h-6" />
+            </button>
+            <img
+              src={lightboxImage}
+              alt="Expanded High Resolution View"
+              className="max-w-full max-h-[85vh] object-contain rounded-xl shadow-2xl border border-white/10"
+            />
+            <p className="text-white/70 text-xs mt-3 select-none">انقر في أي مكان في الشاشة للإغلاق</p>
+          </div>
+        </div>
       )}
     </div>
   );

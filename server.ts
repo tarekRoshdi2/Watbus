@@ -4161,6 +4161,47 @@ class OutgoingMessageQueue {
 
 const outgoingQueue = new OutgoingMessageQueue();
 
+async function uploadMediaToMetaCloudApi(
+  device: DeviceLink,
+  buffer: Buffer,
+  mimeType: string,
+  fileName: string = 'media_file'
+): Promise<string | null> {
+  const accessToken = device.token || device.cloudApiKey;
+  if (!accessToken || !device.phoneId) return null;
+
+  try {
+    const endpoint = `https://graph.facebook.com/v20.0/${device.phoneId}/media`;
+    const formData = new FormData();
+    formData.append('messaging_product', 'whatsapp');
+    formData.append('type', mimeType);
+    
+    const blob = new Blob([new Uint8Array(buffer)], { type: mimeType });
+    formData.append('file', blob, fileName);
+
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`
+      },
+      body: formData
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      console.log(`[Meta Media Upload] Uploaded ${mimeType} successfully! Media ID: ${data.id}`);
+      return data.id || null;
+    } else {
+      const errText = await response.text();
+      console.error('[Meta Media Upload Error]', errText);
+      return null;
+    }
+  } catch (err) {
+    console.error('[Meta Media Upload Exception]', err);
+    return null;
+  }
+}
+
 // Helper to send real WhatsApp messages using configured APIs directly
 async function sendRealWhatsAppMessageDirectly(
   device: DeviceLink, 
@@ -4185,15 +4226,63 @@ async function sendRealWhatsAppMessageDirectly(
         payload.type = 'interactive';
         payload.interactive = interactiveData;
       } else if (mediaType === 'image' && mediaData) {
+        let mediaId: string | null = null;
+        if (mediaData.startsWith('data:')) {
+          let imageBuffer: Buffer;
+          let mimeType = 'image/png';
+
+          if (mediaData.startsWith('data:image/svg+xml')) {
+            try {
+              const svgString = mediaData.startsWith('data:image/svg+xml;base64,')
+                ? Buffer.from(mediaData.replace('data:image/svg+xml;base64,', ''), 'base64').toString('utf-8')
+                : decodeURIComponent(mediaData.replace(/^data:image\/svg\+xml;utf8,/, ''));
+              
+              const resvg = new Resvg(svgString, { fitTo: { mode: 'width', value: 1200 } });
+              imageBuffer = resvg.render().asPng();
+              mimeType = 'image/png';
+            } catch (e) {
+              const base64Str = mediaData.split(',')[1] || '';
+              imageBuffer = Buffer.from(base64Str, 'base64');
+            }
+          } else {
+            const matches = mediaData.match(/^data:([^;]+);base64,(.+)$/);
+            if (matches) {
+              mimeType = matches[1];
+              imageBuffer = Buffer.from(matches[2], 'base64');
+            } else {
+              imageBuffer = Buffer.from(mediaData.split(',')[1] || '', 'base64');
+            }
+          }
+
+          mediaId = await uploadMediaToMetaCloudApi(device, imageBuffer, mimeType, 'card.png');
+        }
+
         payload.type = 'image';
-        // For Meta API, you must provide a link or uploaded media ID. Assuming mediaData is a URL for now.
-        payload.image = { link: mediaData, caption: text };
+        if (mediaId) {
+          payload.image = { id: mediaId, caption: text };
+        } else {
+          payload.image = { link: mediaData, caption: text };
+        }
       } else if (mediaType === 'document' && mediaData) {
         payload.type = 'document';
         payload.document = { link: mediaData, caption: text };
       } else if (mediaType === 'audio' && mediaData) {
+        let mediaId: string | null = null;
+        if (mediaData.startsWith('data:')) {
+          const matches = mediaData.match(/^data:([^;]+);base64,(.+)$/);
+          if (matches) {
+            const mimeType = matches[1];
+            const audioBuffer = Buffer.from(matches[2], 'base64');
+            mediaId = await uploadMediaToMetaCloudApi(device, audioBuffer, mimeType, 'voice_note.ogg');
+          }
+        }
+
         payload.type = 'audio';
-        payload.audio = { link: mediaData };
+        if (mediaId) {
+          payload.audio = { id: mediaId };
+        } else {
+          payload.audio = { link: mediaData };
+        }
       } else {
         payload.type = 'text';
         payload.text = { body: text };
