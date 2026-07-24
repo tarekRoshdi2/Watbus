@@ -20,7 +20,7 @@
       "password": "Tarek@2026",
       "username": "Tarek Roshdi",
       "avatarUrl": "https://pps.whatsapp.net/v/t61.24694-24/747126771_1038422479116934_1152221218606645899_n.jpg?ccb=11-4&oh=01_Q5Aa5AGWFoG_5Goh20qre3yFcXlNedyK0VvFbltvX6rgnaGfAQ&oe=6A6D031E&_nc_sid=5e03e0&_nc_cat=108",
-      "lastSeenAt": "2026-07-21T23:51:34.121Z",
+      "lastSeenAt": "2026-07-24T01:05:50.860Z",
       "statusText": "System Administrator",
       "costInDollars": 0,
       "aiMessagesUsed": 46,
@@ -120,26 +120,122 @@
       "subscriptionStatus": "inactive"
     }
   },
-  "catalog": [],
-  "devices": {
-    "dev_n6x22gxu5": {
-      "id": "dev_n6x22gxu5",
-      "name": "ChatCore",
-      "method": "cloud_api",
-      "status": "connected",
-      "phoneNumber": "+971555980556",
-      "ownerId": "admin-tarek",
-      "cloudApiKey": "EAAPKFzn8NnEBSNBE4sArv79ZCnTfGZC95c9kkOp2bvUzhJ827UVWVwWdM4ds8bzIkgvcEUlqxexLF7xI77jJMIH4DLZCvCpmlRMBOUhUowyCfbJzJrmmji2n1PWms7jiiAtkt9ZCzZCsGJSBh3OEZBQujnr6dP8OkQymYqXOiJOEkjQY6QpwvCSI660jZBwAsoFIgZDZD",
-      "phoneId": "1023744268475101",
-      "businessId": "713821952671753",
-      "linkedAt": "2026-07-21T23:48:54.661Z",
-      "apiKey": "waba_sec_n6x22gxu5_r641aev7",
-      "webhookUrl": "https://your-api.com/whatsapp/webhook",
-      "syncHistory": true
+  "devices": {},
+  "conversations": {
+    "conv_9vgehiffd": {
+      "id": "conv_9vgehiffd",
+      "label": "action",
+      "aiPaused": false,
+      "deviceId": "dev_6u59jvy23",
+      "createdAt": "2026-07-20T16:23:02.538Z",
+      "updatedAt": "2026-07-22T03:07:45.981Z",
+      "participantIds": [
+        "admin-tarek",
+        "contact_201115822923"
+      ],
+      "adminReport": {
+        "content": "[ADMIN_REPORT]\n\n### ملخص المحادثة:\nبدأت المحادثة بسلسلة طويلة من التحيات المتبادلة وعلامات الاستفهام المتكررة من طرف العميل (الذي تمت مخاطبته باسم الأستاذ Roshdi بناءً على بيانات النظام)، وكان الرد الآلي يرحب به باستمرار ويعرض عليه المساعدة في التعرف على الباقات والخدمات. \nبعد عدة محاولات، طرح العميل طلباً تقنياً وفنياً مفصلاً يطلب فيه كتابة \"برومبتات\" (Prompts) لتوليد 8 صور مخصصة لمنصة تيك توك (بمقاس 1:1)، تتبع الهوية البصرية لـ \"أدفين\" (Adveen)، مع شروط تقنية صارمة تشمل:\n- مراعاة منطقة الأمان (Safe Zone) بمقدار 120px للداخل في صورة الغلاف.\n- استخدام خط Cairo.\n- كتابة نصوص عربية كثيرة للشرح والتفاصيل داخل الصور.\n- تقسيم الصور كالتالي: (صورة غلاف بهوك قوي، 5 صور للأسباب والحلول، صورة للخلاصة، وصورة للتفاعل والحفظ).\n\nنظراً لخصوصية الطلب وحاجته لتدخل إبداعي دقيق، حاول المساعد الآلي مراراً وتكراراً تسجيل الطلب وطلب من العميل تزويده بـ \"الاسم الكامل\" ليتمكن من فتح تذكرة دعم ذات أولوية قصوى وتحويله إلى مصمم بشري مختص من الفريق الإبداعي. إلا أن العميل استمر في إرسال رسائل مقتضبة وعلامات استفهام (\"؟\"، \"الو\"، \"السلام عليكم\") دون تزويد النظام بالاسم المطلوب، مما أدى في النهاية إلى تفعيل الرد التلقائي العام للنظام الذي يفيد باستلام الرسالة وجاري الرد عليها.\n\n### نية العميل (User Intent):\nطلب خدمة إبداعية وتقنية متخصصة (كتابة وتنسيق برومبتات لتوليد صور متوافقة مع الهوية البصرية لـ \"أدفين\" ومعايير النشر على تيك توك).\n\n### الحالة المزاجية (Sentiment):\nمحايد إلى غير صبور (يظهر ذلك من تكرار إرسال علامات الاستفهام والتحيات المتتالية دون التفاعل مع أسئلة المساعد الآلي أو تقديم الاسم المطلوب لتسهيل عملية التحويل).\n\n### الإجراء الذي تم اتخاذه (Action Taken):\n1. الرد الفوري والترحيب المستمر بالعميل بأسلوب مهني وودود للغاية طوال فترة المحادثة.\n2. استلام الطلب الفني وتأكيد تسجيل كافة التفاصيل والاشتراطات الخاصة بالعميل (الخط، المقاسات، منطقة الأمان، وتوزيع الصور الثمانية).\n3. توضيح الحاجة لتدخل بشري لضمان جودة التصاميم ومطابقتها للهوية البصرية.\n4. المحاولة المتكررة للحصول على الاسم الكامل لربط العميل بالفريق المختص وتوجيه تذكرة الدعم كـ \"أولوية قصوى\".\n5. تحويل المحادثة إلى وضع الانتظار لإجراء الرد البشري بعد تعذر استجابة العميل الآلية.\n\n### النقاط المفتوحة / التوصيات (Pending Items / Recommendations):\n- **تدخل بشري فوري:** يجب على أحد ممثلي الدعم البشري أو أحد المصممين في فريق \"أدفين\" التدخل يدوياً والتواصل مع العميل مباشرة دون اشتراط الحصول على الاسم أولاً لتفادي خسارته أو زيادة إحباطه.\n- **تجهيز الطلب:** يُوصى بأن يقوم الفريق الإبداعي بصياغة البرومبتات الثمانية المطلوبة مسبقاً بناءً على التفاصيل التقنية المذكورة في المحادثة وتقديمها للعميل مباشرة كبادرة حسن نية واحترافية لتسهيل إتمام عملية البيع أو الخدمة.",
+        "updatedAt": "2026-07-22T03:11:00.606Z"
+      },
+      "aiAnalysis": {
+        "intent": "الحصول على الخدمة المطلوبة وإتمام الإجراءات التقنية",
+        "intentEn": "Obtaining the requested service and completing technical procedures",
+        "confidence": 95,
+        "summary": "العميل في مرحلة التفعيل وينتظر تسليم الطلب، لكنه يعاني من تأخير في الرد من جانب الوكيل مما تسبب في استفسارات متكررة.",
+        "summaryEn": "The customer is in the action stage awaiting delivery, but is experiencing delays in agent response, leading to repeated inquiries.",
+        "keyNeeds": [
+          "تسليم البرومبتات المطلوبة لهوية أدفين",
+          "التواصل مع الفريق الإبداعي"
+        ],
+        "keyNeedsEn": [
+          "Delivery of the requested prompts for Advin branding",
+          "Connection with the creative team"
+        ],
+        "recommendedAction": "التوقف عن طلب الاسم مجدداً والقيام فوراً بتسليم الطلب أو إحالة العميل للمختص تقنياً لإنهاء التوتر.",
+        "recommendedActionEn": "Stop asking for the name again and immediately fulfill the request or hand off the client to the technical specialist to resolve the tension.",
+        "draftReply": "وعليكم السلام أستاذ رشدي، أعتذر جداً عن التأخير التقني. لقد قمت الآن برفع اسمك وتفاصيل طلبك للفريق المختص، وسيتواصلون معك خلال دقائق معدودة لتسليمك البرومبتات.",
+        "draftReplyEn": "Wa Alaykum As-Salam Mr. Roshdi, I sincerely apologize for the technical delay. I have now submitted your name and order details to the specialized team, and they will contact you within minutes to deliver the prompts."
+      }
+    },
+    "conv_djji39qrf": {
+      "id": "conv_djji39qrf",
+      "label": "awareness",
+      "deviceId": "dev_6u59jvy23",
+      "createdAt": "2026-07-20T22:42:37.748Z",
+      "updatedAt": "2026-07-21T14:33:47.852Z",
+      "participantIds": [
+        "admin-tarek",
+        "contact_201225378152"
+      ]
+    },
+    "conv_he5i3xlo3": {
+      "id": "conv_he5i3xlo3",
+      "label": "consideration",
+      "deviceId": "dev_6u59jvy23",
+      "createdAt": "2026-07-21T14:33:53.993Z",
+      "updatedAt": "2026-07-21T20:44:48.843Z",
+      "adminReport": {
+        "content": "[ADMIN_REPORT]\n\n### ملخص المحادثة:\nتم التواصل مع العميل السيد \"أحمد غريب\" وإرسال رسالة ترويجية لتعريفه بمنصة **شات كور (ChatCore)** كحل متطور لإدارة محادثات خدمة العملاء وتطوير الأعمال. أبدى العميل اهتماماً فورياً وتفاعلاً إيجابياً للغاية مع العرض، معبراً عن حماسه الشديد لمعرفة المزيد من التفاصيل وتجربة المنصة. قام الوكيل الذكي بالترحيب به وحثه على تأكيد رقم التواصل المفضل لديه لترتيب اتصال مباشر أو محادثة عبر الواتساب مع أحد المستشارين البشريين لتقديم عرض توضيحي (Demo) والأسعار الحصرية.\n\n### نية العميل (User Intent):\n* **اهتمام واستفسار تجاري عالي الجدية (High-Intent Lead):** يرغب العميل في استكشاف منصة \"شات كور\" ومعرفة كيف يمكن أن تطور أعماله، ولديه رغبة واضحة في الانتقال للخطوة التالية (العرض التوضيحي).\n\n### الحالة المزاجية (Sentiment):\n* **إيجابي وحماسي للغاية (Highly Enthusiastic):** ظهر ذلك بوضوح من خلال رده السريع وتفاعله باستخدام الرموز التعبيرية الحماسية (🔥🔥🔥🔥🔥).\n\n### الإجراء الذي تم اتخاذه (Action Taken):\n* تم الترحيب بالعميل بشكل احترافي وودود يتناسب مع حماسه.\n* تم توضيح القيمة المضافة وطلب تأكيد وسيلة ورقم التواصل المفضلة لديه (سواء الرقم الحالي أو رقم آخر) لتحويله إلى المستشار البشري المختص.\n* تهيئة العميل لتلقي اتصال هاتفي أو رسالة واتساب تفصيلية تشمل المزايا والأسعار.\n\n### النقاط المفتوحة / التوصيات (Pending Items / Recommendations):\n* **تدخل بشري فوري (Urgent Follow-up Required):** يُوصى بقيام فريق المبيعات/مستشاري الحلول بالتواصل الفوري مع العميل على رقمه الحالي (الذي تمت المحادثة من خلاله) دون تأخير، واستغلال حالة الحماس العالية لديه لإتمام حجز العرض التوضيحي (Demo).\n* **إعداد عرض مخصص:** تجهيز باقة أسعار خاصة وعرض توضيحي سريع يركز على سهولة الاستخدام والتحكم الفوري في المحادثات لجذب العميل وإتمام عملية البيع بنجاح.",
+        "updatedAt": "2026-07-21T20:49:33.822Z"
+      },
+      "participantIds": [
+        "admin-tarek",
+        "contact_201228394334"
+      ]
+    },
+    "conv_k06mr7jpq": {
+      "id": "conv_k06mr7jpq",
+      "createdAt": "2026-07-20T22:14:04.335Z",
+      "updatedAt": "2026-07-20T22:14:21.134Z",
+      "participantIds": [
+        "dev_wpaax10r2",
+        "contact_201115822923"
+      ],
+      "deviceId": "dev_6u59jvy23"
+    },
+    "conv_r8az0xsql": {
+      "id": "conv_r8az0xsql",
+      "createdAt": "2026-07-21T14:33:53.753Z",
+      "updatedAt": "2026-07-21T14:33:53.753Z",
+      "participantIds": [
+        "dev_wpaax10r2",
+        "contact_201228394334"
+      ],
+      "deviceId": "dev_6u59jvy23"
+    },
+    "conv_te2di6jbo": {
+      "id": "conv_te2di6jbo",
+      "label": "awareness",
+      "deviceId": "dev_6u59jvy23",
+      "createdAt": "2026-07-21T23:06:46.245Z",
+      "updatedAt": "2026-07-21T23:07:22.286Z",
+      "participantIds": [
+        "admin-tarek",
+        "contact_447974905044"
+      ]
+    },
+    "conv_wag046qn6": {
+      "id": "conv_wag046qn6",
+      "createdAt": "2026-07-21T14:33:47.611Z",
+      "updatedAt": "2026-07-21T14:33:47.611Z",
+      "participantIds": [
+        "dev_wpaax10r2",
+        "contact_201225378152"
+      ],
+      "deviceId": "dev_6u59jvy23"
+    },
+    "conv_zvfagjhq3": {
+      "id": "conv_zvfagjhq3",
+      "label": "awareness",
+      "deviceId": "dev_6u59jvy23",
+      "createdAt": "2026-07-21T20:42:30.155Z",
+      "updatedAt": "2026-07-21T20:42:50.526Z",
+      "participantIds": [
+        "admin-tarek",
+        "contact_201055700696"
+      ]
     }
   },
-  "folders": {},
-  "otpLogs": [],
   "messages": [
     {
       "id": "ACAE393C25A7ACD8239D6E1982F3E51C",
@@ -1290,6 +1386,26 @@
       "timestamp": "2026-07-21T23:45:58.472Z",
       "recipientId": "contact_201115822923",
       "conversationId": "conv_9vgehiffd"
+    },
+    {
+      "id": "msg_cjvb5ctkn",
+      "type": "text",
+      "status": "failed",
+      "content": "؟",
+      "senderId": "admin-tarek",
+      "timestamp": "2026-07-22T01:51:01.466Z",
+      "recipientId": "contact_201115822923",
+      "conversationId": "conv_9vgehiffd"
+    },
+    {
+      "id": "msg_w0rmw5fk6",
+      "conversationId": "conv_9vgehiffd",
+      "senderId": "admin-tarek",
+      "recipientId": "contact_201115822923",
+      "content": "؟",
+      "type": "text",
+      "status": "failed",
+      "timestamp": "2026-07-22T03:07:45.981Z"
     }
   ],
   "statuses": [],
@@ -1365,100 +1481,22 @@
       "templateText": "أهلاً {name}! 👋\n\nلدينا خبر حماسي نود مشاركته معك اليوم! 🚀\n\nيسعدنا أن نعلن عن إطلاق *شات كور (ChatCore)*، الحل الأمثل لنقل تجربة خدمة العملاء لديك إلى مستوى جديد تماماً! ✨\n\nلماذا *شات كور*؟\n✅ تحكم كامل في محادثاتك في مكان واحد.\n✅ استجابة فورية ترفع من رضا عملائك.\n✅ تصميم ذكي وسهل للاستخدام اليومي.\n\nهل تود التعرف أكثر على كيف يمكن لـ *شات كور* أن يطور عملك؟ 💡\n\nيسعدني أن أرسل لك تفاصيل أكثر أو تحديد موعد سريع لعرض توضيحي.\n\nبانتظار ردك! 😊"
     }
   },
+  "folders": {},
+  "leads": [],
+  "catalog": [],
+  "otpLogs": [],
   "demoLeads": [],
   "otpSettings": {
     "template": "مرحباً بك في ChatCore. رمز التحقق الخاص بك هو: {otp}. يرجى إدخاله في الموقع لتفعيل حسابك."
   },
-  "conversations": {
-    "conv_9vgehiffd": {
-      "id": "conv_9vgehiffd",
-      "label": "consideration",
-      "aiPaused": false,
-      "deviceId": "dev_n6x22gxu5",
-      "createdAt": "2026-07-20T16:23:02.538Z",
-      "updatedAt": "2026-07-21T23:45:58.472Z",
-      "participantIds": [
-        "admin-tarek",
-        "contact_201115822923"
-      ]
-    },
-    "conv_djji39qrf": {
-      "id": "conv_djji39qrf",
-      "label": "awareness",
-      "deviceId": "dev_n6x22gxu5",
-      "createdAt": "2026-07-20T22:42:37.748Z",
-      "updatedAt": "2026-07-21T14:33:47.852Z",
-      "participantIds": [
-        "admin-tarek",
-        "contact_201225378152"
-      ]
-    },
-    "conv_he5i3xlo3": {
-      "id": "conv_he5i3xlo3",
-      "label": "consideration",
-      "deviceId": "dev_n6x22gxu5",
-      "createdAt": "2026-07-21T14:33:53.993Z",
-      "updatedAt": "2026-07-21T20:44:48.843Z",
-      "adminReport": {
-        "content": "[ADMIN_REPORT]\n\n### ملخص المحادثة:\nتم التواصل مع العميل السيد \"أحمد غريب\" وإرسال رسالة ترويجية لتعريفه بمنصة **شات كور (ChatCore)** كحل متطور لإدارة محادثات خدمة العملاء وتطوير الأعمال. أبدى العميل اهتماماً فورياً وتفاعلاً إيجابياً للغاية مع العرض، معبراً عن حماسه الشديد لمعرفة المزيد من التفاصيل وتجربة المنصة. قام الوكيل الذكي بالترحيب به وحثه على تأكيد رقم التواصل المفضل لديه لترتيب اتصال مباشر أو محادثة عبر الواتساب مع أحد المستشارين البشريين لتقديم عرض توضيحي (Demo) والأسعار الحصرية.\n\n### نية العميل (User Intent):\n* **اهتمام واستفسار تجاري عالي الجدية (High-Intent Lead):** يرغب العميل في استكشاف منصة \"شات كور\" ومعرفة كيف يمكن أن تطور أعماله، ولديه رغبة واضحة في الانتقال للخطوة التالية (العرض التوضيحي).\n\n### الحالة المزاجية (Sentiment):\n* **إيجابي وحماسي للغاية (Highly Enthusiastic):** ظهر ذلك بوضوح من خلال رده السريع وتفاعله باستخدام الرموز التعبيرية الحماسية (🔥🔥🔥🔥🔥).\n\n### الإجراء الذي تم اتخاذه (Action Taken):\n* تم الترحيب بالعميل بشكل احترافي وودود يتناسب مع حماسه.\n* تم توضيح القيمة المضافة وطلب تأكيد وسيلة ورقم التواصل المفضلة لديه (سواء الرقم الحالي أو رقم آخر) لتحويله إلى المستشار البشري المختص.\n* تهيئة العميل لتلقي اتصال هاتفي أو رسالة واتساب تفصيلية تشمل المزايا والأسعار.\n\n### النقاط المفتوحة / التوصيات (Pending Items / Recommendations):\n* **تدخل بشري فوري (Urgent Follow-up Required):** يُوصى بقيام فريق المبيعات/مستشاري الحلول بالتواصل الفوري مع العميل على رقمه الحالي (الذي تمت المحادثة من خلاله) دون تأخير، واستغلال حالة الحماس العالية لديه لإتمام حجز العرض التوضيحي (Demo).\n* **إعداد عرض مخصص:** تجهيز باقة أسعار خاصة وعرض توضيحي سريع يركز على سهولة الاستخدام والتحكم الفوري في المحادثات لجذب العميل وإتمام عملية البيع بنجاح.",
-        "updatedAt": "2026-07-21T20:49:33.822Z"
-      },
-      "participantIds": [
-        "admin-tarek",
-        "contact_201228394334"
-      ]
-    },
-    "conv_k06mr7jpq": {
-      "id": "conv_k06mr7jpq",
-      "createdAt": "2026-07-20T22:14:04.335Z",
-      "updatedAt": "2026-07-20T22:14:21.134Z",
-      "participantIds": [
-        "dev_wpaax10r2",
-        "contact_201115822923"
-      ],
-      "deviceId": "dev_n6x22gxu5"
-    },
-    "conv_r8az0xsql": {
-      "id": "conv_r8az0xsql",
-      "createdAt": "2026-07-21T14:33:53.753Z",
-      "updatedAt": "2026-07-21T14:33:53.753Z",
-      "participantIds": [
-        "dev_wpaax10r2",
-        "contact_201228394334"
-      ],
-      "deviceId": "dev_n6x22gxu5"
-    },
-    "conv_te2di6jbo": {
-      "id": "conv_te2di6jbo",
-      "label": "awareness",
-      "deviceId": "dev_n6x22gxu5",
-      "createdAt": "2026-07-21T23:06:46.245Z",
-      "updatedAt": "2026-07-21T23:07:22.286Z",
-      "participantIds": [
-        "admin-tarek",
-        "contact_447974905044"
-      ]
-    },
-    "conv_wag046qn6": {
-      "id": "conv_wag046qn6",
-      "createdAt": "2026-07-21T14:33:47.611Z",
-      "updatedAt": "2026-07-21T14:33:47.611Z",
-      "participantIds": [
-        "dev_wpaax10r2",
-        "contact_201225378152"
-      ],
-      "deviceId": "dev_n6x22gxu5"
-    },
-    "conv_zvfagjhq3": {
-      "id": "conv_zvfagjhq3",
-      "label": "awareness",
-      "deviceId": "dev_n6x22gxu5",
-      "createdAt": "2026-07-21T20:42:30.155Z",
-      "updatedAt": "2026-07-21T20:42:50.526Z",
-      "participantIds": [
-        "admin-tarek",
-        "contact_201055700696"
-      ]
-    }
+  "paymentSettings": {
+    "vodafoneCashNumber": "01115822923",
+    "instaPayAddress": "trkroshdi@instapay",
+    "bankAccountIban": "EG1234567890123456789012345",
+    "accountHolderName": "طارق رشدي (Tarek Roshdi)",
+    "bankName": "البنك الأهلي المصري (NBE)",
+    "telegramBotToken": "8603539921:AAHKI5jaqFgJBflFd64Z-FZwL1H91LpjheA",
+    "telegramBotEnabled": true,
+    "transferNotes": ""
   }
 }

@@ -406,7 +406,7 @@ export default function ClientsPage({ currentUser, lang }: Props) {
               <span>{lang === 'ar' ? 'إدارة لوحة التحكم وصلاحيات النظام' : 'System Administration Access'}</span>
             </span>
             <h1 className="text-xl md:text-2xl font-black text-zinc-900 dark:text-white">
-              {lang === 'ar' ? 'دليل المشتركين والحسابات المسجلة' : 'Subscribers & System Accounts'}
+              {lang === 'ar' ? 'صفحة إدارة الموظفين وفريق العمل والحسابات' : 'Employees & Staff Roster Directory'}
             </h1>
           </div>
           <p className="text-xs text-zinc-400 dark:text-zinc-500 max-w-2xl ml-auto">

@@ -1055,39 +1055,39 @@ export default function App() {
               {viewMode === 'dashboard' && <span className="absolute left-0 top-1/4 bottom-1/4 w-1 bg-[#00a884] rounded-r-md" />}
             </button>
 
+            {/* Admin Tab (Admins Only) */}
             {currentUser.role === 'admin' && (
-              <>
-                {/* Admin Tab */}
-                <button
-                  onClick={() => setViewMode('admin')}
-                  className={`w-12 h-12 rounded-xl flex flex-col items-center justify-center transition-all cursor-pointer relative group ${
-                    viewMode === 'admin'
-                      ? 'bg-white/10 text-[#00a884] font-bold'
-                      : 'text-zinc-400 hover:text-white hover:bg-white/5'
-                  }`}
-                  title={`${t.adminTab} | Admin`}
-                >
-                  <Shield className="w-5 h-5" />
-                  <span className="text-[8px] mt-0.5 font-bold truncate max-w-full px-1">{t.adminTab}</span>
-                  {viewMode === 'admin' && <span className="absolute left-0 top-1/4 bottom-1/4 w-1 bg-[#00a884] rounded-r-md" />}
-                </button>
-
-                {/* Users Tab */}
-                <button
-                  onClick={() => setViewMode('clients')}
-                  className={`w-12 h-12 rounded-xl flex flex-col items-center justify-center transition-all cursor-pointer relative group ${
-                    viewMode === 'clients'
-                      ? 'bg-white/10 text-[#00a884] font-bold'
-                      : 'text-zinc-400 hover:text-white hover:bg-white/5'
-                  }`}
-                  title={`${t.usersTab} | Clients`}
-                >
-                  <Users className="w-5 h-5" />
-                  <span className="text-[8px] mt-0.5 font-bold truncate max-w-full px-1">{t.usersTab}</span>
-                  {viewMode === 'clients' && <span className="absolute left-0 top-1/4 bottom-1/4 w-1 bg-[#00a884] rounded-r-md" />}
-                </button>
-              </>
+              <button
+                onClick={() => setViewMode('admin')}
+                className={`w-12 h-12 rounded-xl flex flex-col items-center justify-center transition-all cursor-pointer relative group ${
+                  viewMode === 'admin'
+                    ? 'bg-white/10 text-[#00a884] font-bold'
+                    : 'text-zinc-400 hover:text-white hover:bg-white/5'
+                }`}
+                title={`${t.adminTab} | Admin`}
+              >
+                <Shield className="w-5 h-5" />
+                <span className="text-[8px] mt-0.5 font-bold truncate max-w-full px-1">{t.adminTab}</span>
+                {viewMode === 'admin' && <span className="absolute left-0 top-1/4 bottom-1/4 w-1 bg-[#00a884] rounded-r-md" />}
+              </button>
             )}
+
+            {/* Employees & Staff Management Tab (Human Team Roster) */}
+            <button
+              onClick={() => setViewMode('clients')}
+              className={`w-12 h-12 rounded-xl flex flex-col items-center justify-center transition-all cursor-pointer relative group ${
+                viewMode === 'clients'
+                  ? 'bg-white/10 text-[#00a884] font-bold'
+                  : 'text-zinc-400 hover:text-white hover:bg-white/5'
+              }`}
+              title={lang === 'ar' ? 'إدارة الموظفين وفريق العمل البشر | Employees & Staff' : 'Employees & Staff'}
+            >
+              <Users className="w-5 h-5" />
+              <span className="text-[8px] mt-0.5 font-bold truncate max-w-full px-1">
+                {lang === 'ar' ? 'الموظفين' : 'Employees'}
+              </span>
+              {viewMode === 'clients' && <span className="absolute left-0 top-1/4 bottom-1/4 w-1 bg-[#00a884] rounded-r-md" />}
+            </button>
 
             {/* Chats/CRM Tab */}
             <button

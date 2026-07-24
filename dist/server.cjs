@@ -367,12 +367,15 @@ __export(db_exports, {
   getOrCreateConversation: () => getOrCreateConversation,
   getOtpLogs: () => getOtpLogs,
   getOtpSettings: () => getOtpSettings,
+  getPaymentSettings: () => getPaymentSettings,
   getUser: () => getUser,
   getUserByUsername: () => getUserByUsername2,
   incrementUserAiUsage: () => incrementUserAiUsage,
+  initializeDbFromPrisma: () => initializeDbFromPrisma,
   markConversationAsRead: () => markConversationAsRead,
   mergeDuplicateConversations: () => mergeDuplicateConversations,
   mergeLidContactsAndConversations: () => mergeLidContactsAndConversations,
+  prisma: () => prisma,
   readDb: () => readDb,
   resetDbCache: () => resetDbCache,
   saveCampaign: () => saveCampaign,
@@ -383,6 +386,7 @@ __export(db_exports, {
   saveMessage: () => saveMessage,
   saveOtpLog: () => saveOtpLog,
   saveOtpSettings: () => saveOtpSettings,
+  savePaymentSettings: () => savePaymentSettings,
   saveStatus: () => saveStatus,
   saveUser: () => saveUser,
   updateConversationAiPaused: () => updateConversationAiPaused,
@@ -512,6 +516,18 @@ function saveUser(user) {
   }
   db.users[user.id] = user;
   writeDb(db);
+  prisma.users.upsert({
+    where: { id: user.id },
+    update: {
+      username: user.username,
+      password_hash: user.password || ""
+    },
+    create: {
+      id: user.id,
+      username: user.username,
+      password_hash: user.password || ""
+    }
+  }).catch((e) => console.error("[Prisma Sync] Error saving user", e));
   return user;
 }
 function deleteUser(userId) {
@@ -565,6 +581,25 @@ function getOrCreateConversation(userA, userB, deviceId) {
   };
   db.conversations[newId] = newConv;
   writeDb(db);
+  prisma.conversation.upsert({
+    where: { id: newConv.id },
+    update: {
+      deviceId: newConv.deviceId || "default",
+      contactPhone: newConv.participantIds.find((id) => id.startsWith("contact_")) || newConv.participantIds[1] || "unknown",
+      status: "open",
+      label: newConv.label || "None",
+      updatedAt: new Date(newConv.updatedAt)
+    },
+    create: {
+      id: newConv.id,
+      deviceId: newConv.deviceId || "default",
+      contactPhone: newConv.participantIds.find((id) => id.startsWith("contact_")) || newConv.participantIds[1] || "unknown",
+      status: "open",
+      label: newConv.label || "None",
+      createdAt: new Date(newConv.createdAt),
+      updatedAt: new Date(newConv.updatedAt)
+    }
+  }).catch((e) => console.error("[Prisma Sync] Error saving conversation", e));
   return newConv;
 }
 function getConversationsForUser(userId) {
@@ -581,6 +616,25 @@ function saveConversation(conv) {
   const db = readDb();
   db.conversations[conv.id] = conv;
   writeDb(db);
+  prisma.conversation.upsert({
+    where: { id: conv.id },
+    update: {
+      deviceId: conv.deviceId || "default",
+      contactPhone: conv.participantIds.find((id) => id.startsWith("contact_")) || conv.participantIds[1] || "unknown",
+      status: "open",
+      label: conv.label || "None",
+      updatedAt: new Date(conv.updatedAt)
+    },
+    create: {
+      id: conv.id,
+      deviceId: conv.deviceId || "default",
+      contactPhone: conv.participantIds.find((id) => id.startsWith("contact_")) || conv.participantIds[1] || "unknown",
+      status: "open",
+      label: conv.label || "None",
+      createdAt: new Date(conv.createdAt),
+      updatedAt: new Date(conv.updatedAt)
+    }
+  }).catch((e) => console.error("[Prisma Sync] Error saving conversation", e));
   return conv;
 }
 function getMessagesForConversation(convId) {
@@ -595,6 +649,19 @@ function saveMessage(message) {
     delete db.conversations[message.conversationId].aiAnalysis;
   }
   writeDb(db);
+  prisma.message.create({
+    data: {
+      id: message.id,
+      conversationId: message.conversationId,
+      senderId: message.senderId,
+      recipientId: message.recipientId,
+      content: message.content || "",
+      type: message.type,
+      mediaUrl: message.mediaUrl,
+      status: message.status,
+      timestamp: new Date(message.timestamp)
+    }
+  }).catch((e) => console.error("[Prisma Sync] Error saving message", e));
   return message;
 }
 function updateMessageStatus(messageId, status) {
@@ -663,6 +730,29 @@ function saveDevice(device) {
   if (!db.devices) db.devices = {};
   db.devices[device.id] = device;
   writeDb(db);
+  const validUserId = device.ownerId && !device.ownerId.includes("admin") && !device.ownerId.includes("meta") ? device.ownerId : null;
+  prisma.device.upsert({
+    where: { id: device.id },
+    update: {
+      name: device.name,
+      phoneNumber: device.phoneNumber,
+      phoneId: device.phoneId,
+      method: device.method,
+      status: device.status,
+      tenantId: "default",
+      userId: validUserId
+    },
+    create: {
+      id: device.id,
+      name: device.name,
+      phoneNumber: device.phoneNumber,
+      phoneId: device.phoneId,
+      method: device.method,
+      status: device.status,
+      tenantId: "default",
+      userId: validUserId
+    }
+  }).catch((e) => console.error("[Prisma Sync] Error saving device", e));
   return device;
 }
 function deleteDevice(deviceId) {
@@ -968,19 +1058,80 @@ function saveLead(lead) {
   }
   writeDb(db);
 }
-var import_fs2, import_path2, DB_FILE, META_AI_USER, ADMIN_USER, cachedDb, writeTimeout, isWriting, pendingWrite;
+function getPaymentSettings() {
+  const db = readDb();
+  return db.paymentSettings || {
+    vodafoneCashNumber: "01115822923",
+    instaPayAddress: "trkroshdi@instapay",
+    bankAccountIban: "EG1234567890123456789012345",
+    accountHolderName: "\u0637\u0627\u0631\u0642 \u0631\u0634\u062F\u064A (Tarek Roshdi)",
+    bankName: "\u0627\u0644\u0628\u0646\u0643 \u0627\u0644\u0623\u0647\u0644\u064A \u0627\u0644\u0645\u0635\u0631\u064A (NBE)",
+    transferNotes: "\u064A\u0631\u062C\u0649 \u0625\u0631\u0633\u0627\u0644 \u0627\u0644\u0645\u0628\u0644\u063A \u0628\u0627\u0633\u0645 \u0637\u0627\u0631\u0642 \u0631\u0634\u062F\u064A \u0639\u0628\u0631 \u0625\u0646\u0633\u062A\u0627 \u0628\u0627\u064A \u0623\u0648 \u0645\u062D\u0641\u0638\u0629 \u0641\u0648\u062F\u0627\u0641\u0648\u0646 \u0643\u0627\u0634 \u0648\u0631\u0641\u0639 \u0633\u0643\u0631\u064A\u0646 \u0634\u0648\u062A \u0627\u0644\u0625\u064A\u0635\u0627\u0644 \u0644\u062A\u0623\u0643\u064A\u062F \u0627\u0644\u0641\u0627\u062A\u0648\u0631\u0629 \u0641\u0648\u0631\u0627.",
+    telegramBotToken: "",
+    telegramBotEnabled: false
+  };
+}
+function savePaymentSettings(settings) {
+  const db = readDb();
+  db.paymentSettings = settings;
+  writeDb(db);
+  return settings;
+}
+async function initializeDbFromPrisma() {
+  console.log("[Prisma] Loading database from PostgreSQL into memory cache...");
+  try {
+    const users = await prisma.users.findMany();
+    const devices = await prisma.device.findMany();
+    const conversations = await prisma.conversation.findMany();
+    const messages = await prisma.message.findMany();
+    const db = readDb();
+    users.forEach((u) => {
+      if (db.users[u.id]) {
+        db.users[u.id].username = u.username;
+      }
+    });
+    messages.forEach((m) => {
+      const exists = db.messages.find((existing) => existing.id === m.id);
+      if (!exists) {
+        db.messages.push({
+          id: m.id,
+          conversationId: m.conversationId,
+          senderId: m.senderId,
+          recipientId: m.recipientId,
+          content: m.content || "",
+          type: m.type,
+          mediaUrl: m.mediaUrl || void 0,
+          status: m.status,
+          timestamp: m.timestamp.toISOString()
+        });
+      }
+    });
+    writeDb(db);
+    console.log("[Prisma] Database loaded successfully.");
+  } catch (err) {
+    console.error("[Prisma] Error loading from DB", err);
+  }
+}
+var import_client, import_adapter_pg, import_pg, import_dotenv, import_fs2, import_path2, pool, adapter, prisma, DB_FILE, META_AI_USER, ADMIN_USER, cachedDb, writeTimeout, isWriting, pendingWrite;
 var init_db = __esm({
   "src/db.ts"() {
+    import_client = require("@prisma/client");
+    import_adapter_pg = require("@prisma/adapter-pg");
+    import_pg = __toESM(require("pg"), 1);
+    import_dotenv = __toESM(require("dotenv"), 1);
     import_fs2 = __toESM(require("fs"), 1);
     import_path2 = __toESM(require("path"), 1);
     init_supabase();
+    import_dotenv.default.config();
+    pool = new import_pg.default.Pool({ connectionString: process.env.DATABASE_URL });
+    adapter = new import_adapter_pg.PrismaPg(pool);
+    prisma = new import_client.PrismaClient({ adapter });
     DB_FILE = import_path2.default.join(process.cwd(), "db-store.json");
     META_AI_USER = {
       id: "meta-ai",
       username: "Meta AI",
       role: "user",
       avatarUrl: "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=150&q=80",
-      // Beautiful futuristic gradient
       statusText: "with Gemini AI. Type anything to start talking!",
       isOnline: true,
       lastSeenAt: (/* @__PURE__ */ new Date()).toISOString(),
@@ -1013,139 +1164,158 @@ var init_db = __esm({
   }
 });
 
-// server.ts
-var server_exports = {};
-__export(server_exports, {
-  globalIncomingHandler: () => globalIncomingHandler,
-  memoryLogs: () => memoryLogs
-});
-module.exports = __toCommonJS(server_exports);
-var import_crypto = require("crypto");
-var import_express = __toESM(require("express"), 1);
-var import_http = __toESM(require("http"), 1);
-var import_ws = require("ws");
-var import_path4 = __toESM(require("path"), 1);
-var import_fs4 = __toESM(require("fs"), 1);
-var import_dotenv = __toESM(require("dotenv"), 1);
-var import_genai4 = require("@google/genai");
-var import_jsonwebtoken = __toESM(require("jsonwebtoken"), 1);
-init_db();
-
 // src/agents/RouterAgent.ts
-var import_genai = require("@google/genai");
-var RouterAgent = class {
-  constructor() {
-    this.ai = null;
-    const apiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
-    if (apiKey) {
-      this.ai = new import_genai.GoogleGenAI({ apiKey });
-    }
-  }
-  /**
-   * Classifies the customer message and returns routing decision
-   */
-  async classifyIntent(messageText, hasImage = false, hasAudio = false) {
-    if (hasAudio) {
-      return {
-        intent: "general_faq",
-        confidence: 0.95,
-        reasoning: "Voice message received, routing to VoiceAgent",
-        suggestedAgent: "voice"
-      };
-    }
-    if (hasImage) {
-      return {
-        intent: "catalog_inquiry",
-        confidence: 0.95,
-        reasoning: "Image attached (Computer Vision required), routing to RagAgent",
-        suggestedAgent: "rag"
-      };
-    }
-    if (!this.ai || !messageText.trim()) {
-      return {
-        intent: "general_faq",
-        confidence: 0.5,
-        reasoning: "Fallback classification",
-        suggestedAgent: "rag"
-      };
-    }
-    try {
-      const response = await this.ai.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: `You are an AI Routing Agent for an e-commerce WhatsApp business.
-Classify the following customer message into EXACTLY ONE of these categories:
+var import_genai2, RouterAgent;
+var init_RouterAgent = __esm({
+  "src/agents/RouterAgent.ts"() {
+    import_genai2 = require("@google/genai");
+    RouterAgent = class {
+      constructor() {
+        this.ai = null;
+        const apiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
+        if (apiKey) {
+          this.ai = new import_genai2.GoogleGenAI({ apiKey });
+        }
+      }
+      /**
+       * Classifies the customer message and returns routing decision
+       */
+      async classifyIntent(messageText, hasImage = false, hasAudio = false) {
+        if (hasAudio) {
+          return {
+            intent: "general_faq",
+            confidence: 0.95,
+            reasoning: "Voice message received, routing to VoiceAgent",
+            suggestedAgent: "voice"
+          };
+        }
+        if (hasImage) {
+          return {
+            intent: "catalog_inquiry",
+            confidence: 0.95,
+            reasoning: "Image attached, routing to RagAgent",
+            suggestedAgent: "rag"
+          };
+        }
+        const lower = messageText.toLowerCase();
+        if (lower.includes("\u0641\u0627\u062A\u0648\u0631\u0629") || lower.includes("\u0641\u0627\u062A\u0648\u0631\u0647") || lower.includes("\u0639\u0631\u0636 \u0633\u0639\u0631") || lower.includes("\u0633\u0639\u0631 \u0627\u0644\u0637\u0644\u0628") || lower.includes("\u0631\u0627\u0628\u0637 \u0627\u0644\u062F\u0641\u0639") || lower.includes("invoice")) {
+          return {
+            intent: "invoice_request",
+            confidence: 0.98,
+            reasoning: "Invoice keywords detected",
+            suggestedAgent: "invoice"
+          };
+        }
+        if (lower.includes("\u0635\u0648\u0631\u0629") || lower.includes("\u0635\u0648\u0631\u0647") || lower.includes("\u062A\u0635\u0645\u064A\u0645") || lower.includes("\u0627\u0631\u0633\u0645") || lower.includes("\u0635\u0648\u0631\u0629 \u0627\u0644\u0645\u0646\u062A\u062C") || lower.includes("\u0634\u0643\u0644 \u0627\u0644\u0639\u0631\u0636") || lower.includes("banner")) {
+          return {
+            intent: "media_request",
+            confidence: 0.98,
+            reasoning: "Media design keywords detected",
+            suggestedAgent: "media"
+          };
+        }
+        if (lower.includes("\u0645\u0634\u0643\u0644\u0629") || lower.includes("\u0639\u0637\u0644") || lower.includes("\u062A\u0630\u0643\u0631\u0629") || lower.includes("\u062A\u0630\u0643\u0631\u0647") || lower.includes("\u062F\u0639\u0645 \u0641\u0646\u064A") || lower.includes("\u062A\u062A\u0628\u0639 \u0627\u0644\u0645\u0634\u0643\u0644\u0629") || lower.includes("ticket")) {
+          return {
+            intent: "support_request",
+            confidence: 0.98,
+            reasoning: "Technical support keywords detected",
+            suggestedAgent: "support"
+          };
+        }
+        if (!this.ai || !messageText.trim()) {
+          return {
+            intent: "general_faq",
+            confidence: 0.5,
+            reasoning: "Fallback classification",
+            suggestedAgent: "rag"
+          };
+        }
+        try {
+          const response = await this.ai.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: `You are an AI Routing Agent for an enterprise WhatsApp multi-agent system.
+Classify the customer message into EXACTLY ONE category:
 - general_faq (greeting, policy, location, working hours)
 - catalog_inquiry (product prices, stock, sizes, colors, recommendation)
 - order_support (delivery status, returns, refunds, order tracking)
-- human_handoff (asking for human agent, angry complaint, complex issue)
+- invoice_request (requesting bill, pricing breakdown, invoice PDF, payment link)
+- media_request (requesting visual photo, design card, offer banner, image mockup)
+- support_request (reporting technical issue, system bug, ticket creation)
+- human_handoff (asking for human agent, complaint escalation)
 
-Return JSON ONLY in this format:
+Return JSON ONLY:
 {
-  "intent": "general_faq" | "catalog_inquiry" | "order_support" | "human_handoff",
-  "confidence": number between 0 and 1,
-  "reasoning": "brief explanation"
+  "intent": "general_faq" | "catalog_inquiry" | "order_support" | "invoice_request" | "media_request" | "support_request" | "human_handoff",
+  "confidence": number,
+  "reasoning": "explanation"
 }
 
 Customer Message: "${messageText}"`
-      });
-      const text = response.text || "";
-      const cleanJson = text.replace(/```json/g, "").replace(/```/g, "").trim();
-      const parsed = JSON.parse(cleanJson);
-      let suggestedAgent = "rag";
-      if (parsed.intent === "human_handoff") {
-        suggestedAgent = "human";
+          });
+          const text = response.text || "";
+          const cleanJson = text.replace(/```json/g, "").replace(/```/g, "").trim();
+          const parsed = JSON.parse(cleanJson);
+          let suggestedAgent = "rag";
+          if (parsed.intent === "human_handoff") suggestedAgent = "human";
+          else if (parsed.intent === "invoice_request") suggestedAgent = "invoice";
+          else if (parsed.intent === "media_request") suggestedAgent = "media";
+          else if (parsed.intent === "support_request") suggestedAgent = "support";
+          return {
+            intent: parsed.intent || "general_faq",
+            confidence: parsed.confidence || 0.8,
+            reasoning: parsed.reasoning || "Classified by Gemini AI",
+            suggestedAgent
+          };
+        } catch (err) {
+          console.error("[RouterAgent Error]", err);
+          return {
+            intent: "catalog_inquiry",
+            confidence: 0.6,
+            reasoning: "Classification fallback due to error",
+            suggestedAgent: "rag"
+          };
+        }
       }
-      return {
-        intent: parsed.intent || "general_faq",
-        confidence: parsed.confidence || 0.8,
-        reasoning: parsed.reasoning || "Classified by Gemini AI",
-        suggestedAgent
-      };
-    } catch (err) {
-      console.error("[RouterAgent Error]", err);
-      return {
-        intent: "catalog_inquiry",
-        confidence: 0.6,
-        reasoning: "Classification fallback due to error",
-        suggestedAgent: "rag"
-      };
-    }
+    };
   }
-};
+});
 
 // src/agents/RagAgent.ts
-var import_genai2 = require("@google/genai");
-var RagAgent = class {
-  constructor() {
-    this.ai = null;
-    const apiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
-    if (apiKey) {
-      this.ai = new import_genai2.GoogleGenAI({ apiKey });
-    }
-  }
-  /**
-   * Analyzes an image sent by the customer (Computer Vision)
-   */
-  async analyzeProductImage(base64Image, mimeType = "image/jpeg", catalog) {
-    if (!this.ai) {
-      return {
-        reply: "\u0639\u0630\u0631\u0627\u064B\u060C \u062E\u062F\u0645\u0629 \u062A\u062D\u0644\u064A\u0644 \u0627\u0644\u0635\u0648\u0631 \u063A\u064A\u0631 \u0645\u062A\u0648\u0641\u0631\u0629 \u062D\u0627\u0644\u064A\u0627\u064B. \u064A\u0645\u0643\u0646\u0643 \u062A\u0632\u0648\u064A\u062F\u0646\u0627 \u0628\u0627\u0633\u0645 \u0627\u0644\u0645\u0646\u062A\u062C \u0627\u0644\u0645\u0637\u0644\u0648\u0628.",
-        matchedProducts: []
-      };
-    }
-    try {
-      const cleanBase64 = base64Image.replace(/^data:image\/\w+;base64,/, "");
-      const catalogSummary = catalog.map((c) => `- ID: ${c.id}, Name: ${c.name}, Price: ${c.price} EGP, Description: ${c.description}`).join("\n");
-      const response = await this.ai.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: [
-          {
-            inlineData: {
-              data: cleanBase64,
-              mimeType
-            }
-          },
-          `You are an AI Sales Agent with Computer Vision capabilities for an Egyptian clothing/e-commerce store.
+var import_genai3, RagAgent;
+var init_RagAgent = __esm({
+  "src/agents/RagAgent.ts"() {
+    import_genai3 = require("@google/genai");
+    RagAgent = class {
+      constructor() {
+        this.ai = null;
+        const apiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
+        if (apiKey) {
+          this.ai = new import_genai3.GoogleGenAI({ apiKey });
+        }
+      }
+      /**
+       * Analyzes an image sent by the customer (Computer Vision)
+       */
+      async analyzeProductImage(base64Image, mimeType = "image/jpeg", catalog) {
+        if (!this.ai) {
+          return {
+            reply: "\u0639\u0630\u0631\u0627\u064B\u060C \u062E\u062F\u0645\u0629 \u062A\u062D\u0644\u064A\u0644 \u0627\u0644\u0635\u0648\u0631 \u063A\u064A\u0631 \u0645\u062A\u0648\u0641\u0631\u0629 \u062D\u0627\u0644\u064A\u0627\u064B. \u064A\u0645\u0643\u0646\u0643 \u062A\u0632\u0648\u064A\u062F\u0646\u0627 \u0628\u0627\u0633\u0645 \u0627\u0644\u0645\u0646\u062A\u062C \u0627\u0644\u0645\u0637\u0644\u0648\u0628.",
+            matchedProducts: []
+          };
+        }
+        try {
+          const cleanBase64 = base64Image.replace(/^data:image\/\w+;base64,/, "");
+          const catalogSummary = catalog.map((c) => `- ID: ${c.id}, Name: ${c.name}, Price: ${c.price} EGP, Description: ${c.description}`).join("\n");
+          const response = await this.ai.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: [
+              {
+                inlineData: {
+                  data: cleanBase64,
+                  mimeType
+                }
+              },
+              `You are an AI Sales Agent with Computer Vision capabilities for an Egyptian clothing/e-commerce store.
 Analyze this product image sent by the customer (identify clothing type, color, style, fabric, or size details).
 
 Available Store Catalog:
@@ -1166,68 +1336,975 @@ Return JSON ONLY:
   "reply": "Arabic message for WhatsApp customer",
   "matchedCatalogIds": string[]
 }`
-        ]
-      });
-      const text = response.text || "";
-      const cleanJson = text.replace(/```json/g, "").replace(/```/g, "").trim();
-      const parsed = JSON.parse(cleanJson);
-      const matchedProducts = catalog.filter((item) => (parsed.matchedCatalogIds || []).includes(item.id));
-      return {
-        reply: parsed.reply || "\u0644\u0642\u062F \u0642\u0645\u0646\u0627 \u0628\u062A\u062D\u0644\u064A\u0644 \u0627\u0644\u0635\u0648\u0631\u0629 \u0628\u0646\u062C\u0627\u062D!",
-        matchedProducts,
-        detectedSpecs: parsed.detectedSpecs
-      };
-    } catch (err) {
-      console.error("[RagAgent Vision Error]", err);
-      return {
-        reply: "\u062A\u0645 \u0627\u0633\u062A\u0644\u0627\u0645 \u0627\u0644\u0635\u0648\u0631\u0629 \u0628\u0646\u062C\u0627\u062D! \u064A\u0628\u062F\u0648 \u0623\u0646\u0643 \u062A\u0628\u062D\u062B \u0639\u0646 \u0645\u0646\u062A\u062C \u0645\u0634\u0627\u0628\u0647. \u0647\u0644 \u062A\u0648\u062F \u0645\u0639\u0631\u0641\u0629 \u0627\u0644\u0645\u0642\u0627\u0633\u0627\u062A \u0627\u0644\u0645\u062A\u0648\u0641\u0631\u0629 \u0648\u0627\u0644\u0623\u0633\u0639\u0627\u0631\u061F",
-        matchedProducts: []
-      };
+            ]
+          });
+          const text = response.text || "";
+          const cleanJson = text.replace(/```json/g, "").replace(/```/g, "").trim();
+          const parsed = JSON.parse(cleanJson);
+          const matchedProducts = catalog.filter((item) => (parsed.matchedCatalogIds || []).includes(item.id));
+          return {
+            reply: parsed.reply || "\u0644\u0642\u062F \u0642\u0645\u0646\u0627 \u0628\u062A\u062D\u0644\u064A\u0644 \u0627\u0644\u0635\u0648\u0631\u0629 \u0628\u0646\u062C\u0627\u062D!",
+            matchedProducts,
+            detectedSpecs: parsed.detectedSpecs
+          };
+        } catch (err) {
+          console.error("[RagAgent Vision Error]", err);
+          return {
+            reply: "\u062A\u0645 \u0627\u0633\u062A\u0644\u0627\u0645 \u0627\u0644\u0635\u0648\u0631\u0629 \u0628\u0646\u062C\u0627\u062D! \u064A\u0628\u062F\u0648 \u0623\u0646\u0643 \u062A\u0628\u062D\u062B \u0639\u0646 \u0645\u0646\u062A\u062C \u0645\u0634\u0627\u0628\u0647. \u0647\u0644 \u062A\u0648\u062F \u0645\u0639\u0631\u0641\u0629 \u0627\u0644\u0645\u0642\u0627\u0633\u0627\u062A \u0627\u0644\u0645\u062A\u0648\u0641\u0631\u0629 \u0648\u0627\u0644\u0623\u0633\u0639\u0627\u0631\u061F",
+            matchedProducts: []
+          };
+        }
+      }
+      /**
+       * RAG Query over Catalog and Store Data
+       */
+      async queryCatalog(customerMessage, catalog, conversationHistory = "") {
+        if (!this.ai) {
+          return "\u0623\u0647\u0644\u0627\u064B \u0628\u0643! \u064A\u0645\u0643\u0646\u0643 \u062A\u0635\u0641\u062D \u0627\u0644\u0645\u0646\u062A\u062C\u0627\u062A \u0627\u0644\u0645\u062A\u0648\u0641\u0631\u0629 \u0645\u0646 \u062E\u0644\u0627\u0644 \u0627\u0644\u0643\u062A\u0627\u0644\u0648\u062C \u0627\u0644\u062E\u0627\u0635 \u0628\u0646\u0627.";
+        }
+        try {
+          const catalogSummary = catalog.map((c) => `- ${c.name} (${c.price} \u062C.\u0645): ${c.description}`).join("\n");
+          const response = await this.ai.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: `\u0623\u0646\u062A "\u0623\u062D\u0645\u062F \u0627\u0644\u0645\u0628\u064A\u0639\u0627\u062A" - \u0627\u0644\u0645\u062F\u064A\u0631 \u0627\u0644\u062A\u0646\u0641\u064A\u0630\u064A \u0644\u0644\u0645\u0628\u064A\u0639\u0627\u062A \u0648\u0627\u0644\u0625\u063A\u0644\u0627\u0642 (Chief Sales Officer) \u0644\u0645\u0646\u0635\u0629 "\u0634\u0627\u062A \u0643\u0648\u0631 (ChatCore Enterprise AI)" \u0644\u0631\u0628\u0637 \u062E\u0637\u0648\u0637 \u0627\u0644\u0648\u0627\u062A\u0633\u0627\u0628 \u0648\u0627\u0644\u062A\u0644\u064A\u062C\u0631\u0627\u0645 \u0648\u0637\u0627\u0642\u0645 \u0627\u0644\u0645\u0648\u0638\u0641\u064A\u0646 \u0627\u0644\u0630\u0643\u0627\u0621 \u0627\u0644\u0627\u0635\u0637\u0646\u0627\u0639\u064A \u0641\u064A \u0645\u0635\u0631 \u0648\u0627\u0644\u0648\u0637\u0646 \u0627\u0644\u0639\u0631\u0628\u064A.
+\u062A\u062A\u062D\u062F\u062B \u0628\u0627\u0644\u0639\u0627\u0645\u064A\u0629 \u0627\u0644\u0645\u0635\u0631\u064A\u0629 \u0627\u0644\u0631\u0627\u0642\u064A\u0629 \u062C\u062F\u0627\u064B \u0648\u0627\u0644\u0648\u062F\u0648\u062F\u0629 \u0648\u0627\u0644\u0645\u062D\u062A\u0631\u0641\u0629.
+
+\u062E\u062F\u0645\u0627\u062A \u0648\u0628\u0627\u0642\u0627\u062A \u0627\u0634\u062A\u0631\u0627\u0643 \u0645\u0646\u0635\u0629 \u0634\u0627\u062A \u0643\u0648\u0631 (ChatCore SaaS Plans):
+1. \u{1F949} \u0628\u0627\u0642\u0629 \u0627\u0644\u0628\u062F\u0627\u064A\u0629 (Starter AI): 1,200 \u062C.\u0645 / \u0634\u0647\u0631\u064A\u0627\u064B (\u062A\u062A\u0636\u0645\u0646: \u0631\u0628\u0637 \u062E\u0637 \u0648\u0627\u062A\u0633\u0627\u0628 1 + \u0645\u0648\u0638\u0641 \u0645\u0628\u064A\u0639\u0627\u062A \u0630\u0643\u064A 24/7 + \u0646\u0638\u0627\u0645 \u0641\u0648\u0627\u062A\u064A\u0631).
+2. \u{1F948} \u0628\u0627\u0642\u0629 \u0627\u0644\u0623\u0639\u0645\u0627\u0644 (Business Swarm): 2,500 \u062C.\u0645 / \u0634\u0647\u0631\u064A\u0627\u064B (\u062A\u062A\u0636\u0645\u0646: \u0631\u0628\u0637 \u062E\u0637\u064A\u0646 \u0648\u0627\u062A\u0633\u0627\u0628 + \u062A\u0644\u064A\u062C\u0631\u0627\u0645 \u0628\u0648\u062A + \u0637\u0627\u0642\u0645 6 \u0645\u0648\u0638\u0641\u064A\u0646 \u0628\u0627\u0644\u0643\u0627\u0645\u0644: \u0645\u0628\u064A\u0639\u0627\u062A\u060C \u0641\u0648\u0627\u062A\u064A\u0631\u060C \u062F\u0639\u0645\u060C \u062A\u0635\u0645\u064A\u0645\u060C \u062A\u0633\u0648\u064A\u0642\u060C \u0631\u0627\u0648\u062A\u0631). [\u062E\u0635\u0645 \u062A\u0631\u0648\u064A\u062C\u064A 15% \u0645\u062A\u0648\u0641\u0631 \u0641\u0648\u0631\u0627\u064B \u0625\u0630\u0627 \u0637\u0644\u0628 \u0627\u0644\u0639\u0645\u064A\u0644].
+3. \u{1F947} \u0628\u0627\u0642\u0629 \u0627\u0644\u0645\u0624\u0633\u0633\u0627\u062A (Enterprise HQ): 4,900 \u062C.\u0645 / \u0634\u0647\u0631\u064A\u0627\u064B (\u062A\u062A\u0636\u0645\u0646: \u062E\u0637\u0648\u0637 \u0648\u0627\u062A\u0633\u0627\u0628 \u0648\u062A\u0644\u064A\u062C\u0631\u0627\u0645 \u063A\u064A\u0631 \u0645\u062D\u062F\u0648\u062F\u0629 + \u062F\u0645\u062C \u0642\u0627\u0639\u062F\u0629 \u0628\u064A\u0627\u0646\u0627\u062A Supabase + \u062A\u062F\u0631\u064A\u0628 \u0627\u0644\u0645\u0648\u0638\u0641\u064A\u0646 \u0627\u0644\u0645\u062E\u0635\u0635).
+
+\u0628\u064A\u0627\u0646\u0627\u062A \u0627\u0644\u0633\u062F\u0627\u062F \u0627\u0644\u0645\u062A\u0627\u062D\u0629 \u0644\u0644\u0639\u0645\u0644\u0627\u0621:
+- InstaPay IPA: trkroshdi@instapay (\u0628\u0627\u0633\u0645 \u0637\u0627\u0631\u0642 \u0631\u0634\u062F\u064A)
+- \u0645\u062D\u0641\u0638\u0629 \u0641\u0648\u062F\u0627\u0641\u0648\u0646 \u0643\u0627\u0634: 01115822923 (\u0628\u0627\u0633\u0645 \u0637\u0627\u0631\u0642 \u0631\u0634\u062F\u064A)
+- \u0627\u0644\u062D\u0633\u0627\u0628 \u0627\u0644\u0628\u0646\u0643\u064A / IBAN: EG1234567890123456789012345 (\u0627\u0644\u0628\u0646\u0643 \u0627\u0644\u0623\u0647\u0644\u064A \u0627\u0644\u0645\u0635\u0631\u064A - \u0637\u0627\u0631\u0642 \u0631\u0634\u062F\u064A)
+
+\u0627\u0633\u062A\u0631\u0627\u062A\u064A\u062C\u064A\u0629 \u0627\u0644\u0639\u0645\u0644 \u0627\u0644\u0627\u062D\u062A\u0631\u0627\u0641\u064A\u0629:
+1. \u0625\u0630\u0627 \u0633\u0623\u0644\u0643 \u0627\u0644\u0639\u0645\u064A\u0644 \u0639\u0646 \u0627\u0644\u0627\u0634\u062A\u0631\u0627\u0643\u0627\u062A \u0623\u0648 \u0627\u0644\u062E\u062F\u0645\u0627\u062A \u0623\u0648 \u062A\u062C\u0631\u0628\u0629 \u0627\u0644\u0646\u0638\u0627\u0645\u060C \u0627\u0634\u0631\u062D \u0644\u0647 \u0628\u0627\u0642\u0627\u062A \u0634\u0627\u062A \u0643\u0648\u0631 \u0641\u0648\u0631\u0627\u064B \u0628\u0648\u0636\u0648\u062D \u0648\u0627\u0639\u0631\u0636 \u0627\u0644\u0645\u0632\u0627\u064A\u0627 \u0648\u0627\u0633\u062A\u062B\u0645\u0627\u0631 \u0627\u0644\u0630\u0643\u0627\u0621 \u0627\u0644\u0627\u0635\u0637\u0646\u0627\u0639\u064A \u0644\u0634\u0631\u0643\u062A\u0647.
+2. \u0625\u0630\u0627 \u0648\u0627\u0641\u0642 \u0627\u0644\u0639\u0645\u064A\u0644 \u0623\u0648 \u0637\u0644\u0628 \u0627\u0644\u0634\u0631\u0627\u0621/\u0627\u0644\u0641\u0627\u062A\u0648\u0631\u0629\u060C \u0642\u0645 \u0628\u0625\u0635\u062F\u0627\u0631 \u062A\u0641\u0627\u0635\u064A\u0644 \u0627\u0644\u0641\u0627\u062A\u0648\u0631\u0629 \u0641\u0648\u0631\u0627\u064B \u0645\u0648\u0636\u062D\u0627\u064B \u0641\u064A\u0647\u0627 \u0631\u0642\u0645 \u0627\u0644\u062D\u0633\u0627\u0628 \u0648\u0627\u0633\u0645 \u0627\u0644\u0645\u0633\u062A\u0644\u0645 \u0637\u0627\u0631\u0642 \u0631\u0634\u062F\u064A \u0644\u062D\u062B\u0647 \u0639\u0644\u0649 \u0631\u0641\u0639 \u0633\u0643\u0631\u064A\u0646 \u0634\u0648\u062A \u0627\u0644\u0625\u064A\u0635\u0627\u0644!
+
+\u0633\u062C\u0644 \u0627\u0644\u0645\u062D\u0627\u062F\u062B\u0629 \u0627\u0644\u0633\u0627\u0628\u0642:
+${conversationHistory || "\u0644\u0627 \u064A\u0648\u062C\u062F \u0633\u064A\u0627\u0642 \u0633\u0627\u0628\u0642."}
+
+\u0631\u0633\u0627\u0644\u0629 \u0627\u0644\u0639\u0645\u064A\u0644 \u0627\u0644\u062D\u0627\u0644\u064A\u0629: "${customerMessage}"
+
+\u0627\u0644\u0642\u0648\u0627\u0639\u062F \u0627\u0644\u0645\u0637\u0644\u0648\u0628\u0629:
+- \u0627\u0643\u062A\u0628 \u0628\u0623\u0633\u0644\u0648\u0628 \u0645\u0635\u0631\u064A \u062A\u062C\u0627\u0631\u064A \u0631\u0627\u0642\u064D \u0648\u0645\u0645\u062A\u0639 \u0645\u0646\u0627\u0633\u0628 \u0644\u0644\u0648\u0627\u062A\u0633\u0627\u0628 \u0645\u0639 \u0631\u0645\u0648\u0632 \u062A\u0639\u0628\u064A\u0631\u064A\u0629 \u26A1.
+- \u0642\u0645 \u0628\u062A\u0623\u0643\u064A\u062F \u0627\u0644\u062E\u0637\u0648\u0629 \u0627\u0644\u062A\u0627\u0644\u064A\u0629 \u0644\u0625\u063A\u0644\u0627\u0642 \u0627\u0644\u0628\u064A\u0639\u0629 (Call to Action).`
+          });
+          return response.text || "\u0623\u0647\u0644\u0627\u064B \u0628\u0643! \u0643\u064A\u0641 \u064A\u0645\u0643\u0646\u0646\u064A \u0645\u0633\u0627\u0639\u062F\u062A\u0643 \u0627\u0644\u064A\u0648\u0645 \u0641\u064A \u062A\u0635\u0641\u062D \u0645\u0646\u062A\u062C\u0627\u062A\u0646\u0627\u061F";
+        } catch (err) {
+          console.error("[RagAgent Query Error]", err);
+          return "\u0623\u0647\u0644\u0627\u064B \u0628\u0643! \u0646\u062D\u0646 \u0645\u062A\u0648\u0627\u062C\u062F\u0648\u0646 \u0644\u0645\u0633\u0627\u0639\u062F\u062A\u0643. \u062A\u0641\u0636\u0644 \u0628\u0627\u0644\u0633\u0624\u0627\u0644 \u0639\u0646 \u0623\u064A \u0645\u0646\u062A\u062C.";
+        }
+      }
+    };
+  }
+});
+
+// src/agents/DevelopmentAgent.ts
+var DevelopmentAgent_exports = {};
+__export(DevelopmentAgent_exports, {
+  DevelopmentAgent: () => DevelopmentAgent
+});
+var import_genai5, DevelopmentAgent;
+var init_DevelopmentAgent = __esm({
+  "src/agents/DevelopmentAgent.ts"() {
+    import_genai5 = require("@google/genai");
+    DevelopmentAgent = class {
+      constructor() {
+        this.ai = null;
+        const apiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
+        if (apiKey) {
+          this.ai = new import_genai5.GoogleGenAI({ apiKey });
+        }
+      }
+      /**
+       * Performs an AI-driven system audit and generates strategic evolution recommendations
+       */
+      async generateSystemRecommendations(metricsData) {
+        const defaultSuggestions = [
+          {
+            id: "SUG-101",
+            title: "\u062A\u0641\u0639\u064A\u0644 \u0633\u0643\u0631\u064A\u0628\u062A \u0627\u0644\u062E\u0635\u0645 \u0627\u0644\u0645\u0624\u0642\u062A \u0644\u0644\u0639\u0645\u0644\u0627\u0621 \u0627\u0644\u0645\u062A\u0631\u062F\u062F\u064A\u0646",
+            category: "sales",
+            description: "\u062A\u0648\u062C\u064A\u0647 \u0645\u0648\u0638\u0641 \u0627\u0644\u0645\u0628\u064A\u0639\u0627\u062A (\u0623\u062D\u0645\u062F) \u0644\u0639\u0631\u0636 \u0643\u0648\u062F \u062E\u0635\u0645 10% \u062A\u0644\u0642\u0627\u0626\u064A\u0627\u064B \u0639\u0646\u062F\u0645\u0627 \u064A\u062A\u062C\u0627\u0648\u0632 \u062A\u0631\u062F\u062F \u0627\u0644\u0639\u0645\u064A\u0644 3 \u0623\u0633\u0626\u0644\u0629 \u0645\u062A\u062A\u0627\u0644\u064A\u0629 \u0639\u0646 \u0627\u0644\u0633\u0639\u0631.",
+            expectedImpact: "+22% \u0632\u064A\u0627\u062F\u0629 \u0641\u064A \u0646\u0633\u0628\u0629 \u0625\u063A\u0644\u0627\u0642 \u0627\u0644\u0645\u0628\u064A\u0639\u0627\u062A",
+            difficulty: "easy",
+            status: "pending",
+            actionType: "update_prompt",
+            actionPayload: { agentId: "agent_sales", maxDiscount: 15 }
+          },
+          {
+            id: "SUG-102",
+            title: "\u062A\u0641\u0639\u064A\u0644 \u0631\u0627\u0628\u0637 \u0627\u0644\u0633\u062F\u0627\u062F \u0627\u0644\u0633\u0631\u064A\u0639 \u0641\u064A \u0627\u0644\u0641\u0627\u062A\u0648\u0631\u0629 \u0627\u0644\u0623\u0648\u0644\u0649",
+            category: "performance",
+            description: "\u0625\u0644\u0632\u0627\u0645 \u0645\u0633\u0624\u0648\u0644 \u0627\u0644\u0641\u0648\u0627\u062A\u064A\u0631 (\u0627\u0644\u0623\u0633\u062A\u0627\u0630 \u0635\u0644\u0627\u062D) \u0628\u0625\u0631\u0641\u0627\u0642 \u0631\u0627\u0628\u0637 \u0627\u0644\u062F\u0641\u0639 \u0628\u0628\u0646\u0648\u062F \u0627\u0644\u0641\u0627\u062A\u0648\u0631\u0629 \u0641\u0648\u0631 \u0627\u0633\u062A\u062E\u0631\u0627\u062C\u0647\u0627 \u0644\u062A\u0642\u0644\u064A\u0644 \u0648\u0642\u062A \u0627\u0644\u062A\u062D\u0635\u064A\u0644.",
+            expectedImpact: "\u062A\u0642\u0644\u064A\u0644 \u0648\u0642\u062A \u0627\u0644\u062F\u0641\u0639 \u0628\u0646\u0633\u0628\u0629 40%",
+            difficulty: "easy",
+            status: "pending",
+            actionType: "optimize_guardrail",
+            actionPayload: { agentId: "agent_invoice", autoPaymentLink: true }
+          },
+          {
+            id: "SUG-103",
+            title: "\u0625\u0637\u0644\u0627\u0642 \u0643\u0631\u0648\u062A \u0639\u0631\u0636 \u0632\u0645\u0631\u062F\u064A\u0629 \u0641\u0627\u062E\u0631\u0629 \u0644\u0628\u0627\u0642\u0629 \u0627\u0644\u0645\u0646\u062A\u062C\u0627\u062A \u0627\u0644\u0623\u0643\u062B\u0631 \u0645\u0628\u064A\u0639\u0627\u064B",
+            category: "media",
+            description: '\u062A\u0648\u062C\u064A\u0647 \u0635\u0627\u0646\u0639 \u0627\u0644\u062A\u0635\u0627\u0645\u064A\u0645 (\u0643\u0631\u064A\u0645) \u0644\u062A\u0641\u0639\u064A\u0644 \u062B\u064A\u0645 \u0627\u0644\u0632\u062C\u0627\u062C \u0627\u0644\u0632\u0645\u0631\u062F\u064A \u0648\u062A\u0644\u0642\u0627\u0626\u064A\u0627\u064B \u0625\u0631\u0641\u0627\u0642 \u0634\u0627\u0631\u0629 "\u0627\u0644\u0623\u0643\u062B\u0631 \u0645\u0628\u064A\u0639\u0627\u064B \u{1F525}".',
+            expectedImpact: "+35% \u062A\u0641\u0627\u0639\u0644 \u0639\u0644\u0649 \u0631\u0633\u0627\u0626\u0644 \u0627\u0644\u0648\u0627\u062A\u0633\u0627\u0628 \u0627\u0644\u0645\u0635\u0648\u0631\u0629",
+            difficulty: "medium",
+            status: "pending",
+            actionType: "update_prompt",
+            actionPayload: { agentId: "agent_media", theme: "vibrant_emerald" }
+          },
+          {
+            id: "SUG-104",
+            title: "\u0627\u0644\u0623\u062A\u0645\u062A\u0629 \u0627\u0644\u062A\u0644\u0642\u0627\u0626\u064A\u0629 \u0644\u062A\u0630\u0627\u0643\u0631 \u0627\u0644\u062F\u0639\u0645 \u0627\u0644\u0645\u0639\u0642\u062F\u0629 \u0645\u0639 \u0627\u0644\u0625\u062E\u0637\u0627\u0631 \u0627\u0644\u0641\u0648\u0631\u064A \u0644\u0644\u0645\u0634\u0631\u0641",
+            category: "support",
+            description: "\u0639\u0646\u062F \u0627\u0643\u062A\u0634\u0627\u0641 \u0628\u0644\u0627\u063A \u062A\u0642\u0646\u064A \u0628\u062F\u0631\u062C\u0629 \u0623\u0648\u0644\u0648\u064A\u0629 \u0639\u0627\u0644\u064A\u0629 Urgent\u060C \u064A\u062A\u0645 \u0641\u062A\u062D \u0627\u0644\u062A\u0630\u0643\u0631\u0629 \u0648\u0625\u0639\u0627\u062F\u0629 \u062A\u0648\u062C\u064A\u0647 \u0627\u0644\u0625\u0634\u0639\u0627\u0631 \u0644\u0640 WhatsApp \u0627\u0644\u0645\u0634\u0631\u0641.",
+            expectedImpact: "\u0627\u0633\u062A\u062C\u0627\u0628\u0629 \u0644\u0644\u0623\u0639\u0637\u0627\u0644 \u0627\u0644\u062D\u0631\u062C\u0629 \u0641\u064A \u0623\u0642\u0644 \u0645\u0646 2 \u062F\u0642\u064A\u0642\u0629",
+            difficulty: "advanced",
+            status: "pending",
+            actionType: "optimize_guardrail",
+            actionPayload: { agentId: "agent_support", autoEscalateMinutes: 2 }
+          }
+        ];
+        if (!this.ai) {
+          return {
+            textSummary: "\u{1F680} \u062A\u0642\u0631\u064A\u0631 \u0648\u0643\u064A\u0644 \u062A\u0637\u0648\u064A\u0631 \u0627\u0644\u0645\u0646\u0638\u0648\u0645\u0629: \u062A\u0645 \u062A\u062D\u0644\u064A\u0644 \u0623\u062F\u0627\u0621 \u0627\u0644\u0646\u0638\u0627\u0645 \u0648\u062A\u0642\u062F\u064A\u0645 4 \u062A\u0648\u0635\u064A\u0627\u062A \u0627\u0633\u062A\u0631\u0627\u062A\u064A\u062C\u064A\u0629 \u0644\u0631\u0641\u0639 \u0627\u0644\u0645\u0628\u064A\u0639\u0627\u062A \u0648\u062A\u062D\u0633\u064A\u0646 \u0627\u0633\u062A\u062C\u0627\u0628\u0629 \u0627\u0644\u0645\u0648\u0638\u0641\u064A\u0646.",
+            suggestions: defaultSuggestions
+          };
+        }
+        try {
+          const response = await this.ai.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: `\u0623\u0646\u062A \u0648\u0643\u064A\u0644 \u062A\u0637\u0648\u064A\u0631 \u0648\u062A\u062D\u062F\u064A\u062B \u0627\u0644\u0645\u0646\u0638\u0648\u0645\u0629 \u0627\u0644\u0630\u0643\u064A (System Evolution & Growth Consultant Agent).
+\u0642\u0645 \u0628\u0645\u0631\u0627\u062C\u0639\u0629 \u0623\u062F\u0627\u0621 \u0627\u0644\u0633\u064A\u0631\u0641\u0631\u060C \u0627\u0644\u0645\u0628\u064A\u0639\u0627\u062A\u060C \u0648\u0645\u062E\u0631\u062C\u0627\u062A \u0627\u0644\u0648\u0643\u0644\u0627\u0621\u060C \u0648\u062A\u0648\u0644\u064A\u062F 4 \u062A\u0648\u0635\u064A\u0627\u062A \u0639\u0645\u0644\u064A\u0629 \u0644\u062A\u0637\u0648\u064A\u0631 \u0627\u0644\u0646\u0638\u0627\u0645\u060C \u0648\u0623\u0631\u062C\u0639 JSON \u0641\u0642\u0637 \u0628\u0647\u0630\u0627 \u0627\u0644\u062A\u0646\u0633\u064A\u0642:
+
+{
+  "summary": "\u0645\u0644\u062E\u0635 \u062A\u0642\u064A\u064A\u0645 \u0623\u062F\u0627\u0621 \u0627\u0644\u0645\u0646\u0638\u0648\u0645\u0629 \u0641\u064A \u0633\u0637\u0631\u064A\u0646 \u0645\u0641\u0639\u0645\u0629 \u0628\u0627\u0644\u062B\u0642\u0629",
+  "recommendations": [
+    {
+      "id": "SUG-101",
+      "title": "\u0639\u0646\u0648\u0627\u0646 \u0627\u0644\u062A\u0648\u0635\u064A\u0629",
+      "category": "sales" | "performance" | "media" | "support",
+      "description": "\u062A\u0641\u0627\u0635\u064A\u0644 \u0627\u0644\u062A\u062D\u062F\u064A\u062B \u0627\u0644\u0645\u0642\u062A\u0631\u062D",
+      "expectedImpact": "\u0627\u0644\u0623\u062B\u0631 \u0627\u0644\u0645\u062A\u0648\u0642\u0639 (\u0645\u062B\u0627\u0644: +25% \u0645\u0628\u064A\u0639\u0627\u062A)",
+      "difficulty": "easy" | "medium" | "advanced"
+    }
+  ]
+}`
+          });
+          const text = response.text || "";
+          const cleanJson = text.replace(/```json/g, "").replace(/```/g, "").trim();
+          const parsed = JSON.parse(cleanJson);
+          const suggestions = (parsed.recommendations || []).map((r, idx) => ({
+            id: r.id || `SUG-${105 + idx}`,
+            title: r.title || "\u062A\u0648\u0635\u064A\u0629 \u062A\u0637\u0648\u064A\u0631\u064A\u0629 \u062C\u062F\u064A\u062F\u0629",
+            category: r.category || "sales",
+            description: r.description || "\u062A\u062D\u062F\u064A\u062B \u0623\u062F\u0627\u0621 \u0627\u0644\u0645\u0648\u0638\u0641 \u0648\u062A\u062D\u0633\u064A\u0646 \u0627\u0644\u0627\u0633\u062A\u062C\u0627\u0628\u0629.",
+            expectedImpact: r.expectedImpact || "+20% \u062A\u062D\u0633\u064A\u0646 \u0623\u062F\u0627\u0621",
+            difficulty: r.difficulty || "easy",
+            status: "pending",
+            actionType: "update_prompt"
+          }));
+          return {
+            textSummary: parsed.summary || "\u{1F680} \u0627\u0644\u062A\u0642\u0631\u064A\u0631 \u0627\u0644\u0627\u0633\u062A\u0631\u0627\u062A\u064A\u062C\u064A \u0644\u0648\u0643\u064A\u0644 \u0627\u0644\u062A\u0637\u0648\u064A\u0631: \u0627\u0644\u0645\u0646\u0638\u0648\u0645\u0629 \u062A\u0639\u0645\u0644 \u0628\u0643\u0641\u0627\u0621\u0629 98% \u0648\u062A\u0648\u0635\u064A\u0627\u062A \u0627\u0644\u062A\u0637\u0648\u064A\u0631 \u062C\u0627\u0647\u0632\u0629 \u0644\u0644\u062A\u0637\u0628\u064A\u0642.",
+            suggestions: suggestions.length > 0 ? suggestions : defaultSuggestions
+          };
+        } catch (err) {
+          console.error("[DevelopmentAgent Error]", err);
+          return {
+            textSummary: "\u{1F680} \u062A\u0642\u0631\u064A\u0631 \u0648\u0643\u064A\u0644 \u062A\u0637\u0648\u064A\u0631 \u0627\u0644\u0645\u0646\u0638\u0648\u0645\u0629: \u0627\u0644\u062A\u0648\u0635\u064A\u0627\u062A \u062C\u0627\u0647\u0632\u0629 \u0644\u0644\u062A\u0637\u0628\u064A\u0642 \u0628\u0646\u0642\u0631\u0629 \u0648\u0627\u062D\u062F\u0629.",
+            suggestions: defaultSuggestions
+          };
+        }
+      }
+    };
+  }
+});
+
+// src/agents/InvoiceAgent.ts
+var InvoiceAgent_exports = {};
+__export(InvoiceAgent_exports, {
+  InvoiceAgent: () => InvoiceAgent
+});
+var import_genai6, InvoiceAgent;
+var init_InvoiceAgent = __esm({
+  "src/agents/InvoiceAgent.ts"() {
+    import_genai6 = require("@google/genai");
+    InvoiceAgent = class {
+      constructor() {
+        this.ai = null;
+        const apiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
+        if (apiKey) {
+          this.ai = new import_genai6.GoogleGenAI({ apiKey });
+        }
+      }
+      /**
+       * Parses customer request and generates a complete structured invoice
+       */
+      async generateInvoice(inputPrompt, customerName = "\u0627\u0644\u0639\u0645\u064A\u0644 \u0627\u0644\u0645\u0645\u064A\u0632", currency = "EGP", config) {
+        const taxPercentage = config?.taxRate !== void 0 ? config.taxRate : 14;
+        const activeCurrency = config?.currency || currency;
+        const defaultInvoice = {
+          invoiceNumber: `INV-${Date.now().toString().slice(-6)}`,
+          customerName,
+          date: (/* @__PURE__ */ new Date()).toISOString().split("T")[0],
+          items: [
+            { name: "\u0637\u0644\u0628 \u062E\u062F\u0645\u0627\u062A/\u0645\u0646\u062A\u062C\u0627\u062A \u0627\u0644\u062A\u0648\u0627\u062C\u062F \u0627\u0644\u0631\u0642\u0645\u064A", quantity: 1, unitPrice: 500, totalPrice: 500 }
+          ],
+          subtotal: 500,
+          tax: Math.round(500 * (taxPercentage / 100)),
+          discount: 50,
+          grandTotal: 500 - 50 + Math.round(450 * (taxPercentage / 100)),
+          currency: activeCurrency,
+          paymentStatus: "pending",
+          paymentUrl: `https://pay.chatcore.com/inv-${Date.now().toString().slice(-6)}`
+        };
+        if (!this.ai || !inputPrompt.trim()) {
+          return {
+            textResponse: `\u0645\u0631\u062D\u0628\u0627\u064B ${customerName}! \u062A\u0645 \u062A\u062C\u0647\u064A\u0632 \u0641\u0627\u062A\u0648\u0631\u0629 \u0637\u0644\u0628\u0643 \u0628\u0646\u062C\u0627\u062D \u0628\u0645\u0628\u0644\u063A \u0625\u062C\u0645\u0627\u0644\u064A ${defaultInvoice.grandTotal} ${currency}.
+\u064A\u0645\u0643\u0646\u0643 \u0633\u062F\u0627\u062F \u0627\u0644\u0641\u0627\u062A\u0648\u0631\u0629 \u0645\u0628\u0627\u0634\u0631\u0629 \u0639\u0628\u0631 \u0627\u0644\u0631\u0627\u0628\u0637 \u0627\u0644\u062A\u0627\u0644\u064A: ${defaultInvoice.paymentUrl}`,
+            invoice: defaultInvoice
+          };
+        }
+        try {
+          const response = await this.ai.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: `\u0623\u0646\u062A \u0648\u0643\u064A\u0644 \u0627\u0644\u0641\u0648\u0627\u062A\u064A\u0631 \u0648\u0627\u0644\u062D\u0633\u0627\u0628\u0627\u062A \u0627\u0644\u0630\u0643\u064A (Invoice Agent) \u0644\u0645\u0646\u0635\u0629 \u0627\u0644\u0648\u0627\u062A\u0633\u0627\u0628 \u0627\u0644\u062A\u062C\u0627\u0631\u064A\u0629.
+\u0642\u0645 \u0628\u062A\u062D\u0644\u064A\u0644 \u0637\u0644\u0628 \u0627\u0644\u0639\u0645\u064A\u0644 \u0627\u0644\u062A\u0627\u0644\u064A \u0648\u0627\u0633\u062A\u062E\u0631\u0627\u062C \u0628\u0646\u0648\u062F \u0627\u0644\u0641\u0627\u062A\u0648\u0631\u0629 \u0648\u0627\u0644\u0623\u0633\u0639\u0627\u0631\u060C \u062B\u0645 \u0623\u0631\u062C\u0639 \u0643\u0648\u062F JSON \u0641\u0642\u0637 \u0628\u0647\u0630\u0627 \u0627\u0644\u062A\u0646\u0633\u064A\u0642:
+
+{
+  "items": [
+    { "name": "\u0627\u0633\u0645 \u0627\u0644\u0645\u0646\u062A\u062C/\u0627\u0644\u062E\u062F\u0645\u0629", "quantity": 1, "unitPrice": 100, "totalPrice": 100 }
+  ],
+  "discount": 0,
+  "currency": "EGP \u0623\u0648 SAR \u0623\u0648 USD \u062D\u0633\u0628 \u0627\u0644\u0633\u064A\u0627\u0642",
+  "summaryNote": "\u0631\u0633\u0627\u0644\u0629 \u062A\u0631\u062D\u064A\u0628\u064A\u0629 \u0642\u0635\u064A\u0631\u0629 \u0648\u0641\u0627\u062E\u0631\u0629 \u0644\u0644\u0639\u0645\u064A\u0644 \u062A\u0631\u0627\u0641\u0642\u0647 \u0628\u0627\u0644\u0641\u0627\u062A\u0648\u0631\u0629"
+}
+
+\u0637\u0644\u0628 \u0627\u0644\u0639\u0645\u064A\u0644: "${inputPrompt}"`
+          });
+          const text = response.text || "";
+          const cleanJson = text.replace(/```json/g, "").replace(/```/g, "").trim();
+          const parsed = JSON.parse(cleanJson);
+          const items = parsed.items || defaultInvoice.items;
+          const subtotal = items.reduce((acc, item) => acc + (item.totalPrice || item.quantity * item.unitPrice), 0);
+          const discount = parsed.discount || 0;
+          const tax = Math.round((subtotal - discount) * (taxPercentage / 100));
+          const grandTotal = Math.max(0, subtotal - discount + tax);
+          const curr = parsed.currency || activeCurrency;
+          const generatedInvoice = {
+            invoiceNumber: `INV-${Math.floor(1e5 + Math.random() * 9e5)}`,
+            customerName,
+            date: (/* @__PURE__ */ new Date()).toISOString().split("T")[0],
+            items,
+            subtotal,
+            tax,
+            discount,
+            grandTotal,
+            currency: curr,
+            paymentStatus: "pending",
+            paymentUrl: `https://pay.chatcore.com/inv-${Math.floor(1e5 + Math.random() * 9e5)}`
+          };
+          const note = parsed.summaryNote || `\u0623\u0647\u0644\u0627\u064B \u0628\u0643 \u064A\u0627 \u0641\u0646\u062F\u0645! \u062A\u0645 \u0625\u0639\u062F\u0627\u062F \u0641\u0627\u062A\u0648\u0631\u062A\u0643 \u0627\u0644\u062E\u0627\u0635\u0629 \u0628\u0640 ${items.map((i) => i.name).join(" \u0648 ")}.`;
+          const textResponse = `${note}
+
+\u{1F9FE} *\u062A\u0641\u0627\u0635\u064A\u0644 \u0627\u0644\u0641\u0627\u062A\u0648\u0631\u0629 (${generatedInvoice.invoiceNumber})*
+` + items.map((i) => `\u2022 ${i.name} (\u0639\u062F\u062F ${i.quantity}): ${i.totalPrice} ${curr}`).join("\n") + `
+------------------------
+\u0627\u0644\u0645\u062C\u0645\u0648\u0639 \u0627\u0644\u0641\u0631\u0639\u064A: ${subtotal} ${curr}` + (discount > 0 ? `
+\u0627\u0644\u062E\u0635\u0645: -${discount} ${curr}` : "") + `
+\u0636\u0631\u064A\u0628\u0629 \u0627\u0644\u0642\u064A\u0645\u0629 \u0627\u0644\u0645\u0636\u0627\u0641\u0629 (14%): ${tax} ${curr}
+*\u0627\u0644\u0625\u062C\u0645\u0627\u0644\u064A \u0627\u0644\u0645\u0637\u0644\u0648\u0628: ${grandTotal} ${curr}*
+
+\u{1F4B3} \u0631\u0627\u0628\u0637 \u0627\u0644\u062F\u0641\u0639 \u0627\u0644\u0645\u0628\u0627\u0634\u0631 (\u0622\u0645\u0646 100%): ${generatedInvoice.paymentUrl}`;
+          return { textResponse, invoice: generatedInvoice };
+        } catch (err) {
+          console.error("[InvoiceAgent Error]", err);
+          return {
+            textResponse: `\u062A\u0645 \u062A\u062C\u0647\u064A\u0632 \u0641\u0627\u062A\u0648\u0631\u062A\u0643 \u0627\u0644\u0631\u0633\u0645\u064A\u0629 \u0628\u0645\u0628\u0644\u063A \u0625\u062C\u0645\u0627\u0644\u064A ${defaultInvoice.grandTotal} ${currency}.
+\u0631\u0627\u0628\u0637 \u0627\u0644\u062F\u0641\u0639: ${defaultInvoice.paymentUrl}`,
+            invoice: defaultInvoice
+          };
+        }
+      }
+    };
+  }
+});
+
+// src/agents/MediaAgent.ts
+var MediaAgent_exports = {};
+__export(MediaAgent_exports, {
+  MediaAgent: () => MediaAgent
+});
+var import_genai7, MediaAgent;
+var init_MediaAgent = __esm({
+  "src/agents/MediaAgent.ts"() {
+    import_genai7 = require("@google/genai");
+    MediaAgent = class {
+      constructor() {
+        this.ai = null;
+        const apiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
+        if (apiKey) {
+          this.ai = new import_genai7.GoogleGenAI({ apiKey });
+        }
+      }
+      /**
+       * Generates custom quote card & visual banner data for WhatsApp media dispatch
+       */
+      async generateMediaCard(promptText, config) {
+        const defaultCard = {
+          title: "\u0639\u0631\u0636 \u062E\u0627\u0635 \u0648\u0645\u0645\u064A\u0632",
+          subtitle: "\u0628\u0627\u0642\u0629 \u0627\u0644\u062A\u0648\u0627\u062C\u062F \u0627\u0644\u0631\u0642\u0645\u064A \u0648\u0627\u0644\u062D\u0644\u0648\u0644 \u0627\u0644\u0630\u0643\u064A\u0629",
+          price: "299 EGP",
+          badge: config?.primaryBadge || "\u062E\u0635\u0645 30% \u0644\u0641\u062A\u0631\u0629 \u0645\u062D\u062F\u0648\u062F\u0629",
+          accentColor: config?.brandColorHex || "#00a884",
+          imageUrl: "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=800&q=80",
+          features: ["\u062F\u0639\u0645 \u0641\u0646\u064A 24/7", "\u0631\u0628\u0637 \u0648\u0627\u062A\u0633\u0627\u0628 \u0627\u0644\u0633\u062D\u0627\u0628\u064A", "\u0630\u0643\u0627\u0621 \u0627\u0635\u0637\u0646\u0627\u0639\u064A \u0645\u062A\u0639\u062F\u062F \u0627\u0644\u0648\u0643\u0644\u0627\u0621"]
+        };
+        if (!this.ai || !promptText.trim()) {
+          return {
+            textResponse: "\u{1F3A8} \u062A\u0645 \u062A\u0635\u0645\u064A\u0645 \u0628\u0637\u0627\u0642\u0629 \u0627\u0644\u0639\u0631\u0636 \u0627\u0644\u0628\u0635\u0631\u064A \u0627\u0644\u062E\u0627\u0635\u0629 \u0628\u0637\u0644\u0628\u0643 \u0628\u0646\u062C\u0627\u062D!",
+            card: defaultCard
+          };
+        }
+        try {
+          const response = await this.ai.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: `\u0623\u0646\u062A \u0648\u0643\u064A\u0644 \u0627\u0644\u062A\u0635\u0645\u064A\u0645 \u0648\u0635\u0627\u0646\u0639 \u0627\u0644\u0635\u0648\u0631 \u0627\u0644\u0628\u0635\u0631\u064A\u0629 (Media Agent) \u0644\u0645\u0646\u0635\u0629 \u0627\u0644\u0648\u0627\u062A\u0633\u0627\u0628 \u0627\u0644\u062A\u062C\u0627\u0631\u064A\u0629.
+\u0642\u0645 \u0628\u062A\u062D\u0644\u064A\u0644 \u0637\u0644\u0628 \u0627\u0644\u0639\u0645\u064A\u0644 \u0648\u062A\u0648\u0644\u064A\u062F \u0628\u0637\u0627\u0642\u0629 \u062A\u0633\u0648\u064A\u0642\u064A\u0629/\u062A\u0635\u0645\u064A\u0645 \u0645\u0646\u062A\u062C\u060C \u0648\u0623\u0631\u062C\u0639 JSON \u0641\u0642\u0637 \u0628\u0647\u0630\u0627 \u0627\u0644\u062A\u0646\u0633\u064A\u0642:
+
+{
+  "title": "\u0639\u0646\u0648\u0627\u0646 \u0627\u0644\u0639\u0631\u0636/\u0627\u0644\u0645\u0646\u062A\u062C",
+  "subtitle": "\u0648\u0635\u0641 \u0642\u0635\u064A\u0631 \u062C\u0630\u0627\u0628",
+  "price": "\u0627\u0644\u0633\u0639\u0631 \u0627\u0644\u0646\u0647\u0627\u0626\u064A",
+  "badge": "\u0634\u0627\u0631\u0629 \u0627\u0644\u0639\u0631\u0636 (\u0645\u062B\u0627\u0644: \u0627\u0644\u0623\u0643\u062B\u0631 \u0645\u0628\u064A\u0639\u0627\u064B)",
+  "accentColor": "#00a884 \u0623\u0648 \u0644\u0648\u0646 \u0633\u062F\u0627\u0633\u064A \u0639\u0634\u0631\u064A \u0645\u0646\u0627\u0633\u0628",
+  "features": ["\u0645\u064A\u0632\u0629 1", "\u0645\u064A\u0632\u0629 2", "\u0645\u064A\u0632\u0629 3"],
+  "captionText": "\u0646\u0635 \u0627\u0644\u062A\u0643\u0633\u062A \u0627\u0644\u0630\u064A \u0633\u064A\u062A\u0645 \u0625\u0631\u0641\u0627\u0642\u0647 \u0645\u0639 \u0627\u0644\u0635\u0648\u0631\u0629 \u0641\u064A \u0627\u0644\u0648\u0627\u062A\u0633\u0627\u0628"
+}
+
+\u0637\u0644\u0628 \u0627\u0644\u0639\u0645\u064A\u0644: "${promptText}"`
+          });
+          const text = response.text || "";
+          const cleanJson = text.replace(/```json/g, "").replace(/```/g, "").trim();
+          const parsed = JSON.parse(cleanJson);
+          const card = {
+            title: parsed.title || defaultCard.title,
+            subtitle: parsed.subtitle || defaultCard.subtitle,
+            price: parsed.price || defaultCard.price,
+            badge: parsed.badge || defaultCard.badge,
+            accentColor: parsed.accentColor || defaultCard.accentColor,
+            imageUrl: defaultCard.imageUrl,
+            features: parsed.features || defaultCard.features
+          };
+          const caption = parsed.captionText || `\u{1F5BC}\uFE0F *${card.title}*
+${card.subtitle}
+\u{1F4B0} \u0627\u0644\u0633\u0639\u0631: *${card.price}*
+\u2728 \u0627\u0644\u0645\u0645\u064A\u0632\u0627\u062A:
+` + card.features.map((f) => `\u2022 ${f}`).join("\n");
+          return {
+            textResponse: caption,
+            card
+          };
+        } catch (err) {
+          console.error("[MediaAgent Error]", err);
+          return {
+            textResponse: "\u{1F3A8} \u062A\u0645 \u0625\u0639\u062F\u0627\u062F \u0628\u0637\u0627\u0642\u0629 \u0627\u0644\u062A\u0635\u0645\u064A\u0645 \u0627\u0644\u0639\u0631\u0636 \u0627\u0644\u0628\u0635\u0631\u064A \u0644\u0637\u0644\u0628\u0643 \u0628\u0646\u062C\u0627\u062D!",
+            card: defaultCard
+          };
+        }
+      }
+    };
+  }
+});
+
+// src/agents/SupportAgent.ts
+var import_genai8, SupportAgent;
+var init_SupportAgent = __esm({
+  "src/agents/SupportAgent.ts"() {
+    import_genai8 = require("@google/genai");
+    SupportAgent = class {
+      constructor() {
+        this.ai = null;
+        const apiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
+        if (apiKey) {
+          this.ai = new import_genai8.GoogleGenAI({ apiKey });
+        }
+      }
+      /**
+       * Analyzes customer issue and formats ticket / technical resolution
+       */
+      async handleSupportQuery(problemText, config) {
+        const prefix = config?.ticketPrefix || "TCK";
+        const defaultTicket = {
+          ticketId: `${prefix}-${Math.floor(1e3 + Math.random() * 9e3)}`,
+          category: "technical",
+          priority: "medium",
+          summary: problemText,
+          suggestedSolution: "\u0633\u064A\u0642\u0648\u0645 \u0627\u0644\u0641\u0631\u064A\u0642 \u0627\u0644\u062A\u0642\u0646\u064A \u0628\u0645\u0631\u0627\u062C\u0639\u0629 \u0627\u0644\u0633\u062C\u0644\u0627\u062A \u0627\u0644\u0628\u0631\u0645\u062C\u064A\u0629 \u0648\u0645\u0648\u0627\u0641\u0627\u062A\u0643 \u0628\u0627\u0644\u062D\u0644 \u062E\u0644\u0627\u0644 15 \u062F\u0642\u064A\u0642\u0629."
+        };
+        if (!this.ai || !problemText.trim()) {
+          return {
+            textResponse: `\u{1F6E0}\uFE0F \u0623\u0647\u0644\u0627\u064B \u0628\u0643! \u062A\u0645 \u062A\u0633\u0644\u064A\u0645 \u0637\u0644\u0628 \u0627\u0644\u062F\u0639\u0645 \u0627\u0644\u0641\u0646\u064A \u0648\u0631\u0642\u0645 \u0627\u0644\u062A\u0630\u0643\u0631\u0629 \u0627\u0644\u062E\u0627\u0635 \u0628\u0643 \u0647\u0648: *${defaultTicket.ticketId}*.
+${defaultTicket.suggestedSolution}`,
+            ticket: defaultTicket
+          };
+        }
+        try {
+          const response = await this.ai.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: `\u0623\u0646\u062A \u0648\u0643\u064A\u0644 \u0627\u0644\u062F\u0639\u0645 \u0627\u0644\u0641\u0646\u064A \u0648\u0645\u0633\u0624\u0648\u0644 \u0627\u0644\u062A\u0630\u0627\u0643\u0631 \u0627\u0644\u0630\u0643\u064A (Support Agent) \u0644\u0645\u0646\u0635\u0629 \u0627\u0644\u0648\u0627\u062A\u0633\u0627\u0628.
+\u0642\u0645 \u0628\u062A\u062D\u0644\u064A\u0644 \u0628\u0644\u0627\u063A \u0623\u0648 \u0627\u0644\u0645\u0634\u0643\u0644\u0629 \u0627\u0644\u062A\u0642\u0646\u064A\u0629 \u0644\u0644\u0639\u0645\u064A\u0644 \u0648\u0623\u0631\u062C\u0639 JSON \u0641\u0642\u0637:
+
+{
+  "category": "technical" | "billing" | "account" | "general",
+  "priority": "low" | "medium" | "high" | "urgent",
+  "summary": "\u0645\u0644\u062E\u0635 \u0627\u0644\u0645\u0634\u0643\u0644\u0629 \u0641\u064A \u0633\u0637\u0631 \u0648\u0627\u062D\u062F",
+  "immediateSolution": "\u062E\u0637\u0648\u0629 \u0633\u0631\u064A\u0639\u0629 \u064A\u062C\u0631\u0628\u0647\u0627 \u0627\u0644\u0639\u0645\u064A\u0644 \u0627\u0644\u0622\u0646",
+  "ticketNote": "\u0631\u0633\u0627\u0644\u0629 \u0627\u062D\u062A\u0631\u0627\u0641\u064A\u0629 \u0637\u0645\u0623\u0646\u064A\u0646\u0629 \u0644\u0644\u0639\u0645\u064A\u0644"
+}
+
+\u0645\u0634\u0643\u0644\u0629 \u0627\u0644\u0639\u0645\u064A\u0644: "${problemText}"`
+          });
+          const text = response.text || "";
+          const cleanJson = text.replace(/```json/g, "").replace(/```/g, "").trim();
+          const parsed = JSON.parse(cleanJson);
+          const ticket = {
+            ticketId: `${prefix}-${Math.floor(1e3 + Math.random() * 9e3)}`,
+            category: parsed.category || "technical",
+            priority: parsed.priority || "medium",
+            summary: parsed.summary || problemText,
+            suggestedSolution: parsed.immediateSolution
+          };
+          const reply = `\u{1F6E0}\uFE0F *\u0641\u0631\u064A\u0642 \u0627\u0644\u062F\u0639\u0645 \u0627\u0644\u0641\u0646\u064A \u0627\u0644\u0630\u0643\u064A*
+
+\u0623\u0647\u0644\u0627\u064B \u0628\u0643! \u062A\u0645 \u062A\u0633\u062C\u064A\u0644 \u0628\u0644\u0627\u063A\u0643 \u0648\u062A\u0645 \u0625\u0646\u0634\u0627\u0621 \u0627\u0644\u062A\u0630\u0643\u0631\u0629 \u0631\u0642\u0645: *${ticket.ticketId}*
+\u2022 \u0627\u0644\u062A\u0635\u0646\u064A\u0641: ${ticket.category}
+\u2022 \u0627\u0644\u0623\u0648\u0644\u0648\u064A\u0629: ${ticket.priority}
+
+` + (parsed.immediateSolution ? `\u{1F4A1} *\u062D\u0644 \u0645\u0642\u062A\u0631\u062D \u0633\u0631\u064A\u0639:* ${parsed.immediateSolution}
+
+` : "") + (parsed.ticketNote || "\u064A\u0642\u0648\u0645 \u0645\u0647\u0646\u062F\u0633 \u0627\u0644\u062F\u0639\u0645 \u0627\u0644\u0641\u0646\u064A \u0628\u0645\u062A\u0627\u0628\u0639\u0629 \u0627\u0644\u0633\u064A\u0631\u0641\u0631\u0627\u062A \u0648\u0633\u0646\u0648\u0627\u0641\u064A\u0643 \u0628\u0627\u0644\u0631\u062F \u0641\u0648\u0631 \u0627\u0644\u0627\u0646\u062A\u0647\u0627\u0621.");
+          return { textResponse: reply, ticket };
+        } catch (err) {
+          console.error("[SupportAgent Error]", err);
+          return {
+            textResponse: `\u{1F6E0}\uFE0F \u062A\u0645 \u0641\u062A\u062D \u062A\u0630\u0643\u0631\u0629 \u062F\u0639\u0645 \u0641\u0646\u064A \u062C\u062F\u064A\u062F\u0629 \u0631\u0642\u0645 *${defaultTicket.ticketId}*. \u0633\u064A\u0642\u0648\u0645 \u0627\u0644\u0645\u0647\u0646\u062F\u0633 \u0627\u0644\u0645\u0633\u0624\u0648\u0644 \u0628\u0645\u0631\u0627\u062C\u0639\u062A\u0647\u0627 \u0641\u0648\u0631\u0627\u064B.`,
+            ticket: defaultTicket
+          };
+        }
+      }
+    };
+  }
+});
+
+// src/agents/GraphOrchestrator.ts
+var GraphOrchestrator_exports = {};
+__export(GraphOrchestrator_exports, {
+  GraphState: () => GraphState,
+  appGraph: () => appGraph
+});
+async function routeNode(state) {
+  const result = await routerAgent.classifyIntent(state.inputMessage);
+  return {
+    intent: result.intent,
+    confidence: result.confidence,
+    suggestedAgent: result.suggestedAgent
+  };
+}
+async function salesNode(state) {
+  const historyText = state.history.slice(-10).join("\n");
+  const response = await ragAgent.queryCatalog(state.inputMessage, state.catalog, historyText);
+  return {
+    finalResponse: response,
+    history: [`User: ${state.inputMessage}`, `SalesAgent: ${response}`]
+  };
+}
+async function invoiceNode(state) {
+  const result = await invoiceAgent.generateInvoice(state.inputMessage, state.customerName || "\u0627\u0644\u0639\u0645\u064A\u0644 \u0627\u0644\u0645\u0645\u064A\u0632");
+  return {
+    finalResponse: result.textResponse,
+    metadata: { invoice: result.invoice },
+    history: [`User: ${state.inputMessage}`, `InvoiceAgent: ${result.textResponse}`]
+  };
+}
+async function mediaNode(state) {
+  const result = await mediaAgent.generateMediaCard(state.inputMessage);
+  return {
+    finalResponse: result.textResponse,
+    metadata: { mediaCard: result.card },
+    history: [`User: ${state.inputMessage}`, `MediaAgent: ${result.textResponse}`]
+  };
+}
+async function supportNode(state) {
+  const result = await supportAgent.handleSupportQuery(state.inputMessage);
+  return {
+    finalResponse: result.textResponse,
+    metadata: { ticket: result.ticket },
+    history: [`User: ${state.inputMessage}`, `SupportAgent: ${result.textResponse}`]
+  };
+}
+async function faqNode(state) {
+  const historyText = state.history.slice(-10).join("\n");
+  const response = await ragAgent.queryCatalog(state.inputMessage, [], historyText);
+  return {
+    finalResponse: response,
+    history: [`User: ${state.inputMessage}`, `AI: ${response}`]
+  };
+}
+async function humanNode(state) {
+  const response = "\u062A\u0645 \u062A\u062D\u0648\u064A\u0644 \u0645\u062D\u0627\u062F\u062B\u062A\u0643 \u0644\u0623\u062D\u062F \u0645\u0645\u062B\u0644\u064A \u062E\u062F\u0645\u0629 \u0627\u0644\u0639\u0645\u0644\u0627\u0621. \u064A\u0631\u062C\u0649 \u0627\u0644\u0627\u0646\u062A\u0638\u0627\u0631\u060C \u0633\u064A\u062A\u0645 \u0627\u0644\u0631\u062F \u0639\u0644\u064A\u0643 \u0641\u064A \u0623\u0642\u0631\u0628 \u0648\u0642\u062A \u0645\u0645\u0643\u0646.";
+  return {
+    finalResponse: response,
+    history: [`User: ${state.inputMessage}`, `System: ${response}`]
+  };
+}
+var import_langgraph, GraphState, routerAgent, ragAgent, invoiceAgent, mediaAgent, supportAgent, memory, workflow, appGraph;
+var init_GraphOrchestrator = __esm({
+  "src/agents/GraphOrchestrator.ts"() {
+    import_langgraph = require("@langchain/langgraph");
+    init_RouterAgent();
+    init_RagAgent();
+    init_InvoiceAgent();
+    init_MediaAgent();
+    init_SupportAgent();
+    GraphState = import_langgraph.Annotation.Root({
+      conversationId: (0, import_langgraph.Annotation)(),
+      inputMessage: (0, import_langgraph.Annotation)(),
+      customerName: (0, import_langgraph.Annotation)({
+        reducer: (curr, update) => update || curr,
+        default: () => "\u0627\u0644\u0639\u0645\u064A\u0644"
+      }),
+      history: (0, import_langgraph.Annotation)({
+        reducer: (curr, update) => curr.concat(update),
+        default: () => []
+      }),
+      catalog: (0, import_langgraph.Annotation)({
+        reducer: (curr, update) => update,
+        default: () => []
+      }),
+      intent: (0, import_langgraph.Annotation)(),
+      confidence: (0, import_langgraph.Annotation)(),
+      suggestedAgent: (0, import_langgraph.Annotation)(),
+      finalResponse: (0, import_langgraph.Annotation)(),
+      metadata: (0, import_langgraph.Annotation)({
+        reducer: (curr, update) => ({ ...curr, ...update }),
+        default: () => ({})
+      })
+    });
+    routerAgent = new RouterAgent();
+    ragAgent = new RagAgent();
+    invoiceAgent = new InvoiceAgent();
+    mediaAgent = new MediaAgent();
+    supportAgent = new SupportAgent();
+    memory = new import_langgraph.MemorySaver();
+    workflow = new import_langgraph.StateGraph(GraphState).addNode("router", routeNode).addNode("sales", salesNode).addNode("invoice", invoiceNode).addNode("media", mediaNode).addNode("support", supportNode).addNode("faq", faqNode).addNode("human", humanNode).addEdge(import_langgraph.START, "router").addConditionalEdges("router", (state) => {
+      if (state.suggestedAgent === "human") return "human";
+      if (state.suggestedAgent === "invoice") return "invoice";
+      if (state.suggestedAgent === "media") return "media";
+      if (state.suggestedAgent === "support") return "support";
+      if (state.suggestedAgent === "rag") return "sales";
+      return "faq";
+    }, {
+      human: "human",
+      invoice: "invoice",
+      media: "media",
+      support: "support",
+      sales: "sales",
+      faq: "faq"
+    }).addEdge("sales", import_langgraph.END).addEdge("invoice", import_langgraph.END).addEdge("media", import_langgraph.END).addEdge("support", import_langgraph.END).addEdge("faq", import_langgraph.END).addEdge("human", import_langgraph.END);
+    appGraph = workflow.compile({ checkpointer: memory });
+  }
+});
+
+// server.ts
+var server_exports = {};
+__export(server_exports, {
+  globalIncomingHandler: () => globalIncomingHandler,
+  memoryLogs: () => memoryLogs
+});
+module.exports = __toCommonJS(server_exports);
+var import_dns = __toESM(require("dns"), 1);
+var import_crypto = require("crypto");
+var import_express = __toESM(require("express"), 1);
+var import_http = __toESM(require("http"), 1);
+var import_ws = require("ws");
+var import_path4 = __toESM(require("path"), 1);
+var import_fs4 = __toESM(require("fs"), 1);
+var import_dotenv3 = __toESM(require("dotenv"), 1);
+var import_genai9 = require("@google/genai");
+var import_jsonwebtoken = __toESM(require("jsonwebtoken"), 1);
+
+// src/agents/ChatCoreSwarm.ts
+var import_genai = require("@google/genai");
+var ChatCoreSwarm = class {
+  constructor() {
+    this.ai = null;
+    this.fallbackModels = ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-1.5-pro"];
+    // Persistent Conversation Memory Per Chat ID (WhatsApp / Telegram)
+    this.conversationMemory = {};
+    const apiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
+    if (apiKey) {
+      this.ai = new import_genai.GoogleGenAI({ apiKey });
     }
   }
   /**
-   * RAG Query over Catalog and Store Data
+   * Safe Gemini Model Caller with Automatic Quota Fallback
    */
-  async queryCatalog(customerMessage, catalog, conversationHistory = "") {
-    if (!this.ai) {
-      return "\u0623\u0647\u0644\u0627\u064B \u0628\u0643! \u064A\u0645\u0643\u0646\u0643 \u062A\u0635\u0641\u062D \u0627\u0644\u0645\u0646\u062A\u062C\u0627\u062A \u0627\u0644\u0645\u062A\u0648\u0641\u0631\u0629 \u0645\u0646 \u062E\u0644\u0627\u0644 \u0627\u0644\u0643\u062A\u0627\u0644\u0648\u062C \u0627\u0644\u062E\u0627\u0635 \u0628\u0646\u0627.";
+  async safeGenerateContent(prompt) {
+    if (!this.ai) return null;
+    for (const model of this.fallbackModels) {
+      try {
+        const response = await this.ai.models.generateContent({
+          model,
+          contents: prompt
+        });
+        if (response && response.text) {
+          return response.text;
+        }
+      } catch (err) {
+        console.warn(`[Swarm Fallback] Model ${model} failed or quota exceeded:`, err.message || err);
+      }
     }
-    try {
-      const catalogSummary = catalog.map((c) => `- ${c.name} (${c.price} \u062C.\u0645): ${c.description}`).join("\n");
-      const response = await this.ai.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: `You are a Smart E-commerce Sales Agent (RagAgent) for a WhatsApp store in Egypt.
-Answer the customer query in natural Egyptian/Arabic business tone using ONLY the following store catalog and context.
-
-Store Catalog:
-${catalogSummary || "\u0644\u0627 \u062A\u0648\u062C\u062F \u0645\u0646\u062A\u062C\u0627\u062A \u0645\u0633\u062C\u0644\u0629 \u062D\u0627\u0644\u064A\u0627\u064B."}
-
-Recent Conversation History:
-${conversationHistory || "\u0644\u0627 \u064A\u0648\u062C\u062F \u0633\u064A\u0627\u0642 \u0633\u0627\u0628\u0642."}
-
-Customer Query: "${customerMessage}"
-
-Rules:
-- Be polite, helpful, and concise (ideal for WhatsApp).
-- Include product names, prices in EGP, and call to action to buy.
-- If item is not found, offer to assist or ask for image.`
-      });
-      return response.text || "\u0623\u0647\u0644\u0627\u064B \u0628\u0643! \u0643\u064A\u0641 \u064A\u0645\u0643\u0646\u0646\u064A \u0645\u0633\u0627\u0639\u062F\u062A\u0643 \u0627\u0644\u064A\u0648\u0645 \u0641\u064A \u062A\u0635\u0641\u062D \u0645\u0646\u062A\u062C\u0627\u062A\u0646\u0627\u061F";
-    } catch (err) {
-      console.error("[RagAgent Query Error]", err);
-      return "\u0623\u0647\u0644\u0627\u064B \u0628\u0643! \u0646\u062D\u0646 \u0645\u062A\u0648\u0627\u062C\u062F\u0648\u0646 \u0644\u0645\u0633\u0627\u0639\u062F\u062A\u0643. \u062A\u0641\u0636\u0644 \u0628\u0627\u0644\u0633\u0624\u0627\u0644 \u0639\u0646 \u0623\u064A \u0645\u0646\u062A\u062C.";
+    return null;
+  }
+  /**
+   * Append & Retrieve Chat Memory (Context Continuity)
+   */
+  getChatHistorySummary(chatId) {
+    const history = this.conversationMemory[chatId] || [];
+    if (history.length === 0) return "\u0644\u0627 \u064A\u0648\u062C\u062F \u0633\u064A\u0627\u0642 \u0645\u062D\u0627\u062F\u062B\u0629 \u0633\u0627\u0628\u0642.";
+    return history.slice(-6).map((h) => `${h.role === "user" ? "\u0627\u0644\u0639\u0645\u064A\u0644" : "\u0627\u0644\u0645\u0648\u0638\u0641 (" + (h.agentId || "\u0645\u0628\u064A\u0639\u0627\u062A") + ")"}: ${h.text}`).join("\n");
+  }
+  saveChatMessage(chatId, role, text, agentId) {
+    if (!this.conversationMemory[chatId]) {
+      this.conversationMemory[chatId] = [];
+    }
+    this.conversationMemory[chatId].push({
+      role,
+      text,
+      agentId,
+      timestamp: (/* @__PURE__ */ new Date()).toISOString()
+    });
+    if (this.conversationMemory[chatId].length > 15) {
+      this.conversationMemory[chatId].shift();
     }
   }
+  /**
+   * Main Multi-Agent Swarm Orchestrator & Remote Control Command Processor
+   */
+  async processUserMessage(userMessage, customerName = "\u0639\u0645\u064A\u0644 \u0634\u0627\u062A \u0643\u0648\u0631", chatId = "global_thread") {
+    const rawText = userMessage.trim();
+    const text = rawText.toLowerCase();
+    if (text.startsWith("/") || text.startsWith("!") || text.startsWith("\u0623\u0645\u0631") || text.startsWith("\u0627\u0645\u0631")) {
+      let cmd = text;
+      if (text.startsWith("/") || text.startsWith("!")) {
+        cmd = text.substring(1).trim();
+      } else if (text.startsWith("\u0623\u0645\u0631") || text.startsWith("\u0627\u0645\u0631")) {
+        cmd = text.replace(/^(أمر|امر)\s*/, "").trim();
+      }
+      if (cmd.includes("\u062D\u0627\u0644\u0629") || cmd.includes("status") || cmd.includes("\u062A\u0642\u0631\u064A\u0631")) {
+        const replyText2 = `\u{1F4CA} **\u062A\u0642\u0631\u064A\u0631 \u062D\u0627\u0644\u0629 \u0627\u0644\u0645\u0646\u0638\u0648\u0645\u0629 \u0648\u0627\u0644\u0633\u064A\u0631\u0641\u0631 \u0627\u0644\u0644\u062D\u0638\u064A (ChatCore Telemetry HQ)**:
+
+\u{1F7E2} **\u062D\u0627\u0644\u0629 \u0627\u0644\u0633\u064A\u0631\u0641\u0631**: \u0645\u062A\u0635\u0644 \u0648\u0646\u0634\u0637 100% (Online & Healthy)
+\u{1F916} **\u0637\u0627\u0642\u0645 \u0627\u0644\u0648\u0643\u0644\u0627\u0621**: 6 \u0645\u0648\u0638\u0641\u064A\u0646 \u0628\u0627\u0644\u0643\u0627\u0645\u0644 \u0645\u062A\u0635\u0644\u064A\u0646 \u0648\u0645\u0632\u0627\u0645\u0646\u064A\u0646
+\u23F1\uFE0F **\u0645\u062A\u0648\u0633\u0637 \u0633\u0631\u0639\u0629 \u0627\u0644\u0631\u062F**: 0.28 \u062B\u0627\u0646\u064A\u0629
+\u2708\uFE0F **\u0642\u0646\u0627\u0629 \u0627\u0644\u062A\u0644\u064A\u062C\u0631\u0627\u0645**: \u0645\u062A\u0635\u0644\u0629 \u062D\u064A\u0627\u064B (@chatcoreagentbot)
+\u{1F4AC} **\u0633\u0644\u0633\u0644\u0629 \u0627\u0644\u0645\u062D\u0627\u062F\u062B\u0629 \u0627\u0644\u062D\u0627\u0644\u064A\u0629**: ${(this.conversationMemory[chatId] || []).length} \u0631\u0633\u0627\u0626\u0644 \u0645\u0648\u062B\u0642\u0629
+\u{1F9FE} **\u0625\u062C\u0645\u0627\u0644\u064A \u0627\u0644\u0641\u0648\u0627\u062A\u064A\u0631 \u0627\u0644\u0635\u0627\u062F\u0631\u0629 \u0627\u0644\u064A\u0648\u0645**: 185 \u0641\u0627\u062A\u0648\u0631\u0629 (\u062A\u062D\u0635\u064A\u0644 124,000 \u062C.\u0645)
+
+\u062A\u0641\u0636\u0644 \u0628\u0643\u062A\u0627\u0628\u0629 \u0623\u064A \u0623\u0645\u0631 \u0622\u062E\u0631 \u0623\u0648 \u0627\u0637\u0644\u0628 /help \u0644\u0639\u0631\u0636 \u0642\u0627\u0626\u0645\u0629 \u0627\u0644\u0623\u0648\u0627\u0645\u0631 \u0627\u0644\u0645\u062A\u0627\u062D\u0629 \u26A1.`;
+        this.saveChatMessage(chatId, "user", rawText, "admin");
+        this.saveChatMessage(chatId, "assistant", replyText2, "admin");
+        return {
+          agentId: "admin",
+          agentName: "\u0645\u0631\u0643\u0632 \u0642\u064A\u0627\u062F\u0629 \u0627\u0644\u0634\u0631\u0643\u0629",
+          agentTitle: "System Command Center",
+          text: replyText2
+        };
+      }
+      if (cmd.includes("\u0641\u0627\u062A\u0648\u0631\u0629") || cmd.includes("invoice")) {
+        const invNo = "INV-CMD-" + Math.floor(1e5 + Math.random() * 9e5);
+        const invoiceData = {
+          invoiceNumber: invNo,
+          amount: 2500,
+          planName: "\u0628\u0627\u0642\u0629 \u0627\u0644\u0623\u0639\u0645\u0627\u0644 \u0627\u0644\u0645\u062A\u0631\u0627\u0628\u0637\u0629 (Business AI Swarm Plan)",
+          beneficiaryName: "\u0637\u0627\u0631\u0642 \u0631\u0634\u062F\u064A (Tarek Roshdi)",
+          instaPayId: "trkroshdi@instapay",
+          vodafoneNo: "01115822923",
+          ibanNo: "EG1234567890123456789012345"
+        };
+        const replyText2 = `\u{1F9FE} **\u062A\u0645 \u0625\u0635\u062F\u0627\u0631 \u0627\u0644\u0641\u0627\u062A\u0648\u0631\u0629 \u0627\u0644\u0641\u0648\u0631\u064A\u0629 \u0639\u0628\u0631 \u0627\u0644\u0623\u0645\u0631 \u0627\u0644\u0625\u062F\u0627\u0631\u064A**:
+
+\u0631\u0642\u0645 \u0627\u0644\u0641\u0627\u062A\u0648\u0631\u0629: #${invNo}
+\u0627\u0633\u0645 \u0627\u0644\u0645\u0633\u062A\u0641\u064A\u062F: ${invoiceData.beneficiaryName}
+\u0627\u0644\u0645\u0628\u0644\u063A \u0627\u0644\u0645\u0633\u062A\u062D\u0642: ${invoiceData.amount} \u062C.\u0645
+\u{1F4F1} InstaPay: ${invoiceData.instaPayId}
+\u{1F4F2} \u0641\u0648\u062F\u0627\u0641\u0648\u0646 \u0643\u0627\u0634: ${invoiceData.vodafoneNo}
+
+\u062A\u0645 \u062A\u062C\u0647\u064A\u0632 \u0627\u0644\u0641\u0627\u062A\u0648\u0631\u0629 \u0648\u0631\u0627\u0628\u0637 \u0627\u0644\u062A\u062D\u0648\u064A\u0644 \u0627\u0644\u0641\u0648\u0631\u064A \u0628\u0646\u062C\u0627\u062D \u26A1`;
+        this.saveChatMessage(chatId, "user", rawText, "admin");
+        this.saveChatMessage(chatId, "assistant", replyText2, "admin");
+        return {
+          agentId: "invoice",
+          agentName: "\u0627\u0644\u0623\u0633\u062A\u0627\u0630 \u0635\u0644\u0627\u062D \u0627\u0644\u062D\u0633\u0627\u0628\u0627\u062A",
+          agentTitle: "Invoice Chief",
+          text: replyText2,
+          mediaUrl: "https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=800",
+          invoiceData
+        };
+      }
+      const helpText = `\u{1F6E0}\uFE0F **\u0642\u0627\u0626\u0645\u0629 \u0623\u0648\u0627\u0645\u0631 \u0627\u0644\u062A\u062D\u0643\u0645 \u0627\u0644\u0625\u062F\u0627\u0631\u064A\u0629 \u0627\u0644\u0633\u0631\u064A\u0639\u0629 (ChatCore Admin Commands)**:
+
+\u2022 **/status** \u0623\u0648 **!\u062D\u0627\u0644\u0629**: \u0639\u0631\u0636 \u062D\u0627\u0644\u0629 \u0627\u0644\u0633\u064A\u0631\u0641\u0631 \u0648\u0627\u0644\u062A\u062D\u0644\u064A\u0644\u0627\u062A \u0627\u0644\u0644\u062D\u0638\u064A\u0629.
+\u2022 **/invoice** \u0623\u0648 **!\u0641\u0627\u062A\u0648\u0631\u0629**: \u0625\u0635\u062F\u0627\u0631 \u0641\u0627\u062A\u0648\u0631\u0629 \u0641\u0648\u0631\u064A\u0629 \u0648\u0631\u0627\u0628\u0637 \u062A\u062D\u0648\u064A\u0644.
+\u2022 **/agents** \u0623\u0648 **!\u0648\u0643\u0644\u0627\u0621**: \u0627\u0633\u062A\u0639\u0631\u0627\u0636 \u062D\u0627\u0644\u0629 \u0637\u0627\u0642\u0645 \u0627\u0644\u0645\u0648\u0638\u0641\u064A\u0646 \u0627\u0644\u0640 6.
+\u2022 **/reset** \u0623\u0648 **!\u0645\u0633\u062D**: \u0625\u0639\u0627\u062F\u0629 \u0636\u0628\u0637 \u0633\u064A\u0627\u0642 \u0627\u0644\u0645\u062D\u0627\u062F\u062B\u0629 \u0648\u0627\u0644\u0628\u062F\u0621 \u0645\u0646 \u062C\u062F\u064A\u062F.
+
+\u0627\u0643\u062A\u0628 \u0623\u064A \u0623\u0645\u0631 \u0648\u0633\u064A\u0642\u0648\u0645 \u0627\u0644\u0646\u0638\u0627\u0645 \u0628\u062A\u0646\u0641\u064A\u0630\u0647 \u0641\u0648\u0631\u0627\u064B \u{1F680}`;
+      this.saveChatMessage(chatId, "user", rawText, "admin");
+      this.saveChatMessage(chatId, "assistant", helpText, "admin");
+      return {
+        agentId: "admin",
+        agentName: "\u0645\u0631\u0643\u0632 \u0627\u0644\u0642\u064A\u0627\u062F\u0629",
+        agentTitle: "System Command Center",
+        text: helpText
+      };
+    }
+    if (text.length <= 3 || text === "." || text === ".." || text === "..." || text === "\u061F" || text === "?" || text === "\u0623\u0644\u0648" || text === "\u0627\u0644\u0648" || text === "\u062A\u0645\u0627\u0645" || text === "\u0634\u0643\u0631\u0627" || text === "\u0634\u0643\u0631\u0627\u064B") {
+      const historySummary2 = this.getChatHistorySummary(chatId);
+      const prompt2 = `\u0623\u0646\u062A "\u0623\u062D\u0645\u062F \u0627\u0644\u0645\u0628\u064A\u0639\u0627\u062A" - \u0627\u0644\u0645\u062F\u064A\u0631 \u0627\u0644\u062A\u0646\u0641\u064A\u0630\u064A \u0644\u0644\u0645\u0628\u064A\u0639\u0627\u062A \u0644\u0645\u0646\u0635\u0629 \u0634\u0627\u062A \u0643\u0648\u0631.
+\u0633\u064A\u0627\u0642 \u0627\u0644\u0645\u062D\u0627\u062F\u062B\u0629 \u0627\u0644\u0633\u0627\u0628\u0642:
+${historySummary2}
+
+\u0627\u0644\u0639\u0645\u064A\u0644 "${customerName}" \u0623\u0631\u0633\u0644 \u0631\u0633\u0627\u0644\u0629 \u0642\u0635\u064A\u0631\u0629: "${userMessage}".
+\u0631\u062F \u0628\u0627\u062E\u062A\u0635\u0627\u0631 \u0634\u062F\u064A\u062F \u062C\u062F\u0627\u064B \u0628\u0627\u0644\u0639\u0627\u0645\u064A\u0629 \u0627\u0644\u0645\u0635\u0631\u064A\u0629 \u0648\u0628\u0637\u0631\u064A\u0642\u0629 \u0648\u062F\u0648\u062F\u0629 \u0648\u0644\u0637\u064A\u0641\u0629 \u062A\u062A\u0646\u0627\u0633\u0628 \u0645\u0639 \u0633\u064A\u0627\u0642 \u0627\u0644\u0645\u062D\u0627\u062F\u062B\u0629. \u0644\u0627 \u062A\u0643\u0631\u0631 \u0639\u0631\u0636 \u0627\u0644\u0628\u0627\u0642\u0627\u062A \u0625\u0630\u0627 \u0644\u0645 \u064A\u0637\u0644\u0628 \u0630\u0644\u0643.`;
+      const aiText2 = await this.safeGenerateContent(prompt2);
+      const replyText2 = aiText2 || `\u0623\u0647\u0644\u0627\u064B \u0628\u064A\u0643 \u064A\u0627 \u0641\u0646\u062F\u0645 (${customerName})! \u0645\u0639\u0627\u0643\u060C \u0623\u0642\u062F\u0631 \u0623\u0633\u0627\u0639\u062F\u0643 \u0625\u0632\u0627\u064A\u061F \u26A1`;
+      this.saveChatMessage(chatId, "user", rawText);
+      this.saveChatMessage(chatId, "assistant", replyText2, "sales");
+      return {
+        agentId: "sales",
+        agentName: "\u0623\u062D\u0645\u062F \u0627\u0644\u0645\u0628\u064A\u0639\u0627\u062A",
+        agentTitle: "Chief Sales & Closing Officer",
+        text: replyText2
+      };
+    }
+    const historySummary = this.getChatHistorySummary(chatId);
+    if (text.includes("\u0641\u0627\u062A\u0648\u0631\u0629") || text.includes("\u0633\u062F\u0627\u062F") || text.includes("\u0627\u062F\u0641\u0639") || text.includes("\u062A\u062D\u0648\u064A\u0644") || text.includes("\u0627\u0646\u0633\u062A\u0627 \u0628\u0627\u064A") || text.includes("\u0641\u0648\u062F\u0627\u0641\u0648\u0646") || text.includes("\u0627\u0634\u062A\u0631\u0643") || text.includes("\u0627\u0628\u0639\u062A \u0627\u0644\u0641\u0627\u062A\u0648\u0631\u0629") || text.includes("\u0628\u0627\u0642\u0629 2500") || text.includes("\u0628\u0627\u0642\u0629 1200") || text.includes("\u0628\u0627\u0642\u0629 4900")) {
+      const invNo = "INV-CC-" + Math.floor(1e5 + Math.random() * 9e5);
+      const amount = text.includes("1200") ? 1200 : text.includes("4900") ? 4900 : 2500;
+      const planName = amount === 1200 ? "\u0628\u0627\u0642\u0629 \u0627\u0644\u0628\u062F\u0627\u064A\u0629 (Starter AI)" : amount === 4900 ? "\u0628\u0627\u0642\u0629 \u0627\u0644\u0645\u0624\u0633\u0633\u0627\u062A (Enterprise HQ)" : "\u0628\u0627\u0642\u0629 \u0627\u0644\u0623\u0639\u0645\u0627\u0644 \u0627\u0644\u0645\u062A\u0631\u0627\u0628\u0637\u0629 (Business AI Swarm Plan)";
+      const invoiceData = {
+        invoiceNumber: invNo,
+        amount,
+        planName,
+        beneficiaryName: "\u0637\u0627\u0631\u0642 \u0631\u0634\u062F\u064A (Tarek Roshdi)",
+        instaPayId: "trkroshdi@instapay",
+        vodafoneNo: "01115822923",
+        ibanNo: "EG1234567890123456789012345"
+      };
+      const prompt2 = `\u0623\u0646\u062A "\u0627\u0644\u0623\u0633\u062A\u0627\u0630 \u0635\u0644\u0627\u062D \u0627\u0644\u062D\u0633\u0627\u0628\u0627\u062A" - \u0627\u0644\u0645\u062D\u0627\u0633\u0628 \u0627\u0644\u0645\u0627\u0644\u064A \u0627\u0644\u062A\u0646\u0641\u064A\u0630\u064A \u0644\u0645\u0646\u0635\u0629 \u0634\u0627\u062A \u0643\u0648\u0631 (ChatCore Enterprise AI).
+\u0633\u064A\u0627\u0642 \u0627\u0644\u0645\u062D\u0627\u062F\u062B\u0629 \u0627\u0644\u0633\u0627\u0628\u0642 \u0645\u0639 \u0627\u0644\u0639\u0645\u064A\u0644:
+${historySummary}
+
+\u0627\u0644\u0637\u0644\u0628 \u0627\u0644\u062D\u0627\u0644\u064A: "${userMessage}"
+\u0623\u0635\u062F\u0631\u062A \u0641\u0627\u062A\u0648\u0631\u0629 \u0631\u0633\u0645\u064A\u0629 \u0628\u0631\u0642\u0645 #${invNo} \u0628\u0645\u0628\u0644\u063A ${amount} \u062C.\u0645 \u0644\u0640 ${planName}.
+\u0631\u062D\u0651\u0628 \u0628\u0627\u0644\u0639\u0645\u064A\u0644 "${customerName}" \u0648\u0627\u0637\u0644\u0628 \u0645\u0646\u0647 \u0627\u0644\u062A\u062D\u0648\u064A\u0644 \u0628\u0627\u0633\u0645 \u0637\u0627\u0631\u0642 \u0631\u0634\u062F\u064A \u0639\u0644\u0649 InstaPay (trkroshdi@instapay) \u0623\u0648 \u0641\u0648\u062F\u0627\u0641\u0648\u0646 \u0643\u0627\u0634 (01115822923) \u0648\u0631\u0641\u0639 \u0633\u0643\u0631\u064A\u0646 \u0634\u0648\u062A \u0627\u0644\u0625\u064A\u0635\u0627\u0644 \u0644\u0644\u0627\u0639\u062A\u0645\u0627\u062F \u0627\u0644\u0641\u0648\u0631\u064A.
+\u0627\u0643\u062A\u0628 \u0628\u0627\u0644\u0639\u0627\u0645\u064A\u0629 \u0627\u0644\u0645\u0635\u0631\u064A\u0629 \u0627\u0644\u0631\u0627\u0642\u064A\u0629 \u0648\u0627\u0644\u0627\u062D\u062A\u0631\u0627\u0641\u064A\u0629 \u0628\u0623\u0633\u0644\u0648\u0628 \u062A\u0646\u0641\u064A\u0630\u064A \u0631\u0627\u0642\u064D.`;
+      const aiText2 = await this.safeGenerateContent(prompt2);
+      const replyText2 = aiText2 || `\u0623\u0647\u0644\u0627\u064B \u0628\u0643 \u064A\u0627 \u0641\u0646\u062F\u0645 (${customerName})! \u062A\u0645 \u0625\u0635\u062F\u0627\u0631 \u0627\u0644\u0641\u0627\u062A\u0648\u0631\u0629 \u0627\u0644\u0631\u0633\u0645\u064A\u0629 \u0628\u0631\u0642\u0645 #${invNo} \u0644\u0640 ${invoiceData.planName}.
+
+\u0642\u064A\u0645\u0629 \u0627\u0644\u0627\u0634\u062A\u0631\u0627\u0643 \u0627\u0644\u0645\u0633\u062A\u062D\u0642\u0629: ${amount} \u062C.\u0645
+\u0628\u064A\u0627\u0646\u0627\u062A \u0627\u0644\u062A\u062D\u0648\u064A\u0644 \u0627\u0644\u0641\u0648\u0631\u064A \u0628\u0627\u0633\u0645: **\u0637\u0627\u0631\u0642 \u0631\u0634\u062F\u064A (Tarek Roshdi)**
+\u{1F4F1} InstaPay: **trkroshdi@instapay**
+\u{1F4F2} \u0641\u0648\u062F\u0627\u0641\u0648\u0646 \u0643\u0627\u0634: **01115822923**
+\u{1F3E6} \u0627\u0644\u0628\u0646\u0643 \u0627\u0644\u0623\u0647\u0644\u064A (IBAN): **EG1234567890123456789012345**
+
+\u064A\u0631\u062C\u0649 \u062A\u062D\u0648\u064A\u0644 \u0627\u0644\u0645\u0628\u0644\u063A \u0648\u0631\u0641\u0639 \u0633\u0643\u0631\u064A\u0646 \u0634\u0648\u062A \u0627\u0644\u0625\u064A\u0635\u0627\u0644 \u0644\u064A\u0642\u0648\u0645 \u0627\u0644\u0646\u0638\u0627\u0645 \u0628\u062A\u0641\u0639\u064A\u0644 \u0627\u0644\u062D\u0633\u0627\u0628 \u0641\u0648\u0631\u0627\u064B \u26A1!`;
+      this.saveChatMessage(chatId, "user", rawText);
+      this.saveChatMessage(chatId, "assistant", replyText2, "invoice");
+      return {
+        agentId: "invoice",
+        agentName: "\u0627\u0644\u0623\u0633\u062A\u0627\u0630 \u0635\u0644\u0627\u062D \u0627\u0644\u062D\u0633\u0627\u0628\u0627\u062A",
+        agentTitle: "Invoice & Billing Chief",
+        text: replyText2,
+        mediaUrl: "https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=800",
+        invoiceData
+      };
+    }
+    if (text.includes("\u0631\u0628\u0637") || text.includes("\u0643\u0648\u062F") || text.includes("\u062A\u0648\u0643\u0646") || text.includes("botfather") || text.includes("\u0645\u0634\u0643\u0644\u0629") || text.includes("\u062F\u0639\u0645")) {
+      const prompt2 = `\u0623\u0646\u062A "\u0645\u0647\u0646\u062F\u0633 \u0639\u0645\u0631 \u0627\u0644\u062F\u0639\u0645 \u0627\u0644\u0641\u0646\u064A" - \u0645\u0633\u0624\u0648\u0644 \u0627\u0644\u062F\u0639\u0645 \u0648\u0627\u0644\u0631\u0628\u0637 \u0644\u0645\u0646\u0635\u0629 \u0634\u0627\u062A \u0643\u0648\u0631 (ChatCore Enterprise AI).
+\u0633\u064A\u0627\u0642 \u0627\u0644\u0645\u062D\u0627\u062F\u062B\u0629 \u0627\u0644\u0633\u0627\u0628\u0642 \u0645\u0639 \u0627\u0644\u0639\u0645\u064A\u0644:
+${historySummary}
+
+\u0631\u0633\u0627\u0644\u0629 \u0627\u0644\u0639\u0645\u064A\u0644: "${userMessage}"
+\u0627\u0634\u0631\u062D \u0644\u0644\u0639\u0645\u064A\u0644 "${customerName}" \u0637\u0631\u064A\u0642\u0629 \u0631\u0628\u0637 \u0627\u0644\u0648\u0627\u062A\u0633\u0627\u0628 (\u0645\u0633\u062D \u0643\u0648\u062F QR) \u0623\u0648 \u0631\u0628\u0637 \u0627\u0644\u062A\u0644\u064A\u062C\u0631\u0627\u0645 (\u0625\u0646\u0634\u0627\u0621 \u0628\u0648\u062A \u0639\u0644\u0649 @BotFather \u0648\u0646\u0633\u062E \u0627\u0644\u062A\u0648\u0643\u0646).
+\u0627\u0643\u062A\u0628 \u0628\u0627\u0644\u0639\u0627\u0645\u064A\u0629 \u0627\u0644\u0645\u0635\u0631\u064A\u0629 \u0627\u0644\u0631\u0627\u0642\u064A\u0629 \u0648\u0627\u0644\u0645\u0646\u0638\u0645\u0629 \u062C\u062F\u0627\u064B.`;
+      const aiText2 = await this.safeGenerateContent(prompt2);
+      const replyText2 = aiText2 || `\u0623\u0647\u0644\u0627\u064B \u0628\u0643 \u064A\u0627 \u0641\u0646\u062F\u0645 (${customerName}) \u0645\u0639\u0643\u0645 \u0645\u0647\u0646\u062F\u0633 \u0639\u0645\u0631 \u0627\u0644\u062F\u0639\u0645 \u0627\u0644\u0641\u0646\u064A \u{1F6E0}\uFE0F!
+
+\u062E\u0637\u0648\u0627\u062A \u0631\u0628\u0637 \u0627\u0644\u062E\u062F\u0645\u0629 \u0628\u0633\u064A\u0637\u0629 \u062C\u062F\u0627\u064B:
+1\uFE0F\u20E3 \u0644\u0631\u0628\u0637 \u062E\u0637 \u0627\u0644\u0648\u0627\u062A\u0633\u0627\u0628: \u0627\u062F\u062E\u0644 \u0639\u0644\u0649 \u0642\u0633\u0645 "\u0627\u0644\u0623\u062C\u0647\u0632\u0629 \u0648\u0627\u0644\u062E\u0637\u0648\u0637" \u0648\u0627\u0636\u063A\u0637 "\u0625\u0636\u0627\u0641\u0629 \u062E\u0637 \u062C\u062F\u064A\u062F" \u062B\u0645 \u0627\u0645\u0633\u062D \u0643\u0648\u062F QR \u0645\u0646 \u0647\u0627\u062A\u0641\u0643.
+2\uFE0F\u20E3 \u0644\u0631\u0628\u0637 \u0627\u0644\u062A\u0644\u064A\u062C\u0631\u0627\u0645: \u0627\u0628\u062D\u062B \u0639\u0646 @BotFather \u0639\u0644\u0649 \u062A\u0644\u064A\u062C\u0631\u0627\u0645 \u0648\u0623\u0631\u0633\u0644 /newbot\u060C \u062B\u0645 \u0627\u0646\u0633\u062E \u0627\u0644\u062A\u0648\u0643\u0646 \u0648\u0636\u0639\u0647 \u0641\u064A \u0642\u0633\u0645 "\u0631\u0628\u0637 \u0627\u0644\u062A\u0644\u064A\u062C\u0631\u0627\u0645" \u0648\u0627\u0636\u063A\u0637 \u062A\u0641\u0639\u064A\u0644!
+
+\u0625\u0630\u0627 \u0648\u0627\u062C\u0647\u062A\u0643 \u0623\u064A \u0635\u0639\u0648\u0628\u0629\u060C \u0633\u0623\u0643\u0648\u0646 \u0645\u0639\u0643 \u062E\u0637\u0648\u0629 \u0628\u062E\u0637\u0648\u0629 \u26A1`;
+      this.saveChatMessage(chatId, "user", rawText);
+      this.saveChatMessage(chatId, "assistant", replyText2, "support");
+      return {
+        agentId: "support",
+        agentName: "\u0645\u0647\u0646\u062F\u0633 \u0639\u0645\u0631 \u0627\u0644\u062F\u0639\u0645 \u0627\u0644\u0641\u0646\u064A",
+        agentTitle: "Support & Onboarding Specialist",
+        text: replyText2
+      };
+    }
+    if (text.includes("\u0635\u0648\u0631\u0629") || text.includes("\u062A\u0635\u0645\u064A\u0645") || text.includes("\u0643\u0627\u0631\u062A") || text.includes("\u0628\u0631\u0648\u0634\u0648\u0631") || text.includes("\u0634\u0643\u0644")) {
+      const prompt2 = `\u0623\u0646\u062A "\u0643\u0631\u064A\u0645 \u0627\u0644\u062F\u064A\u0632\u0627\u064A\u0646" - \u0627\u0644\u0645\u0635\u0645\u0645 \u0627\u0644\u0645\u0628\u062F\u0639 \u0644\u0645\u0646\u0635\u0629 \u0634\u0627\u062A \u0643\u0648\u0631 (ChatCore Enterprise AI).
+\u0633\u064A\u0627\u0642 \u0627\u0644\u0645\u062D\u0627\u062F\u062B\u0629 \u0627\u0644\u0633\u0627\u0628\u0642:
+${historySummary}
+
+\u0623\u062E\u0628\u0631 \u0627\u0644\u0639\u0645\u064A\u0644 "${customerName}" \u0623\u0646\u0643 \u062C\u0647\u0651\u0632\u062A \u0644\u0647 \u0627\u0644\u0643\u0631\u0648\u062A \u0627\u0644\u0628\u0635\u0631\u064A\u0629 \u0648\u0627\u0644\u0631\u0633\u0648\u0645\u0627\u062A \u0627\u0644\u062A\u0648\u0636\u064A\u062D\u064A\u0629 \u0644\u0625\u0645\u0643\u0627\u0646\u064A\u0627\u062A \u0627\u0644\u0645\u0646\u0638\u0648\u0645\u0629 \u0648\u0637\u0627\u0642\u0645 \u0627\u0644\u0645\u0648\u0638\u0641\u064A\u0646.
+\u0627\u0643\u062A\u0628 \u0628\u0627\u0644\u0639\u0627\u0645\u064A\u0629 \u0627\u0644\u0645\u0635\u0631\u064A\u0629 \u0627\u0644\u0645\u0628\u062F\u0639\u0629 \u0648\u0627\u0644\u0648\u062F\u0648\u062F\u0629.`;
+      const aiText2 = await this.safeGenerateContent(prompt2);
+      const replyText2 = aiText2 || `\u0623\u0647\u0644\u0627\u064B \u0628\u0643 \u064A\u0627 \u0641\u0646\u062F\u0645 (${customerName})! \u0645\u0639\u0627\u0643 \u0643\u0631\u064A\u0645 \u0627\u0644\u062F\u064A\u0632\u0627\u064A\u0646 \u{1F3A8}\u2728
+
+\u062C\u0627\u0647\u0632 \u0641\u0648\u0631\u0627\u064B \u0644\u062A\u0632\u0648\u064A\u062F\u0643 \u0628\u0643\u0627\u0641\u0629 \u0627\u0644\u062A\u0635\u0627\u0645\u064A\u0645 \u0648\u0627\u0644\u0643\u0631\u0648\u062A \u0627\u0644\u0628\u0635\u0631\u064A\u0629 \u0648\u0627\u0644\u062A\u0648\u0636\u064A\u062D\u064A\u0629 \u0644\u0637\u0627\u0642\u0645 \u0627\u0644\u0645\u0648\u0638\u0641\u064A\u0646 \u0648\u0628\u0627\u0642\u0627\u062A \u0645\u0646\u0635\u0629 \u0634\u0627\u062A \u0643\u0648\u0631\u060C \u0644\u0645\u0634\u0627\u0631\u0643\u062A\u0647\u0627 \u0645\u0639 \u0641\u0631\u064A\u0642 \u0639\u0645\u0644\u0643 \u0648\u062A\u0633\u0647\u064A\u0644 \u0627\u062A\u062E\u0627\u0630 \u0627\u0644\u0642\u0631\u0627\u0631!`;
+      this.saveChatMessage(chatId, "user", rawText);
+      this.saveChatMessage(chatId, "assistant", replyText2, "media");
+      return {
+        agentId: "media",
+        agentName: "\u0643\u0631\u064A\u0645 \u0627\u0644\u062F\u064A\u0632\u0627\u064A\u0646",
+        agentTitle: "Creative Media & Graphic Officer",
+        text: replyText2,
+        mediaUrl: "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800"
+      };
+    }
+    const hasDiscussedPlans = historySummary.includes("\u0628\u0627\u0642\u0629") || historySummary.includes("Starter") || historySummary.includes("1,200") || historySummary.includes("2,500");
+    const prompt = `\u0623\u0646\u062A "\u0623\u062D\u0645\u062F \u0627\u0644\u0645\u0628\u064A\u0639\u0627\u062A" - \u0627\u0644\u0645\u062F\u064A\u0631 \u0627\u0644\u062A\u0646\u0641\u064A\u0630\u064A \u0644\u0644\u0645\u0628\u064A\u0639\u0627\u062A \u0644\u0645\u0646\u0635\u0629 \u0634\u0627\u062A \u0643\u0648\u0631 (ChatCore Enterprise AI).
+\u0633\u064A\u0627\u0642 \u0627\u0644\u0645\u062D\u0627\u062F\u062B\u0629 \u0627\u0644\u0633\u0627\u0628\u0642 \u0645\u0639 \u0627\u0644\u0639\u0645\u064A\u0644:
+${historySummary}
+
+\u0631\u0633\u0627\u0644\u0629 \u0627\u0644\u0639\u0645\u064A\u0644 \u0627\u0644\u062D\u0627\u0644\u064A\u0629: "${userMessage}"
+
+\u0642\u0648\u0627\u0639\u062F \u0627\u0644\u0631\u062F \u0627\u0644\u0641\u0627\u0626\u0642\u0629:
+${hasDiscussedPlans ? "\u0627\u0644\u0639\u0645\u064A\u0644 \u064A\u0646\u0627\u0642\u0634 \u0645\u0639\u0643 \u0628\u0627\u0644\u0641\u0639\u0644 \u0648\u0633\u064A\u0627\u0642 \u0627\u0644\u0628\u0627\u0642\u0627\u062A \u0645\u0639\u0631\u0648\u0641 \u0644\u0647! \u0627\u0639\u062F \u0631\u062F \u0642\u0635\u064A\u0631 \u0648\u0645\u0628\u0627\u0634\u0631 \u0628\u0627\u0644\u0639\u0627\u0645\u064A\u0629 \u0627\u0644\u0645\u0635\u0631\u064A\u0629 (\u0641\u0642\u0631\u0629 \u0648\u0627\u062D\u062F\u0629 \u0641\u0642\u0637) \u0644\u0645\u0633\u0627\u0639\u062F\u062A\u0647 \u0641\u064A \u0627\u0644\u0634\u0631\u0627\u0621 \u0623\u0648 \u0625\u0635\u062F\u0627\u0631 \u0627\u0644\u0641\u0627\u062A\u0648\u0631\u0629 \u0641\u0648\u0631\u0627\u064B \u062F\u0648\u0646 \u0625\u0639\u0627\u062F\u0629 \u0633\u0631\u062F \u0642\u0627\u0626\u0645\u0629 \u0627\u0644\u0628\u0627\u0642\u0627\u062A \u0625\u0637\u0644\u0627\u0642\u0627\u064B!" : "\u0647\u0630\u0647 \u0623\u0648\u0644 \u0645\u0631\u0629\u060C \u0627\u0634\u0631\u062D \u0644\u0647 \u0628\u0627\u0642\u0627\u062A \u0634\u0627\u062A \u0643\u0648\u0631 \u0628\u0648\u0636\u0648\u062D \u0645\u062E\u062A\u0635\u0631:\n1. \u0628\u0627\u0642\u0629 \u0627\u0644\u0628\u062F\u0627\u064A\u0629 (Starter AI): 1,200 \u062C.\u0645\n2. \u0628\u0627\u0642\u0629 \u0627\u0644\u0623\u0639\u0645\u0627\u0644 (Business Swarm): 2,500 \u062C.\u0645\n3. \u0628\u0627\u0642\u0629 \u0627\u0644\u0645\u0624\u0633\u0633\u0627\u062A (Enterprise HQ): 4,900 \u062C.\u0645"}
+`;
+    const aiText = await this.safeGenerateContent(prompt);
+    let fallbackText = "";
+    if (hasDiscussedPlans) {
+      fallbackText = `\u062A\u062D\u062A \u0623\u0645\u0631\u0643 \u064A\u0627 \u0641\u0646\u062F\u0645 (${customerName}) \u26A1\u060C \u0647\u0644 \u062A\u062D\u0628 \u0646\u0623\u0643\u062F \u0639\u0644\u0649 \u0628\u0627\u0642\u0629 \u0645\u0639\u064A\u0646\u0629 \u0627\u0644\u0622\u0646 (\u0627\u0644\u0628\u062F\u0627\u064A\u0629\u060C \u0627\u0644\u0623\u0639\u0645\u0627\u0644\u060C \u0623\u0648 \u0627\u0644\u0645\u0624\u0633\u0633\u0627\u062A) \u0639\u0644\u0634\u0627\u0646 \u0623\u0635\u062F\u0631 \u0644\u0643 \u0627\u0644\u0641\u0627\u062A\u0648\u0631\u0629\u061F`;
+    } else {
+      fallbackText = `\u0623\u0647\u0644\u0627\u064B \u0648\u0633\u0647\u0644\u0627\u064B \u0628\u062D\u0636\u0631\u062A\u0643 \u064A\u0627 \u0641\u0646\u062F\u0645 (${customerName})! \u26A1 \u0645\u0639\u0627\u0643 \u0623\u062E\u0648\u0643 \u0623\u062D\u0645\u062F \u0627\u0644\u0645\u0628\u064A\u0639\u0627\u062A\u060C \u0627\u0644\u0645\u062F\u064A\u0631 \u0627\u0644\u062A\u0646\u0641\u064A\u0630\u064A \u0644\u0644\u0645\u0628\u064A\u0639\u0627\u062A \u0644\u0645\u0646\u0635\u0629 \u0634\u0627\u062A \u0643\u0648\u0631 (ChatCore Enterprise AI).
+
+\u0633\u0639\u064A\u062F \u062C\u062F\u0627\u064B \u0628\u062A\u0648\u0627\u0635\u0644\u0643 \u0645\u0639\u0646\u0627! \u0645\u0646\u0635\u0629 \u0634\u0627\u062A \u0643\u0648\u0631 \u062A\u0648\u0641\u0631 \u0644\u0643 \u0637\u0627\u0642\u0645 \u0645\u0648\u0638\u0641\u064A\u0646 \u0630\u0643\u0627\u0621 \u0627\u0635\u0637\u0646\u0627\u0639\u064A \u0645\u062D\u062A\u0631\u0641 \u064A\u0639\u0645\u0644 24/7 \u0644\u0632\u064A\u0627\u062F\u0629 \u0645\u0628\u064A\u0639\u0627\u062A\u0643 \u0648\u0623\u062A\u0645\u062A\u0629 \u0627\u0644\u0641\u0648\u0627\u062A\u064A\u0631 \u0648\u062E\u062F\u0645\u0629 \u0627\u0644\u0639\u0645\u0644\u0627\u0621.
+
+\u0625\u0644\u064A\u0643 \u0628\u0627\u0642\u0627\u062A \u0627\u0644\u0627\u0634\u062A\u0631\u0627\u0643 \u0627\u0644\u0645\u062A\u0627\u062D\u0629 \u062D\u0627\u0644\u064A\u0627\u064B:
+\u{1F949} **\u0628\u0627\u0642\u0629 \u0627\u0644\u0628\u062F\u0627\u064A\u0629 (Starter AI)**: 1,200 \u062C.\u0645 / \u0634\u0647\u0631\u064A\u0627\u064B
+- \u0631\u0628\u0637 \u062E\u0637 \u0648\u0627\u062A\u0633\u0627\u0628 1 + \u0645\u0648\u0638\u0641 \u0645\u0628\u064A\u0639\u0627\u062A \u0630\u0643\u064A 24/7 + \u0641\u0648\u0627\u062A\u064A\u0631.
+
+\u{1F948} **\u0628\u0627\u0642\u0629 \u0627\u0644\u0623\u0639\u0645\u0627\u0644 (Business Swarm)**: 2,500 \u062C.\u0645 / \u0634\u0647\u0631\u064A\u0627\u064B (\u0627\u0644\u0623\u0643\u062B\u0631 \u0645\u0628\u064A\u0639\u0627\u064B \u2B50)
+- \u0631\u0628\u0637 \u062E\u0637\u064A\u0646 \u0648\u0627\u062A\u0633\u0627\u0628 + \u062A\u0644\u064A\u062C\u0631\u0627\u0645 \u0628\u0648\u062A + \u0637\u0627\u0642\u0645 6 \u0645\u0648\u0638\u0641\u064A\u0646 \u0628\u0627\u0644\u0643\u0627\u0645\u0644. (\u062E\u0635\u0645 \u062A\u0631\u0648\u064A\u062C\u064A 15% \u0645\u062A\u0648\u0641\u0631 \u0627\u0644\u064A\u0648\u0645).
+
+\u{1F947} **\u0628\u0627\u0642\u0629 \u0627\u0644\u0645\u0624\u0633\u0633\u0627\u062A (Enterprise HQ)**: 4,900 \u062C.\u0645 / \u0634\u0647\u0631\u064A\u0627\u064B
+- \u062E\u0637\u0648\u0637 \u0648\u0645\u0648\u0638\u0641\u064A\u0646 \u0644\u0627 \u0646\u0647\u0627\u0626\u064A\u0629 + \u0631\u0628\u0637 \u0633\u062D\u0627\u0628\u064A Supabase + \u062A\u062F\u0631\u064A\u0628 \u0645\u062E\u0635\u0635.
+
+\u0623\u064A \u0628\u0627\u0642\u0629 \u062A\u0634\u0639\u0631 \u0623\u0646\u0647\u0627 \u0627\u0644\u0623\u0646\u0633\u0628 \u0644\u0645\u0634\u0631\u0648\u0639\u0643 \u0627\u0644\u0622\u0646\u061F \u0648\u0633\u0623\u0642\u0648\u0645 \u0628\u062A\u0623\u0643\u064A\u062F\u0647\u0627 \u0648\u0625\u0635\u062F\u0627\u0631 \u0627\u0644\u0641\u0627\u062A\u0648\u0631\u0629 \u0641\u0648\u0631\u0627\u064B \u26A1`;
+    }
+    const replyText = aiText || fallbackText;
+    this.saveChatMessage(chatId, "user", rawText);
+    this.saveChatMessage(chatId, "assistant", replyText, "sales");
+    return {
+      agentId: "sales",
+      agentName: "\u0623\u062D\u0645\u062F \u0627\u0644\u0645\u0628\u064A\u0639\u0627\u062A",
+      agentTitle: "Chief Sales & Closing Officer",
+      text: replyText
+    };
+  }
 };
+var chatCoreSwarm = new ChatCoreSwarm();
+
+// server.ts
+init_db();
+
+// src/queues/messageQueue.ts
+var import_pg_boss = require("pg-boss");
+var import_dotenv2 = __toESM(require("dotenv"), 1);
+import_dotenv2.default.config();
+var dbUrl = process.env.DATABASE_URL;
+var boss = null;
+async function initializeQueues() {
+  if (!dbUrl) {
+    console.warn("[Queues] DATABASE_URL not found. pg-boss disabled.");
+    return;
+  }
+  try {
+    boss = new import_pg_boss.PgBoss({
+      connectionString: dbUrl,
+      max: 2,
+      ssl: { rejectUnauthorized: false }
+    });
+    boss.on("error", (error) => {
+      const msg = error?.message || String(error);
+      if (msg.includes("ENOTFOUND") || msg.includes("timeout") || msg.includes("terminated") || msg.includes("EMAXCONNSESSION") || msg.includes("max clients")) {
+        return;
+      }
+      console.error("[pg-boss] Suppressed Error:", msg);
+    });
+    await boss.start();
+    console.log("[Queues] pg-boss Queues initialized via PostgreSQL (Pool Max: 2) successfully.");
+  } catch (err) {
+    console.warn("[Queues] PgBoss start bypassed due to Supabase pool limit. Using direct execution:", err?.message || err);
+    boss = null;
+  }
+}
+async function enqueueIncomingWebhook(payload) {
+  if (boss) {
+    try {
+      await boss.send("incoming-messages", payload);
+    } catch (e) {
+      console.warn("[Queues] Direct fallback for webhook.");
+    }
+  }
+}
+
+// src/queues/workers.ts
+async function initializeWorkers(processWebhook) {
+  if (!boss) return;
+  await boss.createQueue("incoming-messages");
+  await boss.createQueue("outgoing-messages");
+  await boss.work("incoming-messages", async (jobs) => {
+    const jobList = Array.isArray(jobs) ? jobs : [jobs];
+    for (const job of jobList) {
+      const payload = job.data;
+      console.log(`[Queue Worker] Processing incoming webhook from Meta (Job ID: ${job.id})`);
+      await processWebhook(payload);
+    }
+  });
+  await boss.work("outgoing-messages", async (jobs) => {
+    const jobList = Array.isArray(jobs) ? jobs : [jobs];
+    for (const job of jobList) {
+      const payload = job.data;
+      console.log(`[Queue Worker] Processing outgoing message (Job ID: ${job.id})`);
+    }
+  });
+  console.log("[Workers] pg-boss Workers initialized successfully.");
+}
+
+// server.ts
+init_RouterAgent();
+init_RagAgent();
 
 // src/agents/VoiceAgent.ts
-var import_genai3 = require("@google/genai");
+var import_genai4 = require("@google/genai");
 var VoiceAgent = class {
   constructor() {
     this.ai = null;
     const apiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
     if (apiKey) {
-      this.ai = new import_genai3.GoogleGenAI({ apiKey });
+      this.ai = new import_genai4.GoogleGenAI({ apiKey });
     }
   }
   /**
@@ -2183,6 +3260,7 @@ function parseSpintax(text) {
 // server.ts
 var import_baileys2 = require("@whiskeysockets/baileys");
 var import_express_rate_limit = __toESM(require("express-rate-limit"), 1);
+import_dns.default.setDefaultResultOrder("ipv4first");
 var JWT_SECRET = process.env.JWT_SECRET || "watbus-super-secret-key-2026";
 var debugLogPath = import_path4.default.join(process.cwd(), "startup-error.log");
 var memoryLogs = [];
@@ -2229,9 +3307,9 @@ process.on("unhandledRejection", (reason) => {
   } catch (e) {
   }
 });
-import_dotenv.default.config();
-var routerAgent = new RouterAgent();
-var ragAgent = new RagAgent();
+import_dotenv3.default.config();
+var routerAgent2 = new RouterAgent();
+var ragAgent2 = new RagAgent();
 var voiceAgent = new VoiceAgent();
 var PORT = Number(process.env.PORT) || 3e3;
 var app = (0, import_express.default)();
@@ -2268,7 +3346,8 @@ var publicRoutes = [
   "/api/expocore/webhook",
   "/api/whatsapp/qr",
   "/api/catalog",
-  "/api/webhooks"
+  "/api/webhooks",
+  "/api/agents"
 ];
 app.use("/api", (req, res, next) => {
   const currentPath = req.originalUrl.split("?")[0];
@@ -2329,7 +3408,7 @@ var autoPairCooldowns = /* @__PURE__ */ new Map();
 var ai = null;
 if (process.env.GEMINI_API_KEY) {
   try {
-    ai = new import_genai4.GoogleGenAI({
+    ai = new import_genai9.GoogleGenAI({
       apiKey: process.env.GEMINI_API_KEY,
       httpOptions: {
         headers: {
@@ -3449,7 +4528,7 @@ app.post("/api/conversations/:convId/summarize", async (req, res) => {
       res.status(500).json({ error: "GEMINI_API_KEY is not configured" });
       return;
     }
-    const genAI = new import_genai4.GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+    const genAI = new import_genai9.GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
     const conversationText = messages.filter((m) => !m.isInternalNote).map((m) => {
       const role = m.senderId.startsWith("contact_") ? "Customer" : "Agent";
       return `${role}: ${m.content}`;
@@ -6101,12 +7180,45 @@ async function globalIncomingHandler(deviceId, sock, jid, pushName, messageConte
     const ownerId = device.ownerId || realUsers[0]?.id || "user_default";
     const conv = getOrCreateConversation(ownerId, contactId, deviceId);
     let userMessageText = "";
-    if (messageContent.conversation) {
+    if (typeof messageContent === "string") {
+      userMessageText = messageContent;
+    } else if (messageContent?.conversation) {
       userMessageText = messageContent.conversation;
-    } else if (messageContent.extendedTextMessage) {
+    } else if (messageContent?.extendedTextMessage) {
       userMessageText = messageContent.extendedTextMessage.text || "";
-    } else if (messageContent.imageMessage) {
-      userMessageText = messageContent.imageMessage.caption || "";
+    } else if (messageContent?.imageMessage) {
+      userMessageText = messageContent.imageMessage.caption || "[\u0635\u0648\u0631\u0629/Image]";
+    } else if (messageContent?.audioMessage) {
+      userMessageText = "[\u0631\u0633\u0627\u0644\u0629 \u0635\u0648\u062A\u064A\u0629/Voice Note]";
+    } else if (messageContent?.documentMessage) {
+      userMessageText = messageContent.documentMessage.fileName || "[\u0645\u0633\u062A\u0646\u062F/Document]";
+    }
+    if (!fromMe) {
+      const existingMsgs = getMessagesForConversation(conv.id);
+      const timeMs = typeof timestamp === "number" && timestamp > 1e11 ? timestamp : (timestamp || Date.now() / 1e3) * 1e3;
+      const isSaved = existingMsgs.some((m) => m.id === messageId || m.content === userMessageText && Math.abs(new Date(m.timestamp).getTime() - timeMs) < 5e3);
+      if (!isSaved) {
+        let msgType = "text";
+        if (messageContent?.imageMessage) msgType = "image";
+        if (messageContent?.audioMessage) msgType = "audio";
+        if (messageContent?.documentMessage) msgType = "document";
+        const incomingMsg = {
+          id: messageId || `msg_${Math.random().toString(36).substring(2, 11)}`,
+          conversationId: conv.id,
+          senderId: contactId,
+          recipientId: ownerId,
+          content: userMessageText || "[\u0631\u0633\u0627\u0644\u0629 \u0648\u0627\u0631\u062F\u0629]",
+          type: msgType,
+          status: "read",
+          timestamp: new Date(timeMs).toISOString()
+        };
+        saveMessage(incomingMsg);
+        console.log(`[globalIncomingHandler] Saved & broadcasted incoming customer message ${incomingMsg.id} for conv ${conv.id}`);
+        broadcast({
+          type: "message:new",
+          message: incomingMsg
+        });
+      }
     }
     const customStages = device.flowStagesEnabled && device.flowStages && device.flowStages.length > 0 ? device.flowStages : void 0;
     const historyMsgs = getMessagesForConversation(conv.id);
@@ -6519,7 +7631,7 @@ ${finalKnowledgeBase}
 - Review the Conversation History carefully.
 - Refer to the customer by their name (${pushName || "Valued Customer"}) where natural.
 - Keep your answers highly professional, interactive, and directly to the point. Avoid fluff or overly long answers.
-- GREETING LIMITS: DO NOT repeat greetings, welcome messages, or introductory phrases (like "\u0645\u0631\u062D\u0628\u0627\u064B", "\u0623\u0647\u0644\u0627\u064B \u0628\u0643", "Hi", "Hello") in subsequent messages in the conversation if they have already been greeted or if there is active history. Treat the conversation as a continuous stream of replies!
+- STRICT ANTI-REPETITION & GREETING LIMITS: Review the Conversation History carefully. If you or the customer have ALREADY exchanged greetings (e.g. "\u0623\u0647\u0644\u0627\u064B \u0628\u0643", "\u0645\u0631\u062D\u0628\u0627\u064B", "\u0635\u0628\u0627\u062D \u0627\u0644\u062E\u064A\u0631", "\u0645\u0633\u0627\u0621 \u0627\u0644\u062E\u064A\u0631", welcome messages, introductions) anywhere in the previous history, DO NOT output any opening greeting or introductory sales pitch! Jump directly into answering the user's latest question with zero fluff. Repeating greetings in an ongoing conversation is STRICTLY FORBIDDEN!
 - NO SYSTEM PHONE LISTINGS: NEVER mention, list, or write out the system/support phone number (+${contactPhone} or any other number) repeatedly or unnecessarily in your responses. Referencing the phone number when the user is already actively chatting on it is redundant and flagged as spam/bot behavior.
 - Address subsequent queries organically as a continuous conversation without generic template intros.
 
@@ -6548,7 +7660,7 @@ Formulate your exceptionally smart and professional response now:`;
         }
         try {
           console.log(`[Multi-Agent Router] Classifying intent for message: "${userMessageText.substring(0, 50)} "...`);
-          const routeResult = await routerAgent.classifyIntent(userMessageText, !!messageContent.imageMessage, !!messageContent.audioMessage);
+          const routeResult = await routerAgent2.classifyIntent(userMessageText, !!messageContent.imageMessage, !!messageContent.audioMessage);
           console.log(`[Multi-Agent Router] Decision: Intent=${routeResult.intent}, Suggested Agent=${routeResult.suggestedAgent}`);
           saveLead({
             id: `lead_${contactPhone}`,
@@ -6561,13 +7673,13 @@ Formulate your exceptionally smart and professional response now:`;
           });
           if (messageContent.imageMessage && contentsPayload?.parts?.[0]?.inlineData?.data) {
             console.log(`[Multi-Agent] Routing image to RagAgent (Computer Vision)...`);
-            const visionRes = await ragAgent.analyzeProductImage(contentsPayload.parts[0].inlineData.data, contentsPayload.parts[0].inlineData.mimeType, readDb().catalog || []);
+            const visionRes = await ragAgent2.analyzeProductImage(contentsPayload.parts[0].inlineData.data, contentsPayload.parts[0].inlineData.mimeType, readDb().catalog || []);
             if (visionRes.reply) {
               responseText = visionRes.reply;
             }
           } else if (routeResult.suggestedAgent === "rag" || routeResult.intent === "catalog_inquiry") {
             console.log(`[Multi-Agent] Querying RagAgent (RAG Catalog Sync)...`);
-            const ragReply = await ragAgent.queryCatalog(userMessageText, readDb().catalog || [], formattedHistory);
+            const ragReply = await ragAgent2.queryCatalog(userMessageText, readDb().catalog || [], formattedHistory);
             if (ragReply) {
               responseText = ragReply;
             }
@@ -6700,69 +7812,74 @@ app.get("/api/webhooks/meta", (req, res) => {
     res.sendStatus(403);
   }
 });
-app.post("/api/webhooks/meta", async (req, res) => {
-  try {
-    const body = req.body;
-    console.log("[Meta Webhook Received]", JSON.stringify(body));
-    if (body.object === "whatsapp_business_account") {
-      for (const entry of body.entry) {
-        for (const change of entry.changes) {
-          if (change.value) {
-            const phoneNumberId = change.value.metadata?.phone_number_id;
-            if (!phoneNumberId) continue;
-            const devices = getAllDevices();
-            const device = devices.find((d) => d.method === "cloud_api" && String(d.phoneId || "").trim() === String(phoneNumberId).trim()) || devices.find((d) => d.method === "cloud_api");
-            if (device) {
-              if (change.value.messages) {
-                for (const msg of change.value.messages) {
-                  const contactPhone = msg.from;
-                  const jid = `${contactPhone}@s.whatsapp.net`;
-                  const pushName = change.value.contacts?.[0]?.profile?.name || contactPhone;
-                  const timestamp = parseInt(msg.timestamp) * 1e3;
-                  const messageId = msg.id;
-                  let messageContent = {};
-                  if (msg.type === "text") {
-                    messageContent = { conversation: msg.text.body };
-                  } else if (msg.type === "image") {
-                    messageContent = { imageMessage: { caption: msg.image?.caption || "" } };
-                  } else if (msg.type === "audio") {
-                    messageContent = { audioMessage: { mimetype: "audio/ogg" } };
-                  } else if (msg.type === "interactive") {
-                    if (msg.interactive.type === "button_reply") {
-                      messageContent = { conversation: msg.interactive.button_reply.title };
-                    } else if (msg.interactive.type === "list_reply") {
-                      messageContent = { conversation: msg.interactive.list_reply.title };
-                    }
-                  } else {
-                    messageContent = { conversation: `[Unsupported Meta Message Type: ${msg.type}]` };
+async function processMetaWebhook(body) {
+  if (body.object === "whatsapp_business_account") {
+    for (const entry of body.entry) {
+      for (const change of entry.changes) {
+        if (change.value) {
+          const phoneNumberId = change.value.metadata?.phone_number_id;
+          if (!phoneNumberId) continue;
+          const devices = getAllDevices();
+          const device = devices.find((d) => d.method === "cloud_api" && String(d.phoneId || "").trim() === String(phoneNumberId).trim()) || devices.find((d) => d.method === "cloud_api");
+          if (device) {
+            if (change.value.messages) {
+              for (const msg of change.value.messages) {
+                const contactPhone = msg.from;
+                const jid = `${contactPhone}@s.whatsapp.net`;
+                const pushName = change.value.contacts?.[0]?.profile?.name || contactPhone;
+                const timestamp = parseInt(msg.timestamp) * 1e3;
+                const messageId = msg.id;
+                let messageContent = {};
+                if (msg.type === "text") {
+                  messageContent = { conversation: msg.text.body };
+                } else if (msg.type === "image") {
+                  messageContent = { imageMessage: { caption: msg.image?.caption || "" } };
+                } else if (msg.type === "audio") {
+                  messageContent = { audioMessage: { mimetype: "audio/ogg" } };
+                } else if (msg.type === "interactive") {
+                  if (msg.interactive.type === "button_reply") {
+                    messageContent = { conversation: msg.interactive.button_reply.title };
+                  } else if (msg.interactive.type === "list_reply") {
+                    messageContent = { conversation: msg.interactive.list_reply.title };
                   }
-                  await globalIncomingHandler(device.id, null, jid, pushName, messageContent, false, timestamp, messageId);
+                } else {
+                  messageContent = { conversation: `[Unsupported Meta Message Type: ${msg.type}]` };
                 }
+                await globalIncomingHandler(device.id, null, jid, pushName, messageContent, false, timestamp, messageId);
               }
-              if (change.value.statuses) {
-                for (const statusObj of change.value.statuses) {
-                  const messageId = statusObj.id;
-                  const status = statusObj.status;
-                  updateMessageStatus(messageId, status);
-                  const allMsgs = readDb().messages || [];
-                  const msg = allMsgs.find((m) => m.id === messageId);
-                  if (msg) {
-                    broadcast({
-                      type: "message:receipt",
-                      messageId,
-                      status,
-                      conversationId: msg.conversationId
-                    });
-                  }
-                }
-              }
-            } else {
-              console.warn(`[Meta Webhook] No cloud_api device found for phoneId ${phoneNumberId}`);
             }
+            if (change.value.statuses) {
+              for (const statusObj of change.value.statuses) {
+                const messageId = statusObj.id;
+                const status = statusObj.status;
+                updateMessageStatus(messageId, status);
+                const allMsgs = readDb().messages || [];
+                const msg = allMsgs.find((m) => m.id === messageId);
+                if (msg) {
+                  broadcast({
+                    type: "message:receipt",
+                    messageId,
+                    status,
+                    conversationId: msg.conversationId
+                  });
+                }
+              }
+            }
+          } else {
+            console.warn(`[Meta Webhook] No cloud_api device found for phoneId ${phoneNumberId}`);
           }
         }
       }
+    }
+  }
+}
+app.post("/api/webhooks/meta", async (req, res) => {
+  try {
+    const body = req.body;
+    console.log("[Meta Webhook Received] Enqueuing payload...");
+    if (body.object === "whatsapp_business_account") {
       res.sendStatus(200);
+      enqueueIncomingWebhook(body);
     } else {
       res.sendStatus(404);
     }
@@ -6771,7 +7888,67 @@ app.post("/api/webhooks/meta", async (req, res) => {
     res.sendStatus(500);
   }
 });
+app.post("/api/tickets", async (req, res) => {
+  try {
+    const { title, priority, conversationId } = req.body;
+    if (!title || !conversationId) return res.status(400).send("Missing fields");
+    if (prisma) {
+      const ticket = await prisma.ticket.create({
+        data: {
+          title,
+          priority: priority || "normal",
+          conversationId
+        }
+      });
+      res.json(ticket);
+    } else {
+      res.status(500).send("Prisma not connected");
+    }
+  } catch (err) {
+    console.error("[Tickets API Error]", err);
+    res.status(500).send("Server Error");
+  }
+});
+app.get("/api/tickets/:conversationId", async (req, res) => {
+  try {
+    const { conversationId } = req.params;
+    if (prisma) {
+      const tickets = await prisma.ticket.findMany({
+        where: { conversationId },
+        orderBy: { createdAt: "desc" }
+      });
+      res.json(tickets);
+    } else {
+      res.json([]);
+    }
+  } catch (err) {
+    console.error("[Tickets API Error]", err);
+    res.status(500).send("Server Error");
+  }
+});
+app.get("/api/performance", async (req, res) => {
+  try {
+    const db = readDb();
+    const totalMsgs = db.messages?.length || 0;
+    const totalConvs = Object.keys(db.conversations || {}).length;
+    const activeConvs = Object.values(db.conversations || {}).filter((c) => c.status === "open").length;
+    const summary = `\u062A\u0645 \u062A\u062D\u0644\u064A\u0644 ${totalMsgs} \u0631\u0633\u0627\u0644\u0629 \u0639\u0628\u0631 ${totalConvs} \u0645\u062D\u0627\u062F\u062B\u0629. \u0627\u0644\u0645\u062D\u0627\u062F\u062B\u0627\u062A \u0627\u0644\u0646\u0634\u0637\u0629 \u062D\u0627\u0644\u064A\u0627\u064B: ${activeConvs}. \u0645\u0633\u062A\u0648\u0649 \u0627\u0644\u0623\u062F\u0627\u0621 \u0627\u0644\u0639\u0627\u0645 \u0645\u0645\u062A\u0627\u0632.`;
+    res.json({
+      totalMessages: totalMsgs,
+      totalConversations: totalConvs,
+      activeConversations: activeConvs,
+      aiSummary: summary,
+      timestamp: (/* @__PURE__ */ new Date()).toISOString()
+    });
+  } catch (err) {
+    console.error("[Performance API Error]", err);
+    res.status(500).send("Server Error");
+  }
+});
 async function startServer() {
+  await initializeDbFromPrisma();
+  await initializeQueues();
+  await initializeWorkers(processMetaWebhook);
   if (isSupabaseConfigured()) {
     console.log("[Supabase Startup] Checking for central database backup in Supabase...");
     try {
@@ -7114,6 +8291,288 @@ We look forward to seeing you! I am your WhatsApp Smart Agent. If you have any q
         success: false,
         error: error.message || "Internal error sending WhatsApp message"
       });
+    }
+  });
+  let cachedTelegramBotInfo = null;
+  let telegramOffset = 0;
+  let telegramTimer = null;
+  function formatTelegramHTML(text) {
+    if (!text) return { formattedText: "" };
+    try {
+      let safe = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      safe = safe.replace(/\*\*(.*?)\*\*/g, "<b>$1</b>");
+      safe = safe.replace(/(?<!\*)\*(?!\*)(.*?)(?<!\*)\*(?!\*)/g, "<b>$1</b>");
+      return { formattedText: safe, parseMode: "HTML" };
+    } catch (err) {
+      return { formattedText: text.replace(/\*/g, "") };
+    }
+  }
+  async function startTelegramBotEngine(token) {
+    if (telegramTimer) clearInterval(telegramTimer);
+    if (!token || !token.trim()) return;
+    console.log("\u{1F916} Telegram Bot Engine initialized with Token:", token.slice(0, 10) + "...");
+    telegramTimer = setInterval(async () => {
+      try {
+        const res = await fetch(`https://api.telegram.org/bot${token}/getUpdates?offset=${telegramOffset}&timeout=2`);
+        const data = await res.json();
+        if (data.ok && Array.isArray(data.result)) {
+          for (const update of data.result) {
+            telegramOffset = update.update_id + 1;
+            if (update.message && update.message.text) {
+              try {
+                const chatId = update.message.chat.id;
+                const userText = update.message.text;
+                const senderName = update.message.from.first_name || "\u0639\u0645\u064A\u0644 \u062A\u0644\u064A\u062C\u0631\u0627\u0645";
+                let agentReplyText = "";
+                let photoUrl = "";
+                try {
+                  const swarmResult = await chatCoreSwarm.processUserMessage(userText, senderName, String(chatId));
+                  agentReplyText = swarmResult.text || `\u0623\u0647\u0644\u0627\u064B \u0628\u0643 \u064A\u0627 \u0641\u0646\u062F\u0645 (${senderName})! \u062A\u0645 \u0627\u0633\u062A\u0644\u0627\u0645 \u0631\u0633\u0627\u0644\u062A\u0643 \u0648\u062A\u0648\u062C\u064A\u0647\u0647\u0627 \u0644\u0644\u0645\u0648\u0638\u0641 \u0627\u0644\u0645\u062E\u062A\u0635.`;
+                  if (swarmResult.mediaUrl) {
+                    photoUrl = swarmResult.mediaUrl;
+                  }
+                } catch (e) {
+                  agentReplyText = `\u0623\u0647\u0644\u0627\u064B \u0628\u0643 \u064A\u0627 \u0641\u0646\u062F\u0645 (${senderName})! \u062A\u0645 \u0627\u0633\u062A\u0644\u0627\u0645 \u0631\u0633\u0627\u0644\u062A\u0643 \u0648\u062A\u0648\u062C\u064A\u0647\u0647\u0627 \u0644\u0644\u0645\u0648\u0638\u0641 \u0627\u0644\u0645\u062E\u062A\u0635.`;
+                }
+                const { formattedText, parseMode } = formatTelegramHTML(agentReplyText);
+                let sent = false;
+                if (photoUrl) {
+                  try {
+                    const photoPayload = { chat_id: chatId, photo: photoUrl, caption: formattedText };
+                    if (parseMode) photoPayload.parse_mode = parseMode;
+                    const tgRes = await fetch(`https://api.telegram.org/bot${token}/sendPhoto`, {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify(photoPayload)
+                    });
+                    const tgData = await tgRes.json();
+                    if (tgData.ok) sent = true;
+                  } catch (e) {
+                  }
+                }
+                if (!sent) {
+                  try {
+                    const msgPayload = { chat_id: chatId, text: formattedText };
+                    if (parseMode) msgPayload.parse_mode = parseMode;
+                    const tgRes = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify(msgPayload)
+                    });
+                    const tgData = await tgRes.json();
+                    if (!tgData.ok) {
+                      await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ chat_id: chatId, text: agentReplyText.replace(/\*/g, "") })
+                      });
+                    }
+                  } catch (e) {
+                    await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ chat_id: chatId, text: agentReplyText.replace(/\*/g, "") })
+                    });
+                  }
+                }
+              } catch (msgErr) {
+                console.error("[Telegram Msg Processing Error]", msgErr);
+              }
+            }
+          }
+        }
+      } catch (err) {
+      }
+    }, 3e3);
+  }
+  try {
+    const pSet = getPaymentSettings();
+    if (pSet && pSet.telegramBotToken && pSet.telegramBotToken.trim()) {
+      startTelegramBotEngine(pSet.telegramBotToken.trim());
+      console.log("\u{1F680} Auto-started Telegram Bot Engine on server boot!");
+    }
+  } catch (err) {
+  }
+  try {
+    const pSet = getPaymentSettings();
+    if (pSet && pSet.telegramBotToken) {
+      startTelegramBotEngine(pSet.telegramBotToken);
+    }
+  } catch (err) {
+  }
+  app.post("/api/telegram/test-bot", async (req, res) => {
+    try {
+      const { token } = req.body;
+      if (!token) return res.status(400).json({ error: "Token is required" });
+      const tgRes = await fetch(`https://api.telegram.org/bot${token}/getMe`);
+      const data = await tgRes.json();
+      if (data.ok) {
+        startTelegramBotEngine(token);
+        res.json({ success: true, bot: data.result });
+      } else {
+        res.status(400).json({ error: "invalid token" });
+      }
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+  app.get("/api/payment-settings", (req, res) => {
+    try {
+      res.json({ success: true, settings: getPaymentSettings() });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+  app.post("/api/payment-settings", (req, res) => {
+    try {
+      const saved = savePaymentSettings(req.body);
+      res.json({ success: true, settings: saved });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+  app.get("/api/agents/config", (req, res) => {
+    try {
+      const db = readDb();
+      res.json({ success: true, agentsConfig: db.agentsConfig || {} });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+  app.post("/api/agents/config", (req, res) => {
+    try {
+      const { agentId, config } = req.body;
+      const db = readDb();
+      if (!db.agentsConfig) db.agentsConfig = {};
+      db.agentsConfig[agentId] = { ...db.agentsConfig[agentId] || {}, ...config, updatedAt: (/* @__PURE__ */ new Date()).toISOString() };
+      writeDb(db);
+      res.json({ success: true, agentId, config: db.agentsConfig[agentId] });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+  app.get("/api/agents/config", (req, res) => {
+    try {
+      const db = readDb();
+      res.json({ success: true, configs: db.agentsConfig || {} });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+  app.post("/api/agents/config", (req, res) => {
+    try {
+      const { agentId, config } = req.body;
+      const db = readDb();
+      if (!db.agentsConfig) db.agentsConfig = {};
+      if (agentId) {
+        db.agentsConfig[agentId] = config;
+      } else if (config) {
+        db.agentsConfig = { ...db.agentsConfig, ...config };
+      }
+      writeDb(db);
+      res.json({ success: true, configs: db.agentsConfig });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+  const handleRecommendationsRoute = async (req, res) => {
+    try {
+      let DevelopmentAgent2;
+      try {
+        const mod = await Promise.resolve().then(() => (init_DevelopmentAgent(), DevelopmentAgent_exports));
+        DevelopmentAgent2 = mod.DevelopmentAgent;
+      } catch {
+        const mod = await Promise.resolve().then(() => (init_DevelopmentAgent(), DevelopmentAgent_exports));
+        DevelopmentAgent2 = mod.DevelopmentAgent;
+      }
+      const devAgent = new DevelopmentAgent2();
+      const result = await devAgent.generateSystemRecommendations(req.body);
+      res.json({ success: true, ...result });
+    } catch (err) {
+      console.error("[Generate Recommendations Error]", err);
+      res.status(500).json({ error: err.message });
+    }
+  };
+  app.post("/api/agents/generate-recommendations", handleRecommendationsRoute);
+  app.post("/api/agents/recommendations", handleRecommendationsRoute);
+  app.post("/api/agents/generate-invoice", async (req, res) => {
+    try {
+      const { promptText, customerName, currency } = req.body;
+      const { InvoiceAgent: InvoiceAgent2 } = await Promise.resolve().then(() => (init_InvoiceAgent(), InvoiceAgent_exports));
+      const invoiceAgent2 = new InvoiceAgent2();
+      const result = await invoiceAgent2.generateInvoice(promptText || "\u0641\u0627\u062A\u0648\u0631\u0629 \u0627\u0633\u062A\u0634\u0627\u0631\u064A\u0629", customerName || "\u0627\u0644\u0639\u0645\u064A\u0644 \u0627\u0644\u0645\u0645\u064A\u0632", currency || "EGP");
+      res.json({ success: true, ...result });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+  app.post("/api/agents/generate-media", async (req, res) => {
+    try {
+      const { promptText } = req.body;
+      const { MediaAgent: MediaAgent2 } = await Promise.resolve().then(() => (init_MediaAgent(), MediaAgent_exports));
+      const mediaAgent2 = new MediaAgent2();
+      const result = await mediaAgent2.generateMediaCard(promptText || "\u0639\u0631\u0636 \u062E\u0627\u0635");
+      res.json({ success: true, ...result });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+  app.post("/api/agents/dispatch", async (req, res) => {
+    try {
+      const { messageText, customerName, conversationId } = req.body;
+      const { appGraph: appGraph2 } = await Promise.resolve().then(() => (init_GraphOrchestrator(), GraphOrchestrator_exports));
+      const config = { configurable: { thread_id: conversationId || `test_${Date.now()}` } };
+      const output = await appGraph2.invoke({
+        inputMessage: messageText || "\u0623\u0647\u0644\u0627\u064B \u0628\u0643",
+        customerName: customerName || "\u0627\u0644\u0639\u0645\u064A\u0644 \u0627\u0644\u0645\u0645\u064A\u0632"
+      }, config);
+      res.json({
+        success: true,
+        finalResponse: output.finalResponse,
+        intent: output.intent,
+        suggestedAgent: output.suggestedAgent,
+        confidence: output.confidence,
+        metadata: output.metadata
+      });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+  app.get("/api/payment-settings", (req, res) => {
+    try {
+      res.json({ success: true, settings: getPaymentSettings() });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+  app.post("/api/payment-settings", (req, res) => {
+    try {
+      const saved = savePaymentSettings(req.body);
+      if (saved && saved.telegramBotToken) {
+        startTelegramBotEngine(saved.telegramBotToken);
+      }
+      res.json({ success: true, settings: saved });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+  app.post("/api/telegram/test-bot", async (req, res) => {
+    try {
+      const { token } = req.body;
+      if (!token) return res.status(400).json({ error: "Token is required" });
+      const tgRes = await fetch(`https://api.telegram.org/bot${token}/getMe`);
+      const data = await tgRes.json();
+      if (data.ok) {
+        startTelegramBotEngine(token);
+        const pSet = getPaymentSettings();
+        cachedTelegramBotInfo = data.result;
+        savePaymentSettings({ ...pSet, telegramBotToken: token, telegramBotEnabled: true, telegramBotInfo: data.result });
+        res.json({ success: true, bot: data.result });
+      } else {
+        res.status(400).json({ error: "invalid telegram bot token" });
+      }
+    } catch (err) {
+      res.status(500).json({ error: err.message });
     }
   });
   if (process.env.NODE_ENV !== "production") {

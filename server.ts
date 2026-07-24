@@ -4893,12 +4893,51 @@ function cleanOrphanedSessions() {
 
       // Detect message text content
       let userMessageText = '';
-      if (messageContent.conversation) {
+      if (typeof messageContent === 'string') {
+        userMessageText = messageContent;
+      } else if (messageContent?.conversation) {
         userMessageText = messageContent.conversation;
-      } else if (messageContent.extendedTextMessage) {
+      } else if (messageContent?.extendedTextMessage) {
         userMessageText = messageContent.extendedTextMessage.text || '';
-      } else if (messageContent.imageMessage) {
-        userMessageText = messageContent.imageMessage.caption || '';
+      } else if (messageContent?.imageMessage) {
+        userMessageText = messageContent.imageMessage.caption || '[صورة/Image]';
+      } else if (messageContent?.audioMessage) {
+        userMessageText = '[رسالة صوتية/Voice Note]';
+      } else if (messageContent?.documentMessage) {
+        userMessageText = messageContent.documentMessage.fileName || '[مستند/Document]';
+      }
+
+      // CRITICAL FIX: Ensure incoming customer message is ALWAYS saved to database & broadcasted to Frontend UI
+      if (!fromMe) {
+        const existingMsgs = getMessagesForConversation(conv.id);
+        const timeMs = typeof timestamp === 'number' && timestamp > 1e11 ? timestamp : (timestamp || Date.now() / 1000) * 1000;
+        const isSaved = existingMsgs.some(m => m.id === messageId || (m.content === userMessageText && Math.abs(new Date(m.timestamp).getTime() - timeMs) < 5000));
+
+        if (!isSaved) {
+          let msgType: 'text' | 'image' | 'audio' | 'document' = 'text';
+          if (messageContent?.imageMessage) msgType = 'image';
+          if (messageContent?.audioMessage) msgType = 'audio';
+          if (messageContent?.documentMessage) msgType = 'document';
+
+          const incomingMsg: Message = {
+            id: messageId || `msg_${Math.random().toString(36).substring(2, 11)}`,
+            conversationId: conv.id,
+            senderId: contactId,
+            recipientId: ownerId,
+            content: userMessageText || '[رسالة واردة]',
+            type: msgType,
+            status: 'read',
+            timestamp: new Date(timeMs).toISOString()
+          };
+
+          saveMessage(incomingMsg);
+          console.log(`[globalIncomingHandler] Saved & broadcasted incoming customer message ${incomingMsg.id} for conv ${conv.id}`);
+
+          broadcast({
+            type: 'message:new',
+            message: incomingMsg
+          });
+        }
       }
 
       // Live Customer Journey Stage Transition Check
@@ -5378,7 +5417,7 @@ ${finalKnowledgeBase}
 - Review the Conversation History carefully.
 - Refer to the customer by their name (${pushName || 'Valued Customer'}) where natural.
 - Keep your answers highly professional, interactive, and directly to the point. Avoid fluff or overly long answers.
-- GREETING LIMITS: DO NOT repeat greetings, welcome messages, or introductory phrases (like "مرحباً", "أهلاً بك", "Hi", "Hello") in subsequent messages in the conversation if they have already been greeted or if there is active history. Treat the conversation as a continuous stream of replies!
+- STRICT ANTI-REPETITION & GREETING LIMITS: Review the Conversation History carefully. If you or the customer have ALREADY exchanged greetings (e.g. "أهلاً بك", "مرحباً", "صباح الخير", "مساء الخير", welcome messages, introductions) anywhere in the previous history, DO NOT output any opening greeting or introductory sales pitch! Jump directly into answering the user's latest question with zero fluff. Repeating greetings in an ongoing conversation is STRICTLY FORBIDDEN!
 - NO SYSTEM PHONE LISTINGS: NEVER mention, list, or write out the system/support phone number (+${contactPhone} or any other number) repeatedly or unnecessarily in your responses. Referencing the phone number when the user is already actively chatting on it is redundant and flagged as spam/bot behavior.
 - Address subsequent queries organically as a continuous conversation without generic template intros.
 

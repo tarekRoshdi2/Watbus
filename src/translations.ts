@@ -131,7 +131,7 @@ export const translations: Record<'ar' | 'en', SystemTranslations> = {
   ar: {
     dashboardTab: 'الرئيسية',
     adminTab: 'الإدارة',
-    usersTab: 'المستخدمون',
+    usersTab: 'الموظفين وفريق العمل',
     addUser: 'إضافة مستخدم',
     username: 'اسم المستخدم',
     statistics: 'الإحصائيات',
@@ -246,7 +246,7 @@ export const translations: Record<'ar' | 'en', SystemTranslations> = {
   en: {
     dashboardTab: 'Dashboard',
     adminTab: 'Admin',
-    usersTab: 'Users',
+    usersTab: 'Staff & Employees',
     addUser: 'Add User',
     username: 'Username',
     statistics: 'Statistics',
