@@ -1394,9 +1394,10 @@ ALTER TABLE crm_backups DISABLE ROW LEVEL SECURITY;`}
                       onChange={(e) => setAgentModel(e.target.value)}
                       className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 py-2.5 text-xs outline-none focus:border-amber-500 font-bold rtl:text-right ltr:text-left"
                     >
-                      <option value="gemini-3.5-flash">Gemini 3.5 Flash ({lang === 'ar' ? 'الأسرع والأذكى - مستحسن' : 'Recommended, Fastest'})</option>
-                      <option value="gemini-3.1-pro-preview">Gemini 3.1 Pro ({lang === 'ar' ? 'للمهام المعقدة والمنطق المتقدم' : 'Complex reasoning, advanced logic'})</option>
-                      <option value="gemini-3.1-flash-lite">Gemini 3.1 Flash Lite ({lang === 'ar' ? 'اقتصادي فائق السرعة' : 'Ultra-fast and cost-effective'})</option>
+                      <option value="gemini-2.0-flash">Gemini 2.0 Flash ({lang === 'ar' ? '🌟 الموصى به: أسرع وأفضل نموذج متوازن ومجاني 1500 طلب/يوم' : 'Recommended, Fastest & Most Balanced (1500 RPD Free)'})</option>
+                      <option value="gemini-2.0-flash-lite">Gemini 2.0 Flash Lite ({lang === 'ar' ? '⚡ الأرخص والأخف على الإطلاق (اقتصادي جداً)' : 'Ultra-fast & Most Cost-Effective'})</option>
+                      <option value="gemini-1.5-flash">Gemini 1.5 Flash ({lang === 'ar' ? '🧠 مستقر وبذاكرة ضخمة وقواعد معرفة كبيرة' : 'Large Context Memory'})</option>
+                      <option value="gemini-1.5-pro">Gemini 1.5 Pro ({lang === 'ar' ? '💎 للمهام المعقدة والتحليلات العميقة' : 'Complex Reasoning & Deep Analysis'})</option>
                     </select>
                   </div>
                 </div>
