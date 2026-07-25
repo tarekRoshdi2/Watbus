@@ -5,7 +5,8 @@ import {
   Wrench, ShieldCheck, Play, Send, RefreshCw, Sparkles, Check, DollarSign, ExternalLink, PhoneCall,
   Shield, Sliders, ListChecks, ArrowLeftRight, CreditCard, Palette, LifeBuoy, Compass, RotateCcw,
   Ticket, Layers, Copy, Download, PhoneForwarded, AlertTriangle, CheckCircle, FileCheck, Search, Plus, Volume2, PlayCircle, FileDown,
-  Lightbulb, TrendingUp, Cpu, Flame, Megaphone, Users, BarChart2, Target, Eye, ShoppingCart, UserCheck, Briefcase, Smartphone
+  Lightbulb, TrendingUp, Cpu, Flame, Megaphone, Users, BarChart2, Target, Eye, ShoppingCart, UserCheck, Briefcase, Smartphone,
+  Brain, Trash2
 } from 'lucide-react';
 
 export interface AgentConfig {
@@ -52,7 +53,15 @@ export default function AgentsDashboard({ lang, initialTab = 'roster' }: { lang:
   useEffect(() => { setMainHubTab(initialTab); }, [initialTab]);
 
   // Modal Settings Tabs
-  const [activeTab, setActiveTab] = useState<'identity' | 'duties' | 'params' | 'analytics' | 'logs' | 'dispatch'>('identity');
+  const [activeTab, setActiveTab] = useState<'identity' | 'duties' | 'params' | 'analytics' | 'logs' | 'dispatch' | 'training'>('identity');
+
+  // Supabase Agent Training Center States
+  const [agentTrainingItems, setAgentTrainingItems] = useState<any[]>([]);
+  const [isLoadingTraining, setIsLoadingTraining] = useState(false);
+  const [newTrainingType, setNewTrainingType] = useState<'knowledge' | 'scenario' | 'guardrail' | 'persona' | 'example_qa'>('knowledge');
+  const [newTrainingTitle, setNewTrainingTitle] = useState('');
+  const [newTrainingContent, setNewTrainingContent] = useState('');
+  const [isAddingTraining, setIsAddingTraining] = useState(false);
 
   // Live Playground Simulation States
   const [selectedPlaygroundProj, setSelectedPlaygroundProj] = useState(0);
@@ -105,13 +114,45 @@ export default function AgentsDashboard({ lang, initialTab = 'roster' }: { lang:
   const [liveAuditLogs, setLiveAuditLogs] = useState<any[]>([]);
   const [crmAnalytics, setCrmAnalytics] = useState<any>(null);
 
+  // Disabled Agents State (temporary pause/stop)
+  const [disabledAgents, setDisabledAgents] = useState<Record<string, boolean>>({});
+  const [togglingAgent, setTogglingAgent] = useState<string | null>(null);
+
+  const handleToggleAgent = async (agentId: string) => {
+    setTogglingAgent(agentId);
+    const currentlyDisabled = !!disabledAgents[agentId];
+    const newDisabled = !currentlyDisabled;
+    try {
+      const res = await fetch(`/api/agents/${agentId}/toggle-status`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ disabled: newDisabled })
+      });
+      if (res.ok) {
+        setDisabledAgents(prev => ({ ...prev, [agentId]: newDisabled }));
+        setAgents(prev => prev.map(a => a.id === agentId ? { ...a, status: newDisabled ? 'offline' : 'active' } : a));
+      }
+    } catch (err) {
+      console.error('Failed to toggle agent status:', err);
+    } finally {
+      setTogglingAgent(null);
+    }
+  };
+
   // Load Live Telemetry from API
   useEffect(() => {
     fetch('/api/agents/config')
       .then(res => res.json())
       .then(data => {
-        if (data.success && data.configs && Object.keys(data.configs).length > 0) {
-          setAgents(prev => prev.map(a => data.configs[a.id] ? { ...a, ...data.configs[a.id] } : a));
+        const configs = data.configs || data.agentsConfig || {};
+        if (data.success && configs && Object.keys(configs).length > 0) {
+          setAgents(prev => prev.map(a => configs[a.id] ? { ...a, ...configs[a.id] } : a));
+          // Restore disabled states from server
+          const disabledMap: Record<string, boolean> = {};
+          Object.entries(configs).forEach(([id, cfg]: [string, any]) => {
+            if (cfg && cfg.disabled === true) disabledMap[id] = true;
+          });
+          if (Object.keys(disabledMap).length > 0) setDisabledAgents(disabledMap);
         }
       })
       .catch(err => console.warn('Failed loading agent configs:', err));
@@ -749,12 +790,88 @@ export default function AgentsDashboard({ lang, initialTab = 'roster' }: { lang:
     }
   };
 
+  const handleFetchAgentTraining = async (agentId: string) => {
+    setIsLoadingTraining(true);
+    try {
+      const res = await fetch(`/api/agents/${agentId}/training`);
+      const data = await res.json();
+      if (data.success) {
+        setAgentTrainingItems(data.items || []);
+      }
+    } catch (err) {
+      console.error('Error fetching training items:', err);
+    } finally {
+      setIsLoadingTraining(false);
+    }
+  };
+
   const handleOpenConfig = (agent: AgentConfig) => {
     setSelectedAgent(agent);
     setEditingConfig(JSON.parse(JSON.stringify(agent)));
     setActiveTab('identity');
     setDirectTaskInput('');
     setDirectTaskResult(null);
+    handleFetchAgentTraining(agent.id);
+  };
+
+  const handleAddTrainingItem = async () => {
+    if (!editingConfig || !newTrainingTitle.trim() || !newTrainingContent.trim()) return;
+    setIsAddingTraining(true);
+    try {
+      const res = await fetch(`/api/agents/${editingConfig.id}/training`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: newTrainingType,
+          title: newTrainingTitle,
+          content: newTrainingContent,
+          priority: 10,
+          is_active: true
+        })
+      });
+      const data = await res.json();
+      if (data.success && data.item) {
+        setAgentTrainingItems(prev => [data.item, ...prev]);
+        setNewTrainingTitle('');
+        setNewTrainingContent('');
+      }
+    } catch (err) {
+      console.error('Error adding training item:', err);
+    } finally {
+      setIsAddingTraining(false);
+    }
+  };
+
+  const handleToggleTrainingItem = async (itemId: string, currentActive: boolean) => {
+    if (!editingConfig) return;
+    try {
+      const res = await fetch(`/api/agents/${editingConfig.id}/training/${itemId}/toggle`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ is_active: !currentActive })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setAgentTrainingItems(prev => prev.map(item => item.id === itemId ? { ...item, is_active: !currentActive } : item));
+      }
+    } catch (err) {
+      console.error('Error toggling training item:', err);
+    }
+  };
+
+  const handleDeleteTrainingItem = async (itemId: string) => {
+    if (!editingConfig) return;
+    try {
+      const res = await fetch(`/api/agents/${editingConfig.id}/training/${itemId}`, {
+        method: 'DELETE'
+      });
+      const data = await res.json();
+      if (data.success) {
+        setAgentTrainingItems(prev => prev.filter(item => item.id !== itemId));
+      }
+    } catch (err) {
+      console.error('Error deleting training item:', err);
+    }
   };
 
   const handleSaveConfig = async () => {
@@ -1063,14 +1180,32 @@ export default function AgentsDashboard({ lang, initialTab = 'roster' }: { lang:
                 </div>
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {agents.map((agent) => (
-                    <div key={agent.id} className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden shadow-xs flex flex-col hover:border-emerald-500/50 transition-all">
+                  {agents.map((agent) => {
+                    const isDisabled = !!disabledAgents[agent.id];
+                    const isToggling = togglingAgent === agent.id;
+                    return (
+                    <div key={agent.id} className={`bg-white dark:bg-zinc-900 border rounded-xl overflow-hidden shadow-xs flex flex-col transition-all ${
+                      isDisabled
+                        ? 'border-red-300 dark:border-red-800/60 opacity-70'
+                        : 'border-zinc-200 dark:border-zinc-800 hover:border-emerald-500/50'
+                    }`}>
                       
+                      {/* Disabled Banner */}
+                      {isDisabled && (
+                        <div className="bg-red-50 dark:bg-red-950/40 border-b border-red-200 dark:border-red-800/50 px-4 py-2 flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full bg-red-500 shrink-0"></span>
+                          <span className="text-[11px] font-bold text-red-600 dark:text-red-400">
+                            {isAr ? '⛔ موقوف مؤقتاً — لن يرد على الرسائل' : '⛔ Paused — Not replying to messages'}
+                          </span>
+                        </div>
+                      )}
+
                       {/* Header */}
                       <div className="p-5 border-b border-zinc-100 dark:border-zinc-800/60">
                         <div className="flex items-center justify-between mb-3">
                           <div className="flex items-center gap-3">
                             <div className={`w-11 h-11 rounded-xl flex items-center justify-center shadow-xs ${
+                              isDisabled ? 'bg-zinc-100 text-zinc-400 dark:bg-zinc-800 dark:text-zinc-500' :
                               agent.role === 'sales' ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-950/80 dark:text-emerald-400' :
                               agent.role === 'invoice' ? 'bg-sky-100 text-sky-600 dark:bg-sky-950/80 dark:text-sky-400' :
                               agent.role === 'media' ? 'bg-purple-100 text-purple-600 dark:bg-purple-950/80 dark:text-purple-400' :
@@ -1095,7 +1230,9 @@ export default function AgentsDashboard({ lang, initialTab = 'roster' }: { lang:
                               </div>
                             </div>
                           </div>
-                          <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                          <span className={`w-2.5 h-2.5 rounded-full ${
+                            isDisabled ? 'bg-red-500' : 'bg-emerald-500 animate-pulse'
+                          }`}></span>
                         </div>
                         <p className="text-xs text-zinc-600 dark:text-zinc-400 leading-relaxed min-h-[36px]">
                           {agent.description}
@@ -1125,12 +1262,42 @@ export default function AgentsDashboard({ lang, initialTab = 'roster' }: { lang:
                           className="flex-1 py-2 px-3 bg-zinc-100 dark:bg-zinc-800 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 text-zinc-800 dark:text-zinc-200 hover:text-emerald-600 dark:hover:text-emerald-400 rounded-lg text-xs font-semibold transition-colors flex items-center justify-center gap-2 cursor-pointer"
                         >
                           <Settings className="w-3.5 h-3.5" />
-                          {isAr ? 'التحكم التفصيلي والإعدادات' : 'Granular Control & Settings'}
+                          {isAr ? 'التحكم التفصيلي والإعدادات' : 'Settings'}
+                        </button>
+
+                        {/* 🔴🟢 Toggle On/Off Button */}
+                        <button
+                          id={`toggle-agent-${agent.id}`}
+                          onClick={() => handleToggleAgent(agent.id)}
+                          disabled={isToggling}
+                          title={isDisabled ? (isAr ? 'تشغيل الموظف' : 'Enable Agent') : (isAr ? 'إيقاف الموظف مؤقتاً' : 'Pause Agent')}
+                          className={`py-2 px-3 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shrink-0 border ${
+                            isToggling
+                              ? 'opacity-50 cursor-wait bg-zinc-100 dark:bg-zinc-800 text-zinc-400 border-zinc-300 dark:border-zinc-700'
+                              : isDisabled
+                              ? 'bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/50 dark:hover:bg-emerald-950 text-emerald-700 dark:text-emerald-400 border-emerald-300 dark:border-emerald-700'
+                              : 'bg-red-50 hover:bg-red-100 dark:bg-red-950/40 dark:hover:bg-red-950/70 text-red-600 dark:text-red-400 border-red-200 dark:border-red-800'
+                          }`}
+                        >
+                          {isToggling ? (
+                            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                          ) : isDisabled ? (
+                            <>
+                              <Play className="w-3.5 h-3.5 fill-current" />
+                              {isAr ? 'تشغيل' : 'Enable'}
+                            </>
+                          ) : (
+                            <>
+                              <XCircle className="w-3.5 h-3.5" />
+                              {isAr ? 'إيقاف' : 'Pause'}
+                            </>
+                          )}
                         </button>
                       </div>
 
                     </div>
-                  ))}
+                  );
+                  })}
                 </div>
 
               {/* INTERACTIVE AI AGENT PLAYGROUND CONSOLE */}
@@ -2758,6 +2925,15 @@ export default function AgentsDashboard({ lang, initialTab = 'roster' }: { lang:
                 {isAr ? 'سجل الأعمال والمهام الحية' : 'Live Work Audit'}
               </button>
               <button
+                onClick={() => setActiveTab('training')}
+                className={`pb-2.5 border-b-2 flex items-center gap-1.5 transition-all cursor-pointer ${
+                  activeTab === 'training' ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400 font-bold' : 'border-transparent text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200'
+                }`}
+              >
+                <Brain className="w-4 h-4 text-indigo-500" />
+                {isAr ? '🎓 مركز التدريب والتخصص (Supabase HQ)' : 'Training Center'}
+              </button>
+              <button
                 onClick={() => setActiveTab('dispatch')}
                 className={`pb-2.5 border-b-2 flex items-center gap-1.5 transition-all cursor-pointer ${
                   activeTab === 'dispatch' ? 'border-amber-500 text-amber-600 dark:text-amber-400 font-bold' : 'border-transparent text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200'
@@ -3014,6 +3190,163 @@ export default function AgentsDashboard({ lang, initialTab = 'roster' }: { lang:
                        editingConfig.role === 'marketing' ? 'أكبر وصول 📢' :
                        (editingConfig.role as string) === 'dev' ? 'عقل المنظومة 💡' : 'المشرف الرئيسي 🚦'}
                     </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Tab 5.5: Supabase Training Center (مركز التدريب والتخصص) */}
+              {activeTab === 'training' && (
+                <div className="space-y-5">
+                  <div className="bg-gradient-to-r from-indigo-900/60 via-purple-950/60 to-zinc-900 p-4 rounded-xl border border-indigo-500/40 text-white space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Brain className="w-5 h-5 text-indigo-400" />
+                        <h4 className="font-bold text-sm">مركز تدريب الموظف المخصص (Supabase AI Hub)</h4>
+                      </div>
+                      <span className="px-2.5 py-0.5 rounded-full bg-indigo-500/30 text-indigo-300 text-[10px] font-bold border border-indigo-400/30">
+                        {agentTrainingItems.length} وحدات تدريبية مفعّلة
+                      </span>
+                    </div>
+                    <p className="text-xs text-zinc-300 leading-relaxed">
+                      أضف سيناريوهات، قواعد سلوك، وملفات معرفية مخصصة لـ <strong className="text-indigo-300">{editingConfig.name}</strong>. يتم حفظ البيانات مباشرة في قاعدة بيانات Supabase وتطبيقها أثناء المحادثات!
+                    </p>
+                  </div>
+
+                  {/* Add New Training Item Form */}
+                  <div className="bg-zinc-50 dark:bg-zinc-800/80 p-4 rounded-xl border border-zinc-200 dark:border-zinc-700 space-y-3">
+                    <h5 className="font-bold text-zinc-900 dark:text-white text-xs flex items-center gap-1.5">
+                      <Plus className="w-4 h-4 text-indigo-500" />
+                      إضافة وحدة تدريبية جديدة:
+                    </h5>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div>
+                        <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1">نوع التدريب:</label>
+                        <select
+                          value={newTrainingType}
+                          onChange={e => setNewTrainingType(e.target.value as any)}
+                          className="w-full bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-white rounded-lg p-2 text-xs outline-none focus:border-indigo-500"
+                        >
+                          <option value="knowledge">معرفة وحقائق (Knowledge)</option>
+                          <option value="scenario">سيناريو رد (Scenario)</option>
+                          <option value="guardrail">قوانين وضوابط (Guardrail)</option>
+                          <option value="persona">شخصية وأسلوب (Persona)</option>
+                          <option value="example_qa">مثال سؤال وجواب (Q&A)</option>
+                        </select>
+                      </div>
+
+                      <div className="sm:col-span-2">
+                        <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1">عنوان الوحدة:</label>
+                        <input
+                          type="text"
+                          value={newTrainingTitle}
+                          onChange={e => setNewTrainingTitle(e.target.value)}
+                          placeholder="مثال: التعامل مع اعتراضات الأسعار"
+                          className="w-full bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-white rounded-lg p-2 text-xs outline-none focus:border-indigo-500 font-sans"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1">محتوى التدريب والتعليمات التفصيلية:</label>
+                      <textarea
+                        rows={3}
+                        value={newTrainingContent}
+                        onChange={e => setNewTrainingContent(e.target.value)}
+                        placeholder="اكتب المحتوى أو التعليمات الخاصة بالموظف هنا..."
+                        className="w-full bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-white rounded-xl p-2.5 text-xs outline-none focus:border-indigo-500 font-sans leading-relaxed"
+                      />
+                    </div>
+
+                    <div className="flex justify-end">
+                      <button
+                        onClick={handleAddTrainingItem}
+                        disabled={isAddingTraining || !newTrainingTitle.trim() || !newTrainingContent.trim()}
+                        className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold rounded-lg text-xs transition-colors flex items-center gap-1.5 cursor-pointer shadow-sm"
+                      >
+                        {isAddingTraining ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
+                        {isAddingTraining ? 'جاري الحفظ...' : 'حفظ الوحدة التدريبية'}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Training Items List */}
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <h5 className="font-bold text-zinc-900 dark:text-white text-xs flex items-center gap-1.5">
+                        <FileCheck className="w-4 h-4 text-indigo-500" />
+                        المواد التدريبية الحالية في Supabase:
+                      </h5>
+                      <button
+                        onClick={() => handleFetchAgentTraining(editingConfig.id)}
+                        className="text-indigo-500 hover:text-indigo-600 text-xs font-semibold flex items-center gap-1 cursor-pointer"
+                      >
+                        <RefreshCw className={`w-3 h-3 ${isLoadingTraining ? 'animate-spin' : ''}`} />
+                        تحديث
+                      </button>
+                    </div>
+
+                    {isLoadingTraining ? (
+                      <div className="p-8 text-center text-zinc-400 text-xs flex flex-col items-center gap-2">
+                        <RefreshCw className="w-5 h-5 animate-spin text-indigo-500" />
+                        جاري تحميل مركز التدريب من Supabase...
+                      </div>
+                    ) : agentTrainingItems.length === 0 ? (
+                      <div className="p-6 bg-zinc-50 dark:bg-zinc-800/40 rounded-xl border border-dashed border-zinc-300 dark:border-zinc-700 text-center text-zinc-400 text-xs">
+                        لا توجد مواد تدريبية مخصصة حتى الآن. يمكنك إضافة أول وحدة تدريبية أعلاه!
+                      </div>
+                    ) : (
+                      <div className="space-y-2.5 max-h-72 overflow-y-auto pr-1">
+                        {agentTrainingItems.map(item => (
+                          <div
+                            key={item.id}
+                            className={`p-3.5 rounded-xl border transition-all space-y-1.5 ${
+                              item.is_active
+                                ? 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800'
+                                : 'bg-zinc-50 dark:bg-zinc-900/40 border-zinc-200 dark:border-zinc-800/60 opacity-60'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="flex items-center gap-2">
+                                <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                  item.type === 'persona' ? 'bg-purple-100 text-purple-700 dark:bg-purple-950/80 dark:text-purple-300' :
+                                  item.type === 'scenario' ? 'bg-sky-100 text-sky-700 dark:bg-sky-950/80 dark:text-sky-300' :
+                                  item.type === 'guardrail' ? 'bg-rose-100 text-rose-700 dark:bg-rose-950/80 dark:text-rose-300' :
+                                  'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/80 dark:text-emerald-300'
+                                }`}>
+                                  {item.type}
+                                </span>
+                                <h6 className="font-bold text-zinc-900 dark:text-white text-xs">{item.title}</h6>
+                              </div>
+
+                              <div className="flex items-center gap-1.5">
+                                <button
+                                  onClick={() => handleToggleTrainingItem(item.id, item.is_active)}
+                                  className={`px-2 py-1 rounded text-[10px] font-bold cursor-pointer transition-colors ${
+                                    item.is_active
+                                      ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/60 dark:text-emerald-400'
+                                      : 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400'
+                                  }`}
+                                >
+                                  {item.is_active ? 'مفعّل' : 'معطّل'}
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteTrainingItem(item.id)}
+                                  className="p-1 hover:bg-rose-50 dark:hover:bg-rose-950/50 text-rose-500 rounded cursor-pointer transition-colors"
+                                  title="حذف"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </div>
+
+                            <p className="text-zinc-600 dark:text-zinc-300 text-xs leading-relaxed font-sans whitespace-pre-wrap">
+                              {item.content}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
               )}

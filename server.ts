@@ -19,7 +19,10 @@ import { Resvg } from '@resvg/resvg-js';
 import { chatCoreSwarm } from './src/agents/ChatCoreSwarm.js';
 import { initTelegramBot, testTelegramBot } from './src/telegram.js';
 
-const JWT_SECRET = process.env.JWT_SECRET || (() => { console.warn('[SECURITY WARNING] JWT_SECRET not set in .env! Using randomly generated secret. Set JWT_SECRET in your .env file for production.'); return require('crypto').randomBytes(32).toString('hex'); })();
+import crypto from 'crypto';
+
+const JWT_SECRET = process.env.JWT_SECRET || (() => { console.warn('[SECURITY WARNING] JWT_SECRET not set in .env! Using randomly generated secret. Set JWT_SECRET in your .env file for production.'); return crypto.randomBytes(32).toString('hex'); })();
+
 
 
 // CRITICAL HOSTINGER DEBUGGING LOGIC - Reloaded 2026-07-22
@@ -6402,12 +6405,142 @@ app.post('/api/agents/config', (req, res) => {
   res.json({ success: true, agentsConfig: updated });
 });
 
+// Toggle agent enabled/disabled status (temporary pause)
+app.post('/api/agents/:agentId/toggle-status', (req, res) => {
+  const { agentId } = req.params;
+  const { disabled } = req.body;
+  const currentConfigs = getAgentsConfig();
+  const currentConfig: any = currentConfigs[agentId] || { id: agentId, name: agentId, title: 'Agent' };
+  const newStatus: boolean = typeof disabled === 'boolean' ? disabled : !currentConfig.disabled;
+  const updated = saveAgentConfig(agentId, { 
+    ...currentConfig,
+    disabled: newStatus,
+    status: (newStatus ? 'offline' : (currentConfig.originalStatus || 'active')) as 'active' | 'busy' | 'offline',
+    disabledAt: newStatus ? new Date().toISOString() : null
+  });
+  broadcast({ type: 'agent:config_update', agentsConfig: updated });
+  console.log(`[Agent Toggle] Agent "${agentId}" is now ${newStatus ? 'DISABLED (offline)' : 'ENABLED (active)'}`);
+  res.json({ success: true, agentId, disabled: newStatus, agentsConfig: updated });
+});
+
 app.get('/api/agents/stats', (req, res) => {
   res.json({
     success: true,
     stats: getAgentStats(),
     auditLogs: getAgentAuditLogs(50)
   });
+});
+
+// ==========================================
+// SUPABASE AI STAFF & TRAINING CENTER ENDPOINTS
+// ==========================================
+import { getSupabaseClient } from './src/supabase.js';
+
+// GET all training items for a specific agent
+app.get('/api/agents/:agentId/training', async (req, res) => {
+  const { agentId } = req.params;
+  const client = getSupabaseClient();
+  if (!client) {
+    return res.status(503).json({ error: 'Supabase client not configured' });
+  }
+
+  try {
+    const { data, error } = await client
+      .from('agent_training_data')
+      .select('*')
+      .eq('agent_id', agentId)
+      .order('priority', { ascending: false });
+
+    if (error) throw error;
+    res.json({ success: true, agentId, items: data || [] });
+  } catch (err: any) {
+    console.error(`[Supabase Training] Fetch error for ${agentId}:`, err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST new training item for an agent
+app.post('/api/agents/:agentId/training', async (req, res) => {
+  const { agentId } = req.params;
+  const { type, title, content, priority, is_active } = req.body;
+  if (!title || !content) {
+    return res.status(400).json({ error: 'Title and content are required' });
+  }
+
+  const client = getSupabaseClient();
+  if (!client) {
+    return res.status(503).json({ error: 'Supabase client not configured' });
+  }
+
+  try {
+    const { data, error } = await client
+      .from('agent_training_data')
+      .insert({
+        agent_id: agentId,
+        type: type || 'knowledge',
+        title,
+        content,
+        priority: priority ?? 10,
+        is_active: is_active ?? true
+      })
+      .select('*')
+      .single();
+
+    if (error) throw error;
+    res.json({ success: true, item: data });
+  } catch (err: any) {
+    console.error(`[Supabase Training] Insert error for ${agentId}:`, err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE a training item
+app.delete('/api/agents/:agentId/training/:itemId', async (req, res) => {
+  const { agentId, itemId } = req.params;
+  const client = getSupabaseClient();
+  if (!client) {
+    return res.status(503).json({ error: 'Supabase client not configured' });
+  }
+
+  try {
+    const { error } = await client
+      .from('agent_training_data')
+      .delete()
+      .eq('id', itemId)
+      .eq('agent_id', agentId);
+
+    if (error) throw error;
+    res.json({ success: true, deletedId: itemId });
+  } catch (err: any) {
+    console.error(`[Supabase Training] Delete error:`, err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// TOGGLE active state of a training item
+app.patch('/api/agents/:agentId/training/:itemId/toggle', async (req, res) => {
+  const { agentId, itemId } = req.params;
+  const { is_active } = req.body;
+  const client = getSupabaseClient();
+  if (!client) {
+    return res.status(503).json({ error: 'Supabase client not configured' });
+  }
+
+  try {
+    const { data, error } = await client
+      .from('agent_training_data')
+      .update({ is_active: Boolean(is_active) })
+      .eq('id', itemId)
+      .eq('agent_id', agentId)
+      .select('*')
+      .single();
+
+    if (error) throw error;
+    res.json({ success: true, item: data });
+  } catch (err: any) {
+    console.error(`[Supabase Training] Toggle error:`, err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.post('/api/tickets', async (req, res) => {

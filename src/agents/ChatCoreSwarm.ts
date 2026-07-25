@@ -124,6 +124,7 @@ function generatePricingPlansSvg(): string {
 
 import { GoogleGenAI } from '@google/genai';
 import { saveTicket } from '../db.js';
+import { getSupabaseClient } from '../supabase.js';
 
 export interface SwarmResponse {
   agentId: 'router' | 'sales' | 'invoice' | 'media' | 'support' | 'marketing' | 'dev' | 'admin';
@@ -161,6 +162,29 @@ export class ChatCoreSwarm {
     const apiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
     if (apiKey) {
       this.ai = new GoogleGenAI({ apiKey });
+    }
+  }
+
+  /**
+   * Load active training data for an agent from Supabase HQ database
+   */
+  private async getAgentSupabaseTrainingContext(agentId: string): Promise<string> {
+    try {
+      const client = getSupabaseClient();
+      if (!client) return '';
+      const { data, error } = await client
+        .from('agent_training_data')
+        .select('*')
+        .eq('agent_id', agentId)
+        .eq('is_active', true)
+        .order('priority', { ascending: false });
+
+      if (error || !data || data.length === 0) return '';
+
+      const trainingLines = data.map(item => `• [${item.type.toUpperCase()} - ${item.title}]: ${item.content}`).join('\n');
+      return `\n--- SUPABASE SPECIFIC CUSTOM TRAINING FOR ${agentId.toUpperCase()} ---\n${trainingLines}\n`;
+    } catch (e) {
+      return '';
     }
   }
 
@@ -352,10 +376,17 @@ ${historySummary}
     // Retrieve conversation history context
     const historySummary = this.getChatHistorySummary(chatId);
 
+    // Check which agents are currently disabled (temporary pause)
+    const isAgentDisabled = (agentKey: string): boolean => {
+      if (!customConfigs) return false;
+      const cfg = customConfigs[agentKey];
+      return cfg && (cfg.disabled === true || cfg.status === 'offline');
+    };
+
     // -------------------------------------------------------------
     // 1. INVOICE INTENT — Internal processing only (صلاح الحسابات)
     // -------------------------------------------------------------
-    if (text.includes('فاتورة') || text.includes('سداد') || text.includes('ادفع') || text.includes('تحويل') || text.includes('انستا باي') || text.includes('فودافون') || text.includes('اشترك') || text.includes('ابعت الفاتورة') || text.includes('باقة 2500') || text.includes('باقة 1200') || text.includes('باقة 4900')) {
+    if (!isAgentDisabled('agent_invoice') && (text.includes('فاتورة') || text.includes('سداد') || text.includes('ادفع') || text.includes('تحويل') || text.includes('انستا باي') || text.includes('فودافون') || text.includes('اشترك') || text.includes('ابعت الفاتورة') || text.includes('باقة 2500') || text.includes('باقة 1200') || text.includes('باقة 4900'))) {
       const invNo = 'INV-CC-' + Math.floor(100000 + Math.random() * 900000);
       const amount = text.includes('1200') ? 1200 : text.includes('4900') ? 4900 : 2500;
       const planName = amount === 1200 ? 'باقة البداية (Starter AI)' : amount === 4900 ? 'باقة المؤسسات (Enterprise HQ)' : 'باقة الأعمال المترابطة (Business AI Swarm Plan)';
@@ -370,6 +401,9 @@ ${historySummary}
         ibanNo: 'EG1234567890123456789012345'
       };
 
+      // Fetch Supabase training for invoice agent
+      const supabaseTraining = await this.getAgentSupabaseTrainingContext('agent_invoice');
+
       // Build internal context string for Gemini to use
       const invoiceContext = `[INTERNAL SWARM DATA - NOT FOR DIRECT QUOTING]
 Intent: invoice_request
@@ -377,6 +411,7 @@ Invoice Number: #${invNo}
 Amount: ${amount} EGP
 Plan: ${planName}
 Payment: InstaPay=trkroshdi@instapay | Vodafone Cash=01115822923
+${supabaseTraining}
 Action: Generate a friendly payment message and ask customer to send transfer screenshot.`;
 
       this.saveChatMessage(chatId, 'user', rawText);
@@ -394,7 +429,7 @@ Action: Generate a friendly payment message and ask customer to send transfer sc
     // -------------------------------------------------------------
     // 2. SUPPORT & TECH INTENT — Internal processing only (مهندس عمر)
     // -------------------------------------------------------------
-    if (text.includes('ربط') || text.includes('كود') || text.includes('توكن') || text.includes('botfather') || text.includes('مشكلة') || text.includes('دعم')) {
+    if (!isAgentDisabled('agent_support') && (text.includes('ربط') || text.includes('كود') || text.includes('توكن') || text.includes('botfather') || text.includes('مشكلة') || text.includes('دعم'))) {
       const tckNo = 'TCK-' + Math.floor(1000 + Math.random() * 9000);
       try {
         saveTicket({
@@ -412,10 +447,13 @@ Action: Generate a friendly payment message and ask customer to send transfer sc
         });
       } catch (err) {}
 
+      const supabaseTraining = await this.getAgentSupabaseTrainingContext('agent_support');
+
       const supportContext = `[INTERNAL SWARM DATA - NOT FOR DIRECT QUOTING]
 Intent: technical_support
 Ticket Created: #${tckNo}
 Topic: ${userMessage.substring(0, 80)}
+${supabaseTraining}
 Action: Provide clear step-by-step instructions for connecting WhatsApp (QR code) or Telegram (BotFather token). Mention ticket number naturally.`;
 
       this.saveChatMessage(chatId, 'user', rawText);
@@ -431,9 +469,12 @@ Action: Provide clear step-by-step instructions for connecting WhatsApp (QR code
     // -------------------------------------------------------------
     // 3. MEDIA / DESIGN INTENT — Internal processing only (كريم الديزاين)
     // -------------------------------------------------------------
-    if (text.includes('صورة') || text.includes('تصميم') || text.includes('كارت') || text.includes('بروشور') || text.includes('شكل')) {
+    if (!isAgentDisabled('agent_media') && (text.includes('صورة') || text.includes('تصميم') || text.includes('كارت') || text.includes('بروشور') || text.includes('شكل'))) {
+      const supabaseTraining = await this.getAgentSupabaseTrainingContext('agent_media');
+
       const mediaContext = `[INTERNAL SWARM DATA - NOT FOR DIRECT QUOTING]
 Intent: media_request
+${supabaseTraining}
 Action: Confirm that a visual card with pricing/plans has been prepared and is being sent now. Keep your reply short and enthusiastic.`;
 
       const shouldSendImage = text.includes('صورة') || text.includes('كارت') || text.includes('تصميم') || text.includes('ارسل الكارت') || text.includes('ابعت الكارت');
@@ -452,12 +493,26 @@ Action: Confirm that a visual card with pricing/plans has been prepared and is b
     // -------------------------------------------------------------
     // 4. DEFAULT SALES INTENT — Internal processing only (أحمد المبيعات)
     // -------------------------------------------------------------
+    // If sales agent is disabled, skip internal context injection entirely
+    if (isAgentDisabled('agent_sales')) {
+      this.saveChatMessage(chatId, 'user', rawText);
+      return {
+        agentId: 'sales',
+        agentName: 'أحمد المبيعات (Paused)',
+        agentTitle: 'Chief Sales & Closing Officer',
+        text: userMessage,  // Pass raw message, no internal context injection
+        isInternalContext: false
+      };
+    }
+
     const hasDiscussedPlans = historySummary.includes('باقة') || historySummary.includes('Starter') || historySummary.includes('1,200') || historySummary.includes('2,500');
+    const supabaseTraining = await this.getAgentSupabaseTrainingContext('agent_sales');
 
     const salesContext = `[INTERNAL SWARM DATA - NOT FOR DIRECT QUOTING]
 Intent: sales_inquiry
 Discussed Plans Before: ${hasDiscussedPlans ? 'yes - skip re-listing plans, focus on closing' : 'no - briefly mention 3 plans: Starter 1200 EGP, Business Swarm 2500 EGP (most popular), Enterprise 4900 EGP'}
 Knowledge Base:\n${kbContext}
+${supabaseTraining}
 Conversation History:\n${historySummary}
 Action: Answer the customer's question naturally as yourself (the configured AI agent). Do NOT introduce yourself as any internal agent name.`;
 

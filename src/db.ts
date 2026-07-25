@@ -94,6 +94,11 @@ export interface AgentConfigItem {
   responsibilities?: string[];
   maxDiscount?: number;
   isActive?: boolean;
+  // Temporary pause/stop fields
+  disabled?: boolean;
+  status?: 'active' | 'busy' | 'offline';
+  originalStatus?: 'active' | 'busy' | 'offline';
+  disabledAt?: string | null;
 }
 
 export interface DemoLead {
