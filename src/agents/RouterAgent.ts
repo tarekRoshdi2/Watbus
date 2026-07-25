@@ -91,7 +91,7 @@ export class RouterAgent {
 
     try {
       const response = await this.ai.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-2.0-flash',
         contents: `You are an AI Routing Agent for an enterprise WhatsApp multi-agent system.
 Classify the customer message into EXACTLY ONE category:
 - general_faq (greeting, policy, location, working hours)

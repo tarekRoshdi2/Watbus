@@ -13,7 +13,7 @@ export interface VoiceProcessResult {
 
 export class VoiceAgent {
   private ai: GoogleGenAI | null = null;
-  private fallbackModels = ['gemini-2.5-flash', 'gemini-1.5-flash', 'gemini-2.0-flash-exp'];
+  private fallbackModels = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-2.0-flash-exp'];
 
   constructor(customAiClient?: GoogleGenAI) {
     if (customAiClient) {
@@ -119,7 +119,7 @@ export class VoiceAgent {
     try {
       console.log(`[VoiceAgent TTS] Synthesizing human voice audio using voice "${voice}"...`);
       const response = await client.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-2.0-flash',
         contents: `أنت موظف مبيعات وخدمة عملاء مصري متكلم بشكل إنساني طبيعي 100%. انطق الجملة التالية بصوت بشري راقي ومتصل بدون أي نبرة روبوتية: "${textToSpeak}"`,
         config: {
           responseModalities: ['AUDIO'],

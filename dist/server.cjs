@@ -1467,7 +1467,7 @@ var init_RouterAgent = __esm({
         }
         try {
           const response = await this.ai.models.generateContent({
-            model: "gemini-2.5-flash",
+            model: "gemini-2.0-flash",
             contents: `You are an AI Routing Agent for an enterprise WhatsApp multi-agent system.
 Classify the customer message into EXACTLY ONE category:
 - general_faq (greeting, policy, location, working hours)
@@ -1542,7 +1542,7 @@ var init_RagAgent = __esm({
           const cleanBase64 = base64Image.replace(/^data:image\/\w+;base64,/, "");
           const catalogSummary = catalog.map((c) => `- ID: ${c.id}, Name: ${c.name}, Price: ${c.price} EGP, Description: ${c.description}`).join("\n");
           const response = await this.ai.models.generateContent({
-            model: "gemini-2.5-flash",
+            model: "gemini-2.0-flash",
             contents: [
               {
                 inlineData: {
@@ -1600,7 +1600,7 @@ Return JSON ONLY:
         try {
           const catalogSummary = catalog.map((c) => `- ${c.name} (${c.price} \u062C.\u0645): ${c.description}`).join("\n");
           const response = await this.ai.models.generateContent({
-            model: "gemini-2.5-flash",
+            model: "gemini-2.0-flash",
             contents: `\u0623\u0646\u062A "\u0623\u062D\u0645\u062F \u0627\u0644\u0645\u0628\u064A\u0639\u0627\u062A" - \u0627\u0644\u0645\u062F\u064A\u0631 \u0627\u0644\u062A\u0646\u0641\u064A\u0630\u064A \u0644\u0644\u0645\u0628\u064A\u0639\u0627\u062A \u0648\u0627\u0644\u0625\u063A\u0644\u0627\u0642 (Chief Sales Officer) \u0644\u0645\u0646\u0635\u0629 "\u0634\u0627\u062A \u0643\u0648\u0631 (ChatCore Enterprise AI)" \u0644\u0631\u0628\u0637 \u062E\u0637\u0648\u0637 \u0627\u0644\u0648\u0627\u062A\u0633\u0627\u0628 \u0648\u0627\u0644\u062A\u0644\u064A\u062C\u0631\u0627\u0645 \u0648\u0637\u0627\u0642\u0645 \u0627\u0644\u0645\u0648\u0638\u0641\u064A\u0646 \u0627\u0644\u0630\u0643\u0627\u0621 \u0627\u0644\u0627\u0635\u0637\u0646\u0627\u0639\u064A \u0641\u064A \u0645\u0635\u0631 \u0648\u0627\u0644\u0648\u0637\u0646 \u0627\u0644\u0639\u0631\u0628\u064A.
 \u062A\u062A\u062D\u062F\u062B \u0628\u0627\u0644\u0639\u0627\u0645\u064A\u0629 \u0627\u0644\u0645\u0635\u0631\u064A\u0629 \u0627\u0644\u0631\u0627\u0642\u064A\u0629 \u062C\u062F\u0627\u064B \u0648\u0627\u0644\u0648\u062F\u0648\u062F\u0629 \u0648\u0627\u0644\u0645\u062D\u062A\u0631\u0641\u0629.
 
@@ -1712,7 +1712,7 @@ var init_DevelopmentAgent = __esm({
         }
         try {
           const response = await this.ai.models.generateContent({
-            model: "gemini-2.5-flash",
+            model: "gemini-2.0-flash",
             contents: `\u0623\u0646\u062A \u0648\u0643\u064A\u0644 \u062A\u0637\u0648\u064A\u0631 \u0648\u062A\u062D\u062F\u064A\u062B \u0627\u0644\u0645\u0646\u0638\u0648\u0645\u0629 \u0627\u0644\u0630\u0643\u064A (System Evolution & Growth Consultant Agent).
 \u0642\u0645 \u0628\u0645\u0631\u0627\u062C\u0639\u0629 \u0623\u062F\u0627\u0621 \u0627\u0644\u0633\u064A\u0631\u0641\u0631\u060C \u0627\u0644\u0645\u0628\u064A\u0639\u0627\u062A\u060C \u0648\u0645\u062E\u0631\u062C\u0627\u062A \u0627\u0644\u0648\u0643\u0644\u0627\u0621\u060C \u0648\u062A\u0648\u0644\u064A\u062F 4 \u062A\u0648\u0635\u064A\u0627\u062A \u0639\u0645\u0644\u064A\u0629 \u0644\u062A\u0637\u0648\u064A\u0631 \u0627\u0644\u0646\u0638\u0627\u0645\u060C \u0648\u0623\u0631\u062C\u0639 JSON \u0641\u0642\u0637 \u0628\u0647\u0630\u0627 \u0627\u0644\u062A\u0646\u0633\u064A\u0642:
 
@@ -1806,7 +1806,7 @@ var init_InvoiceAgent = __esm({
         }
         try {
           const response = await this.ai.models.generateContent({
-            model: "gemini-2.5-flash",
+            model: "gemini-2.0-flash",
             contents: `\u0623\u0646\u062A \u0648\u0643\u064A\u0644 \u0627\u0644\u0641\u0648\u0627\u062A\u064A\u0631 \u0648\u0627\u0644\u062D\u0633\u0627\u0628\u0627\u062A \u0627\u0644\u0630\u0643\u064A (Invoice Agent) \u0644\u0645\u0646\u0635\u0629 \u0627\u0644\u0648\u0627\u062A\u0633\u0627\u0628 \u0627\u0644\u062A\u062C\u0627\u0631\u064A\u0629.
 \u0642\u0645 \u0628\u062A\u062D\u0644\u064A\u0644 \u0637\u0644\u0628 \u0627\u0644\u0639\u0645\u064A\u0644 \u0627\u0644\u062A\u0627\u0644\u064A \u0648\u0627\u0633\u062A\u062E\u0631\u0627\u062C \u0628\u0646\u0648\u062F \u0627\u0644\u0641\u0627\u062A\u0648\u0631\u0629 \u0648\u0627\u0644\u0623\u0633\u0639\u0627\u0631\u060C \u062B\u0645 \u0623\u0631\u062C\u0639 \u0643\u0648\u062F JSON \u0641\u0642\u0637 \u0628\u0647\u0630\u0627 \u0627\u0644\u062A\u0646\u0633\u064A\u0642:
 
@@ -1907,7 +1907,7 @@ var init_MediaAgent = __esm({
         }
         try {
           const response = await this.ai.models.generateContent({
-            model: "gemini-2.5-flash",
+            model: "gemini-2.0-flash",
             contents: `\u0623\u0646\u062A \u0648\u0643\u064A\u0644 \u0627\u0644\u062A\u0635\u0645\u064A\u0645 \u0648\u0635\u0627\u0646\u0639 \u0627\u0644\u0635\u0648\u0631 \u0627\u0644\u0628\u0635\u0631\u064A\u0629 (Media Agent) \u0644\u0645\u0646\u0635\u0629 \u0627\u0644\u0648\u0627\u062A\u0633\u0627\u0628 \u0627\u0644\u062A\u062C\u0627\u0631\u064A\u0629.
 \u0642\u0645 \u0628\u062A\u062D\u0644\u064A\u0644 \u0637\u0644\u0628 \u0627\u0644\u0639\u0645\u064A\u0644 \u0648\u062A\u0648\u0644\u064A\u062F \u0628\u0637\u0627\u0642\u0629 \u062A\u0633\u0648\u064A\u0642\u064A\u0629/\u062A\u0635\u0645\u064A\u0645 \u0645\u0646\u062A\u062C\u060C \u0648\u0623\u0631\u062C\u0639 JSON \u0641\u0642\u0637 \u0628\u0647\u0630\u0627 \u0627\u0644\u062A\u0646\u0633\u064A\u0642:
 
@@ -1990,7 +1990,7 @@ ${defaultTicket.suggestedSolution}`,
         }
         try {
           const response = await this.ai.models.generateContent({
-            model: "gemini-2.5-flash",
+            model: "gemini-2.0-flash",
             contents: `\u0623\u0646\u062A \u0648\u0643\u064A\u0644 \u0627\u0644\u062F\u0639\u0645 \u0627\u0644\u0641\u0646\u064A \u0648\u0645\u0633\u0624\u0648\u0644 \u0627\u0644\u062A\u0630\u0627\u0643\u0631 \u0627\u0644\u0630\u0643\u064A (Support Agent) \u0644\u0645\u0646\u0635\u0629 \u0627\u0644\u0648\u0627\u062A\u0633\u0627\u0628.
 \u0642\u0645 \u0628\u062A\u062D\u0644\u064A\u0644 \u0628\u0644\u0627\u063A \u0623\u0648 \u0627\u0644\u0645\u0634\u0643\u0644\u0629 \u0627\u0644\u062A\u0642\u0646\u064A\u0629 \u0644\u0644\u0639\u0645\u064A\u0644 \u0648\u0623\u0631\u062C\u0639 JSON \u0641\u0642\u0637:
 
@@ -2217,7 +2217,7 @@ function generatePricingPlansSvg() {
 var ChatCoreSwarm = class {
   constructor() {
     this.ai = null;
-    this.fallbackModels = ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-1.5-pro"];
+    this.fallbackModels = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"];
     // Persistent Conversation Memory Per Chat ID (WhatsApp / Telegram)
     this.conversationMemory = {};
     const apiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
@@ -2617,7 +2617,7 @@ var import_genai4 = require("@google/genai");
 var VoiceAgent = class {
   constructor(customAiClient) {
     this.ai = null;
-    this.fallbackModels = ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-2.0-flash-exp"];
+    this.fallbackModels = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-2.0-flash-exp"];
     if (customAiClient) {
       this.ai = customAiClient;
     } else {
@@ -2709,7 +2709,7 @@ var VoiceAgent = class {
     try {
       console.log(`[VoiceAgent TTS] Synthesizing human voice audio using voice "${voice}"...`);
       const response = await client.models.generateContent({
-        model: "gemini-2.5-flash",
+        model: "gemini-2.0-flash",
         contents: `\u0623\u0646\u062A \u0645\u0648\u0638\u0641 \u0645\u0628\u064A\u0639\u0627\u062A \u0648\u062E\u062F\u0645\u0629 \u0639\u0645\u0644\u0627\u0621 \u0645\u0635\u0631\u064A \u0645\u062A\u0643\u0644\u0645 \u0628\u0634\u0643\u0644 \u0625\u0646\u0633\u0627\u0646\u064A \u0637\u0628\u064A\u0639\u064A 100%. \u0627\u0646\u0637\u0642 \u0627\u0644\u062C\u0645\u0644\u0629 \u0627\u0644\u062A\u0627\u0644\u064A\u0629 \u0628\u0635\u0648\u062A \u0628\u0634\u0631\u064A \u0631\u0627\u0642\u064A \u0648\u0645\u062A\u0635\u0644 \u0628\u062F\u0648\u0646 \u0623\u064A \u0646\u0628\u0631\u0629 \u0631\u0648\u0628\u0648\u062A\u064A\u0629: "${textToSpeak}"`,
         config: {
           responseModalities: ["AUDIO"],
@@ -3855,9 +3855,9 @@ async function callGeminiWithRetry(params, maxAttempts = 3) {
   }
   let attempts = 0;
   let lastError = null;
-  let modelsToTry = [params.model, "gemini-2.5-flash", "gemini-2.0-flash", "gemini-2.0-flash-lite"];
-  if (params.model.includes("3.5") || params.model.includes("3.1")) {
-    modelsToTry = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-1.5-flash-latest"];
+  let modelsToTry = ["gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-1.5-flash", "gemini-1.5-pro"];
+  if (params.model && !params.model.includes("3.5") && !params.model.includes("2.5")) {
+    modelsToTry = [params.model, "gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-1.5-flash"];
   }
   while (attempts < maxAttempts) {
     const currentModel = modelsToTry[attempts] || params.model;

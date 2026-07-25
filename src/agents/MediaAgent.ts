@@ -43,7 +43,7 @@ export class MediaAgent {
 
     try {
       const response = await this.ai.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-2.0-flash',
         contents: `أنت وكيل التصميم وصانع الصور البصرية (Media Agent) لمنصة الواتساب التجارية.
 قم بتحليل طلب العميل وتوليد بطاقة تسويقية/تصميم منتج، وأرجع JSON فقط بهذا التنسيق:
 

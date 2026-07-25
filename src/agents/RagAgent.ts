@@ -45,7 +45,7 @@ export class RagAgent {
       const catalogSummary = catalog.map(c => `- ID: ${c.id}, Name: ${c.name}, Price: ${c.price} EGP, Description: ${c.description}`).join('\n');
 
       const response = await this.ai.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-2.0-flash',
         contents: [
           {
             inlineData: {
@@ -109,7 +109,7 @@ Return JSON ONLY:
       const catalogSummary = catalog.map(c => `- ${c.name} (${c.price} ج.م): ${c.description}`).join('\n');
 
       const response = await this.ai.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-2.0-flash',
         contents: `أنت "أحمد المبيعات" - المدير التنفيذي للمبيعات والإغلاق (Chief Sales Officer) لمنصة "شات كور (ChatCore Enterprise AI)" لربط خطوط الواتساب والتليجرام وطاقم الموظفين الذكاء الاصطناعي في مصر والوطن العربي.
 تتحدث بالعامية المصرية الراقية جداً والودودة والمحترفة.
 

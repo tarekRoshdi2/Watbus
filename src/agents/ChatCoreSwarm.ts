@@ -153,7 +153,7 @@ export interface ChatMemoryItem {
 
 export class ChatCoreSwarm {
   private ai: GoogleGenAI | null = null;
-  private fallbackModels = ['gemini-2.5-flash', 'gemini-1.5-flash', 'gemini-1.5-pro'];
+  private fallbackModels = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro'];
   
   // Persistent Conversation Memory Per Chat ID (WhatsApp / Telegram)
   private conversationMemory: Record<string, ChatMemoryItem[]> = {};

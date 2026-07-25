@@ -352,10 +352,10 @@ async function callGeminiWithRetry(
   let attempts = 0;
   let lastError: any = null;
   
-  // Define fallback chain based on the starting model
-  let modelsToTry = [params.model, 'gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-2.0-flash-lite'];
-  if (params.model.includes('3.5') || params.model.includes('3.1')) {
-    modelsToTry = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-2.0-flash-lite', 'gemini-1.5-flash-latest'];
+  // Define fallback chain based on valid, active Google Gemini API model IDs
+  let modelsToTry = ['gemini-2.0-flash', 'gemini-2.0-flash-lite', 'gemini-1.5-flash', 'gemini-1.5-pro'];
+  if (params.model && !params.model.includes('3.5') && !params.model.includes('2.5')) {
+    modelsToTry = [params.model, 'gemini-2.0-flash', 'gemini-2.0-flash-lite', 'gemini-1.5-flash'];
   }
 
   while (attempts < maxAttempts) {

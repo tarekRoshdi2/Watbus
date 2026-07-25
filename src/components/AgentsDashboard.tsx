@@ -463,7 +463,7 @@ export default function AgentsDashboard({ lang, initialTab = 'roster' }: { lang:
       role: 'sales',
       description: isAr ? 'المسؤول الأول عن استقبال العملاء المهتمين، تقديم العروض، إقناع العملاء، وتفعيل المكالمات الصوتية عند الجدية.' : 'Handles catalog inquiries, pricing recommendations, negotiation, and closing sales.',
       status: 'active',
-      model: 'gemini-2.5-flash',
+      model: 'gemini-2.0-flash',
       temperature: 0.7,
       dialect: 'eg',
       systemPrompt: isAr 
@@ -496,7 +496,7 @@ export default function AgentsDashboard({ lang, initialTab = 'roster' }: { lang:
       role: 'invoice',
       description: isAr ? 'المحاسب المالي المختص بتفنيذ البنود، حساب ضريبة القيمة المضافة 14%، وتوليد روابط سداد رسمية ومباشرة.' : 'Generates itemized invoices, calculates 14% VAT tax/discounts, creates secure instant payment links.',
       status: 'active',
-      model: 'gemini-2.5-flash',
+      model: 'gemini-2.0-flash',
       temperature: 0.2,
       dialect: 'msa',
       systemPrompt: isAr 
@@ -531,7 +531,7 @@ export default function AgentsDashboard({ lang, initialTab = 'roster' }: { lang:
       role: 'media',
       description: isAr ? 'المصمم المبدع المختص بصناعة كروت المنتجات البصرية، عروض الخصومات، والشارات الجذابة لإرسالها بالواتساب.' : 'Generates visual product offer cards, promotional quote banners, and graphics for WhatsApp.',
       status: 'active',
-      model: 'gemini-2.5-flash',
+      model: 'gemini-2.0-flash',
       temperature: 0.8,
       dialect: 'eg',
       systemPrompt: isAr 
@@ -564,7 +564,7 @@ export default function AgentsDashboard({ lang, initialTab = 'roster' }: { lang:
       role: 'support',
       description: isAr ? 'المسؤول التقني الصبور عن استقبال الأعطال، فتح تذاكر بالداتابيز #TCK-XXXX، وتقديم خطوات الحل فوراً.' : 'Handles technical issues, logs database tickets, prioritizes severity, and provides step-by-step guidance.',
       status: 'busy',
-      model: 'gemini-2.5-flash',
+      model: 'gemini-2.0-flash',
       temperature: 0.3,
       dialect: 'msa',
       systemPrompt: isAr 
@@ -596,7 +596,7 @@ export default function AgentsDashboard({ lang, initialTab = 'roster' }: { lang:
       role: 'marketing',
       description: isAr ? 'خبيرة التسويق وإطلاق الحملات المباشرة، جدولة المراسلات، وتقسيم العملاء لزيادة مبيعات الشركة.' : 'Specialist in launching target WhatsApp marketing campaigns, audience segmentation, and open rate analytics.',
       status: 'active',
-      model: 'gemini-2.5-flash',
+      model: 'gemini-2.0-flash',
       temperature: 0.7,
       dialect: 'eg',
       systemPrompt: isAr 
@@ -627,7 +627,7 @@ export default function AgentsDashboard({ lang, initialTab = 'roster' }: { lang:
       role: 'router',
       description: isAr ? 'العقل الفائق المنظم للمنظومة الذي يحلل نية العميل بسرعة 0.2 ثانية ويوجه المحادثة للموظف المختص.' : 'Master Orchestrator analyzing customer intent and routing conversations to specialized agents.',
       status: 'active',
-      model: 'gemini-2.5-flash',
+      model: 'gemini-2.0-flash',
       temperature: 0.1,
       dialect: 'msa',
       systemPrompt: isAr 
@@ -659,7 +659,7 @@ export default function AgentsDashboard({ lang, initialTab = 'roster' }: { lang:
       role: 'router',
       description: isAr ? 'خبير تطوير المنظومة المختص بتحليل كفاءة الردود، الكشف عن فرص النمو، وتقديم التوصيات البرمجية والتسويقية.' : 'System Evolution Consultant analyzing metrics, identifying sales bottlenecks, and recommending optimizations.',
       status: 'active',
-      model: 'gemini-2.5-flash',
+      model: 'gemini-2.0-flash',
       temperature: 0.5,
       dialect: 'msa',
       systemPrompt: isAr ? 'أنت "د. ياسر" خبير ومستشار تطوير المنظومة. مهمتك تحليل أداء كافة الموظفين وتقديم توصيات لرفع كفاءة المنظومة.' : 'You are Dr. Yasser, Lead System Growth Officer. Analyze sub-agent performance and provide growth optimizations.',
@@ -2983,7 +2983,7 @@ export default function AgentsDashboard({ lang, initialTab = 'roster' }: { lang:
                         onChange={e => setEditingConfig({ ...editingConfig, model: e.target.value })}
                         className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-white rounded-lg p-2.5 outline-none"
                       >
-                        <option value="gemini-2.5-flash">Gemini 2.5 Flash (Super Fast 0.3s)</option>
+                        <option value="gemini-2.0-flash">Gemini 2.5 Flash (Super Fast 0.3s)</option>
                         <option value="gpt-4o">GPT-4o Enterprise</option>
                         <option value="claude-3-5-sonnet">Claude 3.5 Sonnet</option>
                       </select>

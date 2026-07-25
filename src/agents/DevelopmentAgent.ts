@@ -82,7 +82,7 @@ export class DevelopmentAgent {
 
     try {
       const response = await this.ai.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-2.0-flash',
         contents: `أنت وكيل تطوير وتحديث المنظومة الذكي (System Evolution & Growth Consultant Agent).
 قم بمراجعة أداء السيرفر، المبيعات، ومخرجات الوكلاء، وتوليد 4 توصيات عملية لتطوير النظام، وأرجع JSON فقط بهذا التنسيق:
 

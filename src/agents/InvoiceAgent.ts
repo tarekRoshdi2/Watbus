@@ -72,7 +72,7 @@ export class InvoiceAgent {
 
     try {
       const response = await this.ai.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-2.0-flash',
         contents: `أنت وكيل الفواتير والحسابات الذكي (Invoice Agent) لمنصة الواتساب التجارية.
 قم بتحليل طلب العميل التالي واستخراج بنود الفاتورة والأسعار، ثم أرجع كود JSON فقط بهذا التنسيق:
 
