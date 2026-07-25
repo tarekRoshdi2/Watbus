@@ -6542,6 +6542,79 @@ app.patch('/api/agents/:agentId/training/:itemId/toggle', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+// ==========================================
+// SUPABASE ENTERPRISE CRM CUSTOMERS API
+// ==========================================
+app.get('/api/crm/customers', async (req, res) => {
+  const client = getSupabaseClient();
+  if (!client) {
+    return res.json({
+      success: true,
+      customers: [
+        { id: 'CRM-101', name: 'طارق رشدي (Tarek Roshdi)', phone: '+201115822923', ltv: '12,500 EGP', segment: 'VIP 🔥', chats: 48, status: 'نشط 🟢', agent: 'أحمد المبيعات' },
+        { id: 'CRM-102', name: 'د. محمد العتيبي', phone: '+966500000000', ltv: '8,400 EGP', segment: 'VIP 🔥', chats: 32, status: 'مشتري متكرر 💎', agent: 'الأستاذ صلاح الحسابات' },
+        { id: 'CRM-103', name: 'مهندس أحمد مصطفى', phone: '+201000000000', ltv: '2,500 EGP', segment: 'جدد ⚡', chats: 14, status: 'نشط 🟢', agent: 'مهندس عمر الدعم' }
+      ]
+    });
+  }
+
+  try {
+    const { data, error } = await client
+      .from('crm_customers')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+    const formatted = (data || []).map((c: any) => ({
+      id: c.id,
+      name: c.name,
+      phone: c.phone,
+      ltv: c.ltv || '0 EGP',
+      segment: c.segment || 'جدد',
+      chats: c.chats_count || 1,
+      status: c.status || 'نشط 🟢',
+      agent: c.agent_assigned || 'أحمد المبيعات'
+    }));
+
+    res.json({ success: true, customers: formatted });
+  } catch (err: any) {
+    console.error('[Supabase CRM] Fetch error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/crm/customers', async (req, res) => {
+  const { name, phone, email, segment, ltv, agent_assigned } = req.body;
+  if (!name || !phone) return res.status(400).json({ error: 'Name and phone are required' });
+
+  const client = getSupabaseClient();
+  if (!client) return res.status(530).json({ error: 'Supabase not configured' });
+
+  const newId = `CRM-${Math.floor(100 + Math.random() * 900)}`;
+  try {
+    const { data, error } = await client
+      .from('crm_customers')
+      .insert({
+        id: newId,
+        name,
+        phone,
+        email: email || '',
+        segment: segment || 'جدد ⚡',
+        ltv: ltv || '2,500 EGP',
+        chats_count: 1,
+        status: 'نشط 🟢',
+        agent_assigned: agent_assigned || 'أحمد المبيعات'
+      })
+      .select('*')
+      .single();
+
+    if (error) throw error;
+    res.json({ success: true, customer: data });
+  } catch (err: any) {
+    console.error('[Supabase CRM] Create customer error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
 
 app.post('/api/tickets', async (req, res) => {
   try {

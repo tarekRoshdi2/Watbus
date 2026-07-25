@@ -730,6 +730,18 @@ export default function AgentsDashboard({ lang, initialTab = 'roster' }: { lang:
       .catch(err => console.log('Using local default configs', err));
   }, []);
 
+  // Load Supabase CRM Customers on Mount
+  useEffect(() => {
+    fetch('/api/crm/customers')
+      .then(res => res.json())
+      .then(data => {
+        if (data && data.success && data.customers && data.customers.length > 0) {
+          setCrmCustomers(data.customers);
+        }
+      })
+      .catch(err => console.warn('Using local CRM fallback', err));
+  }, []);
+
 
   const handleExecuteModalTask = async (customPrompt?: string) => {
     const promptToRun = customPrompt || directTaskInput;
