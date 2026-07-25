@@ -5,6 +5,7 @@
 
 import dns from 'dns';
 dns.setDefaultResultOrder('ipv4first');
+process.env.UV_THREADPOOL_SIZE = '4';
 import { randomUUID } from 'crypto';
 import express from 'express';
 import http from 'http';
@@ -14,7 +15,6 @@ import fs from 'fs';
 import dotenv from 'dotenv';
 import { GoogleGenAI } from '@google/genai';
 import jwt from 'jsonwebtoken';
-import { Resvg } from '@resvg/resvg-js';
 
 import { chatCoreSwarm } from './src/agents/ChatCoreSwarm.js';
 import { initTelegramBot, testTelegramBot } from './src/telegram.js';
@@ -4179,6 +4179,17 @@ setInterval(() => {
   }
 }, 6 * 60 * 60 * 1000);
 
+async function safeRenderSvgToPng(svgContent: string): Promise<Buffer | null> {
+  try {
+    const { Resvg } = await import('@resvg/resvg-js');
+    const resvg = new Resvg(svgContent, { fitTo: { mode: 'width', value: 1200 } });
+    return resvg.render().asPng();
+  } catch (err) {
+    console.warn('[Resvg Fallback Warning] Native Resvg unavailable or thread limited:', err);
+    return null;
+  }
+}
+
 function saveMediaDataToPublicUrl(mediaData: string, prefix: string = 'media'): string {
   if (!mediaData) return '';
   if (mediaData.startsWith('http://') || mediaData.startsWith('https://')) {
@@ -4193,9 +4204,8 @@ function saveMediaDataToPublicUrl(mediaData: string, prefix: string = 'media'): 
       const svgString = mediaData.startsWith('data:image/svg+xml;base64,')
         ? Buffer.from(mediaData.replace('data:image/svg+xml;base64,', ''), 'base64').toString('utf-8')
         : decodeURIComponent(mediaData.replace(/^data:image\/svg\+xml;utf8,/, ''));
-      const resvg = new Resvg(svgString, { fitTo: { mode: 'width', value: 1200 } });
-      buffer = resvg.render().asPng();
-      ext = '.png';
+      buffer = Buffer.from(svgString);
+      ext = '.svg';
     } else if (mediaData.startsWith('data:audio/')) {
       const matches = mediaData.match(/^data:audio\/([^;]+);base64,(.+)$/);
       if (matches) {
@@ -4381,15 +4391,11 @@ async function sendRealWhatsAppMessageDirectly(
           let mimeType = 'image/png';
 
           if (mediaData.startsWith('data:image/svg+xml')) {
-            try {
-              const svgString = mediaData.startsWith('data:image/svg+xml;base64,')
-                ? Buffer.from(mediaData.replace('data:image/svg+xml;base64,', ''), 'base64').toString('utf-8')
-                : decodeURIComponent(mediaData.replace(/^data:image\/svg\+xml;utf8,/, ''));
-              const resvg = new Resvg(svgString, { fitTo: { mode: 'width', value: 1200 } });
-              imageBuffer = resvg.render().asPng();
-            } catch (e) {
-              imageBuffer = Buffer.from(mediaData.split(',')[1] || '', 'base64');
-            }
+            const svgString = mediaData.startsWith('data:image/svg+xml;base64,')
+              ? Buffer.from(mediaData.replace('data:image/svg+xml;base64,', ''), 'base64').toString('utf-8')
+              : decodeURIComponent(mediaData.replace(/^data:image\/svg\+xml;utf8,/, ''));
+            const rendered = await safeRenderSvgToPng(svgString);
+            imageBuffer = rendered || Buffer.from(mediaData.split(',')[1] || '', 'base64');
           } else {
             imageBuffer = Buffer.from(mediaData.split(',')[1] || '', 'base64');
           }
@@ -4533,12 +4539,10 @@ async function sendRealWhatsAppMessageDirectly(
         }
 
         if (svgContent) {
-          try {
-            const resvg = new Resvg(svgContent, { fitTo: { mode: 'width', value: 1200 } });
-            buffer = resvg.render().asPng();
+          const rendered = await safeRenderSvgToPng(svgContent);
+          if (rendered) {
+            buffer = rendered;
             console.log(`[Resvg Engine] Successfully rasterized SVG card to PNG (${buffer.length} bytes) for WhatsApp mobile delivery!`);
-          } catch (resvgErr) {
-            console.error('[Resvg Engine Error] Failed converting SVG to PNG:', resvgErr);
           }
         }
 
@@ -4607,8 +4611,8 @@ async function sendRealWhatsAppMessageDirectly(
               if (mediaData.startsWith('data:image/svg+xml;base64,')) {
                 svgContent = Buffer.from(mediaData.replace(/^data:image\/svg\+xml;base64,/, ''), 'base64').toString('utf8');
               }
-              const resvg = new Resvg(svgContent, { fitTo: { mode: 'width', value: 1200 } });
-              mediaBuffer = resvg.render().asPng();
+              const rendered = await safeRenderSvgToPng(svgContent);
+              mediaBuffer = rendered || Buffer.from(svgContent);
             } else if (mediaData.startsWith('data:image/')) {
               const b64 = mediaData.split(',')[1];
               mediaBuffer = Buffer.from(b64, 'base64');

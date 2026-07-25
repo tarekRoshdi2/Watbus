@@ -2172,7 +2172,6 @@ var import_fs4 = __toESM(require("fs"), 1);
 var import_dotenv3 = __toESM(require("dotenv"), 1);
 var import_genai9 = require("@google/genai");
 var import_jsonwebtoken = __toESM(require("jsonwebtoken"), 1);
-var import_resvg_js = require("@resvg/resvg-js");
 
 // src/agents/ChatCoreSwarm.ts
 var import_genai = require("@google/genai");
@@ -3679,6 +3678,7 @@ var import_baileys2 = require("@whiskeysockets/baileys");
 var import_express_rate_limit = __toESM(require("express-rate-limit"), 1);
 init_supabase();
 import_dns.default.setDefaultResultOrder("ipv4first");
+process.env.UV_THREADPOOL_SIZE = "4";
 var JWT_SECRET = process.env.JWT_SECRET || (() => {
   console.warn("[SECURITY WARNING] JWT_SECRET not set in .env! Using randomly generated secret. Set JWT_SECRET in your .env file for production.");
   return import_crypto2.default.randomBytes(32).toString("hex");
@@ -7021,6 +7021,16 @@ setInterval(() => {
     console.error("[Uploads Cleanup Error]", err);
   }
 }, 6 * 60 * 60 * 1e3);
+async function safeRenderSvgToPng(svgContent) {
+  try {
+    const { Resvg } = await import("@resvg/resvg-js");
+    const resvg = new Resvg(svgContent, { fitTo: { mode: "width", value: 1200 } });
+    return resvg.render().asPng();
+  } catch (err) {
+    console.warn("[Resvg Fallback Warning] Native Resvg unavailable or thread limited:", err);
+    return null;
+  }
+}
 function saveMediaDataToPublicUrl(mediaData, prefix = "media") {
   if (!mediaData) return "";
   if (mediaData.startsWith("http://") || mediaData.startsWith("https://")) {
@@ -7031,9 +7041,8 @@ function saveMediaDataToPublicUrl(mediaData, prefix = "media") {
     let ext = ".png";
     if (mediaData.startsWith("data:image/svg+xml")) {
       const svgString = mediaData.startsWith("data:image/svg+xml;base64,") ? Buffer.from(mediaData.replace("data:image/svg+xml;base64,", ""), "base64").toString("utf-8") : decodeURIComponent(mediaData.replace(/^data:image\/svg\+xml;utf8,/, ""));
-      const resvg = new import_resvg_js.Resvg(svgString, { fitTo: { mode: "width", value: 1200 } });
-      buffer = resvg.render().asPng();
-      ext = ".png";
+      buffer = Buffer.from(svgString);
+      ext = ".svg";
     } else if (mediaData.startsWith("data:audio/")) {
       const matches = mediaData.match(/^data:audio\/([^;]+);base64,(.+)$/);
       if (matches) {
@@ -7161,13 +7170,9 @@ async function sendRealWhatsAppMessageDirectly(device, to, text, mediaType, medi
           let imageBuffer;
           let mimeType = "image/png";
           if (mediaData.startsWith("data:image/svg+xml")) {
-            try {
-              const svgString = mediaData.startsWith("data:image/svg+xml;base64,") ? Buffer.from(mediaData.replace("data:image/svg+xml;base64,", ""), "base64").toString("utf-8") : decodeURIComponent(mediaData.replace(/^data:image\/svg\+xml;utf8,/, ""));
-              const resvg = new import_resvg_js.Resvg(svgString, { fitTo: { mode: "width", value: 1200 } });
-              imageBuffer = resvg.render().asPng();
-            } catch (e) {
-              imageBuffer = Buffer.from(mediaData.split(",")[1] || "", "base64");
-            }
+            const svgString = mediaData.startsWith("data:image/svg+xml;base64,") ? Buffer.from(mediaData.replace("data:image/svg+xml;base64,", ""), "base64").toString("utf-8") : decodeURIComponent(mediaData.replace(/^data:image\/svg\+xml;utf8,/, ""));
+            const rendered = await safeRenderSvgToPng(svgString);
+            imageBuffer = rendered || Buffer.from(mediaData.split(",")[1] || "", "base64");
           } else {
             imageBuffer = Buffer.from(mediaData.split(",")[1] || "", "base64");
           }
@@ -7304,12 +7309,10 @@ async function sendRealWhatsAppMessageDirectly(device, to, text, mediaType, medi
           }
         }
         if (svgContent) {
-          try {
-            const resvg = new import_resvg_js.Resvg(svgContent, { fitTo: { mode: "width", value: 1200 } });
-            buffer = resvg.render().asPng();
+          const rendered = await safeRenderSvgToPng(svgContent);
+          if (rendered) {
+            buffer = rendered;
             console.log(`[Resvg Engine] Successfully rasterized SVG card to PNG (${buffer.length} bytes) for WhatsApp mobile delivery!`);
-          } catch (resvgErr) {
-            console.error("[Resvg Engine Error] Failed converting SVG to PNG:", resvgErr);
           }
         }
         if (!buffer) {
@@ -7371,8 +7374,8 @@ async function sendRealWhatsAppMessageDirectly(device, to, text, mediaType, medi
               if (mediaData.startsWith("data:image/svg+xml;base64,")) {
                 svgContent = Buffer.from(mediaData.replace(/^data:image\/svg\+xml;base64,/, ""), "base64").toString("utf8");
               }
-              const resvg = new import_resvg_js.Resvg(svgContent, { fitTo: { mode: "width", value: 1200 } });
-              mediaBuffer = resvg.render().asPng();
+              const rendered = await safeRenderSvgToPng(svgContent);
+              mediaBuffer = rendered || Buffer.from(svgContent);
             } else if (mediaData.startsWith("data:image/")) {
               const b64 = mediaData.split(",")[1];
               mediaBuffer = Buffer.from(b64, "base64");

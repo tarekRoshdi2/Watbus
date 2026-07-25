@@ -968,33 +968,33 @@ export default function AgentsDashboard({ lang, initialTab = 'roster' }: { lang:
   return (
     <div className="flex-1 bg-[#f0f2f5] dark:bg-zinc-950 flex flex-col h-screen overflow-hidden" dir={isAr ? 'rtl' : 'ltr'}>
       {/* Header */}
-      <header className="bg-white dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800 px-6 py-4 flex items-center justify-between shrink-0 shadow-xs">
+      <header className="bg-white dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800 px-4 sm:px-6 py-3 sm:py-4 flex flex-col md:flex-row md:items-center justify-between gap-3 shrink-0 shadow-xs">
         <div>
-          <h1 className="text-xl font-bold text-zinc-900 dark:text-white flex items-center gap-2">
-            <Bot className="w-6 h-6 text-emerald-500" />
-            {isAr ? 'مركز قيادة الشركة وإدارة الموظفين الذكي (Enterprise AI Headquarters)' : 'AI Enterprise Headquarters'}
+          <h1 className="text-lg sm:text-xl font-bold text-zinc-900 dark:text-white flex items-center gap-2">
+            <Bot className="w-5 h-5 sm:w-6 sm:h-6 text-emerald-500 shrink-0" />
+            <span>{isAr ? 'مركز قيادة الشركة وإدارة الموظفين الذكي (Enterprise AI Headquarters)' : 'AI Enterprise Headquarters'}</span>
           </h1>
-          <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-1">
+          <p className="text-xs sm:text-sm text-zinc-500 dark:text-zinc-400 mt-1 leading-normal">
             {isAr ? 'التحكم الإجمالي بالمقر الرئيسي للشركة: طاقم الموظفين، الحملات، التذاكر، دليل العملاء CRM، والتقارير التنفيذية' : 'Full enterprise suite: Agents roster, campaigns, tickets, CRM directory, and executive analytics'}
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
           <button
             onClick={handleResetAllToEnterprise}
-            className="px-3.5 py-1.5 rounded-lg text-xs font-bold bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 border border-zinc-300 dark:border-zinc-700 transition-all flex items-center gap-1.5 cursor-pointer"
+            className="px-3 sm:px-3.5 py-1.5 rounded-lg text-xs font-bold bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 border border-zinc-300 dark:border-zinc-700 transition-all flex items-center gap-1.5 cursor-pointer"
           >
             <RotateCcw className="w-3.5 h-3.5" />
             {isAr ? 'إعادة ضبط النماذج القياسية' : 'Reset Enterprise Presets'}
           </button>
-          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
-            <ShieldCheck className="w-4 h-4" />
+          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800 whitespace-nowrap">
+            <ShieldCheck className="w-4 h-4 shrink-0" />
             {isAr ? '7 أقسام متكاملة 100%' : '7 Departments Active'}
           </span>
         </div>
       </header>
 
       {/* Main Module Hub Switcher Navigation Bar */}
-      <div className="bg-white dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800 px-6 py-2 flex items-center gap-2 text-xs font-bold shrink-0 overflow-x-auto">
+      <div className="bg-white dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800 px-3 sm:px-6 py-2 flex items-center gap-1.5 sm:gap-2 text-xs font-bold shrink-0 overflow-x-auto scrollbar-none">
         <button
           onClick={() => setMainHubTab('roster')}
           className={`px-3.5 py-2 rounded-lg flex items-center gap-2 transition-all cursor-pointer whitespace-nowrap ${
