@@ -6362,9 +6362,21 @@ app.post("/api/devices", (req, res) => {
     linkedAt: isDirectConnection ? (/* @__PURE__ */ new Date()).toISOString() : void 0,
     apiKey: "waba_sec_" + id.substring(4) + "_" + Math.random().toString(36).substring(2, 10),
     webhookUrl: "https://your-api.com/whatsapp/webhook",
-    syncHistory: syncHistory === true || syncHistory === "true" || syncHistory === void 0
+    syncHistory: syncHistory === true || syncHistory === "true" || syncHistory === void 0,
+    aiAgentEnabled: true,
+    aiAgentName: "ChatCore Agent",
+    aiModel: "gemini-3.5-flash",
+    aiTemperature: 0.8
   };
   saveDevice(device);
+  broadcast({
+    type: "device:new",
+    device
+  });
+  broadcast({
+    type: "device:update",
+    device
+  });
   if (method === "qr") {
     startWhatsAppSession(id).catch((err) => {
       console.error("Failed to start WhatsApp session in background:", err);
@@ -8774,8 +8786,13 @@ async function processMetaWebhook(body) {
           const phoneNumberId = change.value.metadata?.phone_number_id;
           if (!phoneNumberId) continue;
           const devices = getAllDevices();
-          const device = devices.find((d) => d.method === "cloud_api" && String(d.phoneId || "").trim() === String(phoneNumberId).trim()) || devices.find((d) => d.method === "cloud_api");
+          const isCloudMethod = (m) => m === "cloud_api" || m === "meta_cloud" || m === "api";
+          let device = devices.find((d) => isCloudMethod(d.method) && String(d.phoneId || "").trim() === String(phoneNumberId).trim()) || devices.find((d) => isCloudMethod(d.method) && d.status === "connected") || devices.find((d) => isCloudMethod(d.method)) || devices[0];
           if (device) {
+            if (device.aiAgentEnabled === void 0) {
+              device.aiAgentEnabled = true;
+              saveDevice(device);
+            }
             if (change.value.messages) {
               for (const msg of change.value.messages) {
                 const contactPhone = msg.from;

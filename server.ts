@@ -3363,10 +3363,24 @@ app.post('/api/devices', (req, res) => {
     linkedAt: isDirectConnection ? new Date().toISOString() : undefined,
     apiKey: 'waba_sec_' + id.substring(4) + '_' + Math.random().toString(36).substring(2, 10),
     webhookUrl: 'https://your-api.com/whatsapp/webhook',
-    syncHistory: syncHistory === true || syncHistory === 'true' || syncHistory === undefined
+    syncHistory: syncHistory === true || syncHistory === 'true' || syncHistory === undefined,
+    aiAgentEnabled: true,
+    aiAgentName: 'ChatCore Agent',
+    aiModel: 'gemini-3.5-flash',
+    aiTemperature: 0.8
   };
 
   saveDevice(device);
+
+  // Broadcast new device to UI in real-time so page refresh is not needed
+  broadcast({
+    type: 'device:new',
+    device
+  });
+  broadcast({
+    type: 'device:update',
+    device
+  });
 
   // If real QR coupling requested, spin up a real Baileys WhatsApp background runner
   if (method === 'qr') {
@@ -6309,11 +6323,21 @@ async function processMetaWebhook(body: any) {
           const phoneNumberId = change.value.metadata?.phone_number_id;
           if (!phoneNumberId) continue;
           
-          // Find device with this phoneId (with robust string coercion and fallback)
+          // Find device with this phoneId (with robust string coercion and multi-method fallback)
           const devices = getAllDevices();
-          const device = devices.find(d => d.method === 'cloud_api' && String(d.phoneId || '').trim() === String(phoneNumberId).trim())
-            || devices.find(d => d.method === 'cloud_api');
+          const isCloudMethod = (m?: string) => m === 'cloud_api' || m === 'meta_cloud' || m === 'api';
+          
+          let device = devices.find(d => isCloudMethod(d.method) && String(d.phoneId || '').trim() === String(phoneNumberId).trim())
+            || devices.find(d => isCloudMethod(d.method) && d.status === 'connected')
+            || devices.find(d => isCloudMethod(d.method))
+            || devices[0];
+
           if (device) {
+            // Guarantee AI Agent auto-reply is enabled for incoming cloud API messages if not explicitly set
+            if (device.aiAgentEnabled === undefined) {
+              device.aiAgentEnabled = true;
+              saveDevice(device);
+            }
             if (change.value.messages) {
               for (const msg of change.value.messages) {
                 const contactPhone = msg.from;
