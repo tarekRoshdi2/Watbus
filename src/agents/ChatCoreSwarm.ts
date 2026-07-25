@@ -166,23 +166,28 @@ export class ChatCoreSwarm {
   }
 
   /**
-   * Load active training data for an agent from Supabase HQ database
+   * Load active training data for an agent from Supabase HQ database scoped by tenant_id
    */
-  private async getAgentSupabaseTrainingContext(agentId: string): Promise<string> {
+  private async getAgentSupabaseTrainingContext(agentId: string, tenantId: string = 'default_tenant'): Promise<string> {
     try {
       const client = getSupabaseClient();
       if (!client) return '';
-      const { data, error } = await client
+      let query = client
         .from('agent_training_data')
         .select('*')
         .eq('agent_id', agentId)
-        .eq('is_active', true)
-        .order('priority', { ascending: false });
+        .eq('is_active', true);
+
+      if (tenantId) {
+        query = query.eq('tenant_id', tenantId);
+      }
+
+      const { data, error } = await query.order('priority', { ascending: false });
 
       if (error || !data || data.length === 0) return '';
 
       const trainingLines = data.map(item => `• [${item.type.toUpperCase()} - ${item.title}]: ${item.content}`).join('\n');
-      return `\n--- SUPABASE SPECIFIC CUSTOM TRAINING FOR ${agentId.toUpperCase()} ---\n${trainingLines}\n`;
+      return `\n--- SUPABASE SPECIFIC CUSTOM TRAINING FOR ${agentId.toUpperCase()} (Tenant: ${tenantId}) ---\n${trainingLines}\n`;
     } catch (e) {
       return '';
     }
@@ -251,10 +256,12 @@ export class ChatCoreSwarm {
     customerName: string = 'عميل شات كور',
     chatId: string = 'global_thread',
     knowledgeBaseText?: string,
-    customConfigs?: Record<string, any>
+    customConfigs?: Record<string, any>,
+    tenantId: string = 'default_tenant'
   ): Promise<SwarmResponse> {
     const rawText = userMessage.trim();
     const text = rawText.toLowerCase();
+    const activeTenantId = customConfigs?.tenantId || tenantId || 'default_tenant';
 
     // Knowledge Base & Custom Employee Instructions Grounding
     const kbContext = knowledgeBaseText && knowledgeBaseText.trim() 
@@ -401,8 +408,8 @@ ${historySummary}
         ibanNo: 'EG1234567890123456789012345'
       };
 
-      // Fetch Supabase training for invoice agent
-      const supabaseTraining = await this.getAgentSupabaseTrainingContext('agent_invoice');
+      // Fetch Supabase training for invoice agent (Scoped by activeTenantId)
+      const supabaseTraining = await this.getAgentSupabaseTrainingContext('agent_invoice', activeTenantId);
 
       // Build internal context string for Gemini to use
       const invoiceContext = `[INTERNAL SWARM DATA - NOT FOR DIRECT QUOTING]
@@ -447,7 +454,7 @@ Action: Generate a friendly payment message and ask customer to send transfer sc
         });
       } catch (err) {}
 
-      const supabaseTraining = await this.getAgentSupabaseTrainingContext('agent_support');
+      const supabaseTraining = await this.getAgentSupabaseTrainingContext('agent_support', activeTenantId);
 
       const supportContext = `[INTERNAL SWARM DATA - NOT FOR DIRECT QUOTING]
 Intent: technical_support
@@ -470,7 +477,7 @@ Action: Provide clear step-by-step instructions for connecting WhatsApp (QR code
     // 3. MEDIA / DESIGN INTENT — Internal processing only (كريم الديزاين)
     // -------------------------------------------------------------
     if (!isAgentDisabled('agent_media') && (text.includes('صورة') || text.includes('تصميم') || text.includes('كارت') || text.includes('بروشور') || text.includes('شكل'))) {
-      const supabaseTraining = await this.getAgentSupabaseTrainingContext('agent_media');
+      const supabaseTraining = await this.getAgentSupabaseTrainingContext('agent_media', activeTenantId);
 
       const mediaContext = `[INTERNAL SWARM DATA - NOT FOR DIRECT QUOTING]
 Intent: media_request
@@ -506,7 +513,7 @@ Action: Confirm that a visual card with pricing/plans has been prepared and is b
     }
 
     const hasDiscussedPlans = historySummary.includes('باقة') || historySummary.includes('Starter') || historySummary.includes('1,200') || historySummary.includes('2,500');
-    const supabaseTraining = await this.getAgentSupabaseTrainingContext('agent_sales');
+    const supabaseTraining = await this.getAgentSupabaseTrainingContext('agent_sales', activeTenantId);
 
     const salesContext = `[INTERNAL SWARM DATA - NOT FOR DIRECT QUOTING]
 Intent: sales_inquiry
