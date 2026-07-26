@@ -3512,6 +3512,81 @@ app.post('/api/auth/upgrade-subscription', (req, res) => {
   res.status(404).json({ error: 'User not found' });
 });
 
+app.get('/api/tickets', (req, res) => {
+  import('./src/db.js').then(({ getAllTickets }) => {
+    res.json({ tickets: getAllTickets() });
+  });
+});
+
+app.post('/api/tickets', (req, res) => {
+  import('./src/db.js').then(({ saveTicket }) => {
+    const ticket = saveTicket(req.body);
+    res.json({ success: true, ticket });
+  });
+});
+
+app.put('/api/tickets/:id', (req, res) => {
+  import('./src/db.js').then(({ saveTicket }) => {
+    const ticket = saveTicket({ id: req.params.id, ...req.body });
+    res.json({ success: true, ticket });
+  });
+});
+
+app.delete('/api/tickets/:id', (req, res) => {
+  import('./src/db.js').then(({ deleteTicket }) => {
+    deleteTicket(req.params.id);
+    res.json({ success: true });
+  });
+});
+
+app.post('/api/tickets/analyze-ai', async (req, res) => {
+  const { ticketId, issue, solution, customer, phone } = req.body;
+  try {
+    if (!ai) {
+      res.json({
+        coreIssue: issue || 'مشكلة في تفعيل الخدمة والربط الحسابي',
+        rootCause: 'تحليل أوتوماتيكي: خطأ في مزامنة الجلسة أو تأخر الاستجابة',
+        recommendedSolution: solution || 'تم إعادة ضبط الجلسة وتأكيد التفعيل بنجاح.'
+      });
+      return;
+    }
+
+    const response = await callGeminiWithRetry({
+      model: 'gemini-2.0-flash',
+      contents: `أنت الخبير الفني ومحلل التذاكر والشكاوى الذكي (AI Ticket Analyst).
+قم بتحليل الشكوى والتذكرة التالية للعميل (${customer || 'عميل'}) واستخراج تلخيص فاخر وتوجيه محاسبي وفني:
+
+التذكرة: #${ticketId || 'TCK'}
+وصف الشكوى/المشكلة: "${issue || 'استفسار عام'}"
+الحل الحالي إن وجد: "${solution || 'لا يوجد'}"
+
+أرجع كود JSON فقط بهذا التنسيق وبصيغة عربية فاخرة ومباشرة:
+{
+  "coreIssue": "ملخص المشكلة الرئيسية المباشر في سطر واحد",
+  "rootCause": "السبب الجذري الفني المتوقع للمشكلة",
+  "recommendedSolution": "الحل الموصى به من مهندس عمر والدعم الفني"
+}`
+    });
+
+    const text = response.text || '';
+    const cleanJson = text.replace(/```json/g, '').replace(/```/g, '').trim();
+    const parsed = JSON.parse(cleanJson);
+
+    res.json({
+      coreIssue: parsed.coreIssue || issue,
+      rootCause: parsed.rootCause || 'تحليل ذكي: عدم تطابق البيانات في السجل اللحظي',
+      recommendedSolution: parsed.recommendedSolution || solution
+    });
+  } catch (err: any) {
+    console.error('Error analyzing ticket with AI:', err);
+    res.json({
+      coreIssue: issue || 'استفسار تقني عاجل',
+      rootCause: 'تحليل أوتوماتيكي: خطأ مؤقت في الاتصال بالسيرفر',
+      recommendedSolution: solution || 'تحديث البيانات وإعادة تفعيل الجلسة.'
+    });
+  }
+});
+
 app.post('/api/admin/reject-user/:id', (req, res) => {
   const { id } = req.params;
   const user = getUser(id);

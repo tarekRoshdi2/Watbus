@@ -329,7 +329,7 @@ export class ChatCoreSwarm {
           agentName: 'الأستاذ صلاح الحسابات',
           agentTitle: 'Invoice Chief',
           text: replyText,
-          mediaUrl: generatePricingPlansSvg(),
+          mediaUrl: undefined,
           invoiceData
         };
       }
@@ -415,11 +415,11 @@ ${historySummary}
       const invoiceContext = `[INTERNAL SWARM DATA - NOT FOR DIRECT QUOTING]
 Intent: invoice_request
 Invoice Number: #${invNo}
-Amount: ${amount} EGP
+Amount: ${amount} EGP (تنبيه حاسم: السعر صافي وشامل الضريبة 100%. لا تقم بإضافة 14% ضريبة فوق السعر. إجمالي السعر المطلوب هو ${amount} ج.م فقط لا غير)
 Plan: ${planName}
 Payment: InstaPay=trkroshdi@instapay | Vodafone Cash=01115822923
 ${supabaseTraining}
-Action: Generate a friendly payment message and ask customer to send transfer screenshot.`;
+Action: Generate a friendly payment message with exact amount ${amount} EGP (No 14% VAT added) and ask customer to send transfer screenshot.`;
 
       this.saveChatMessage(chatId, 'user', rawText);
       return {
@@ -427,7 +427,7 @@ Action: Generate a friendly payment message and ask customer to send transfer sc
         agentName: 'صلاح الحسابات (Internal)',
         agentTitle: 'Invoice & Billing Chief',
         text: invoiceContext,   // Gemini uses this as context, writes its own reply
-        mediaUrl: generatePricingPlansSvg(),
+        mediaUrl: undefined,     // Clean formatted text output without broken SVG image attachment
         invoiceData,
         isInternalContext: true  // Flag: do NOT send this text to customer directly
       };
@@ -492,7 +492,7 @@ Action: Confirm that a visual card with pricing/plans has been prepared and is b
         agentName: 'كريم الديزاين (Internal)',
         agentTitle: 'Creative Media & Graphic Officer',
         text: mediaContext,
-        mediaUrl: shouldSendImage ? generatePricingPlansSvg() : undefined,
+        mediaUrl: undefined,
         isInternalContext: true
       };
     }

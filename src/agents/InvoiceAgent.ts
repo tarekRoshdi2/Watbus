@@ -44,7 +44,7 @@ export class InvoiceAgent {
     currency: string = 'EGP',
     config?: { taxRate?: number; maxDiscountPercent?: number; currency?: string; systemPrompt?: string }
   ): Promise<{ textResponse: string; invoice: InvoiceData }> {
-    const taxPercentage = config?.taxRate !== undefined ? config.taxRate : 14;
+    const taxPercentage = config?.taxRate !== undefined ? config.taxRate : 0;
     const activeCurrency = config?.currency || currency;
 
     const defaultInvoice: InvoiceData = {
@@ -56,8 +56,8 @@ export class InvoiceAgent {
       ],
       subtotal: 500,
       tax: Math.round(500 * (taxPercentage / 100)),
-      discount: 50,
-      grandTotal: 500 - 50 + Math.round(450 * (taxPercentage / 100)),
+      discount: 0,
+      grandTotal: 500 + Math.round(500 * (taxPercentage / 100)),
       currency: activeCurrency,
       paymentStatus: 'pending',
       paymentUrl: `https://pay.chatcore.com/inv-${Date.now().toString().slice(-6)}`
@@ -84,6 +84,8 @@ export class InvoiceAgent {
   "currency": "EGP أو SAR أو USD حسب السياق",
   "summaryNote": "رسالة ترحيبية قصيرة وفاخرة للعميل ترافقه بالفاتورة"
 }
+
+ملاحظة حاسمة: لا تقم بإضافة أي نسبة ضريبة 14% إضافية فوق المبلغ النهائي إلا إذا طلب العميل ذلك صراحة. الأسعار يجب أن تكون صافية وشاملة.
 
 طلب العميل: "${inputPrompt}"`
       });
@@ -119,7 +121,7 @@ export class InvoiceAgent {
         `\n------------------------` +
         `\nالمجموع الفرعي: ${subtotal} ${curr}` +
         (discount > 0 ? `\nالخصم: -${discount} ${curr}` : '') +
-        `\nضريبة القيمة المضافة (14%): ${tax} ${curr}` +
+        (tax > 0 ? `\nضريبة القيمة المضافة (14%): ${tax} ${curr}` : `\nالضريبة: 0 ${curr} (السعر صافي/شامل الضريبة)`) +
         `\n*الإجمالي المطلوب: ${grandTotal} ${curr}*` +
         `\n\n💳 رابط الدفع المباشر (آمن 100%): ${generatedInvoice.paymentUrl}`;
 

@@ -1930,7 +1930,7 @@ var init_InvoiceAgent = __esm({
        * Parses customer request and generates a complete structured invoice
        */
       async generateInvoice(inputPrompt, customerName = "\u0627\u0644\u0639\u0645\u064A\u0644 \u0627\u0644\u0645\u0645\u064A\u0632", currency = "EGP", config) {
-        const taxPercentage = config?.taxRate !== void 0 ? config.taxRate : 14;
+        const taxPercentage = config?.taxRate !== void 0 ? config.taxRate : 0;
         const activeCurrency = config?.currency || currency;
         const defaultInvoice = {
           invoiceNumber: `INV-${Date.now().toString().slice(-6)}`,
@@ -1941,8 +1941,8 @@ var init_InvoiceAgent = __esm({
           ],
           subtotal: 500,
           tax: Math.round(500 * (taxPercentage / 100)),
-          discount: 50,
-          grandTotal: 500 - 50 + Math.round(450 * (taxPercentage / 100)),
+          discount: 0,
+          grandTotal: 500 + Math.round(500 * (taxPercentage / 100)),
           currency: activeCurrency,
           paymentStatus: "pending",
           paymentUrl: `https://pay.chatcore.com/inv-${Date.now().toString().slice(-6)}`
@@ -1968,6 +1968,8 @@ var init_InvoiceAgent = __esm({
   "currency": "EGP \u0623\u0648 SAR \u0623\u0648 USD \u062D\u0633\u0628 \u0627\u0644\u0633\u064A\u0627\u0642",
   "summaryNote": "\u0631\u0633\u0627\u0644\u0629 \u062A\u0631\u062D\u064A\u0628\u064A\u0629 \u0642\u0635\u064A\u0631\u0629 \u0648\u0641\u0627\u062E\u0631\u0629 \u0644\u0644\u0639\u0645\u064A\u0644 \u062A\u0631\u0627\u0641\u0642\u0647 \u0628\u0627\u0644\u0641\u0627\u062A\u0648\u0631\u0629"
 }
+
+\u0645\u0644\u0627\u062D\u0638\u0629 \u062D\u0627\u0633\u0645\u0629: \u0644\u0627 \u062A\u0642\u0645 \u0628\u0625\u0636\u0627\u0641\u0629 \u0623\u064A \u0646\u0633\u0628\u0629 \u0636\u0631\u064A\u0628\u0629 14% \u0625\u0636\u0627\u0641\u064A\u0629 \u0641\u0648\u0642 \u0627\u0644\u0645\u0628\u0644\u063A \u0627\u0644\u0646\u0647\u0627\u0626\u064A \u0625\u0644\u0627 \u0625\u0630\u0627 \u0637\u0644\u0628 \u0627\u0644\u0639\u0645\u064A\u0644 \u0630\u0644\u0643 \u0635\u0631\u0627\u062D\u0629. \u0627\u0644\u0623\u0633\u0639\u0627\u0631 \u064A\u062C\u0628 \u0623\u0646 \u062A\u0643\u0648\u0646 \u0635\u0627\u0641\u064A\u0629 \u0648\u0634\u0627\u0645\u0644\u0629.
 
 \u0637\u0644\u0628 \u0627\u0644\u0639\u0645\u064A\u0644: "${inputPrompt}"`
           });
@@ -2000,8 +2002,9 @@ var init_InvoiceAgent = __esm({
 ` + items.map((i) => `\u2022 ${i.name} (\u0639\u062F\u062F ${i.quantity}): ${i.totalPrice} ${curr}`).join("\n") + `
 ------------------------
 \u0627\u0644\u0645\u062C\u0645\u0648\u0639 \u0627\u0644\u0641\u0631\u0639\u064A: ${subtotal} ${curr}` + (discount > 0 ? `
-\u0627\u0644\u062E\u0635\u0645: -${discount} ${curr}` : "") + `
-\u0636\u0631\u064A\u0628\u0629 \u0627\u0644\u0642\u064A\u0645\u0629 \u0627\u0644\u0645\u0636\u0627\u0641\u0629 (14%): ${tax} ${curr}
+\u0627\u0644\u062E\u0635\u0645: -${discount} ${curr}` : "") + (tax > 0 ? `
+\u0636\u0631\u064A\u0628\u0629 \u0627\u0644\u0642\u064A\u0645\u0629 \u0627\u0644\u0645\u0636\u0627\u0641\u0629 (14%): ${tax} ${curr}` : `
+\u0627\u0644\u0636\u0631\u064A\u0628\u0629: 0 ${curr} (\u0627\u0644\u0633\u0639\u0631 \u0635\u0627\u0641\u064A/\u0634\u0627\u0645\u0644 \u0627\u0644\u0636\u0631\u064A\u0628\u0629)`) + `
 *\u0627\u0644\u0625\u062C\u0645\u0627\u0644\u064A \u0627\u0644\u0645\u0637\u0644\u0648\u0628: ${grandTotal} ${curr}*
 
 \u{1F4B3} \u0631\u0627\u0628\u0637 \u0627\u0644\u062F\u0641\u0639 \u0627\u0644\u0645\u0628\u0627\u0634\u0631 (\u0622\u0645\u0646 100%): ${generatedInvoice.paymentUrl}`;
@@ -2327,43 +2330,6 @@ var import_jsonwebtoken = __toESM(require("jsonwebtoken"), 1);
 var import_genai = require("@google/genai");
 init_db();
 init_supabase();
-function generatePricingPlansSvg() {
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="800" height="420" viewBox="0 0 800 420" fill="none">
-    <rect width="800" height="420" rx="24" fill="#090d16"/>
-    <rect width="798" height="418" x="1" y="1" rx="23" stroke="#f59e0b" stroke-opacity="0.3" stroke-width="2"/>
-    
-    <text x="400" y="45" fill="#ffffff" font-family="'Cairo', 'Segoe UI', system-ui, sans-serif" font-size="22" font-weight="900" text-anchor="middle">\u{1F48E} \u0628\u0627\u0642\u0627\u062A \u0648\u0623\u0633\u0639\u0627\u0631 \u0645\u0646\u0635\u0629 \u0634\u0627\u062A \u0643\u0648\u0631 \u0644\u0644\u0630\u0643\u0627\u0621 \u0627\u0644\u0627\u0635\u0637\u0646\u0627\u0639\u064A</text>
-    <text x="400" y="70" fill="#f59e0b" font-family="'Cairo', 'Segoe UI', system-ui, sans-serif" font-size="13" font-weight="700" text-anchor="middle">\u0627\u062E\u062A\u0631 \u0627\u0644\u0628\u0627\u0642\u0629 \u0627\u0644\u0645\u062B\u0627\u0644\u064A\u0629 \u0644\u0631\u0628\u0637 \u0623\u062C\u0647\u0632\u0629 \u0627\u0644\u0648\u0627\u062A\u0633\u0627\u0628 \u0648\u0637\u0627\u0642\u0645 \u0627\u0644\u0645\u0648\u0638\u0641\u064A\u0646 \u0644\u062E\u062F\u0645\u0629 \u0645\u0634\u0631\u0648\u0639\u0643</text>
-
-    <!-- Plan 1 -->
-    <rect x="40" y="100" width="220" height="280" rx="16" fill="#111827" stroke="#1f2937"/>
-    <text x="150" y="135" fill="#9ca3af" font-family="'Cairo', 'Segoe UI', system-ui, sans-serif" font-size="14" font-weight="800" text-anchor="middle">\u0628\u0627\u0642\u0629 \u0627\u0644\u0628\u062F\u0627\u064A\u0629 (Starter)</text>
-    <text x="150" y="175" fill="#ffffff" font-family="'Cairo', 'Segoe UI', system-ui, sans-serif" font-size="24" font-weight="900" text-anchor="middle">1,200 <tspan font-size="13">\u062C.\u0645</tspan></text>
-    <text x="150" y="210" fill="#10b981" font-family="'Cairo', 'Segoe UI', system-ui, sans-serif" font-size="12" font-weight="700" text-anchor="middle">\u2714 \u062E\u0637 \u0648\u0627\u062A\u0633\u0627\u0628 \u0648\u0627\u062D\u062F</text>
-    <text x="150" y="240" fill="#10b981" font-family="'Cairo', 'Segoe UI', system-ui, sans-serif" font-size="12" font-weight="700" text-anchor="middle">\u2714 \u0645\u0648\u0638\u0641 \u0645\u0628\u064A\u0639\u0627\u062A \u0630\u0643\u064A 24/7</text>
-    <text x="150" y="270" fill="#10b981" font-family="'Cairo', 'Segoe UI', system-ui, sans-serif" font-size="12" font-weight="700" text-anchor="middle">\u2714 \u062A\u062F\u0631\u064A\u0628 RAG \u0648\u0642\u0648\u0627\u0639\u062F \u0645\u0639\u0631\u0641\u0629</text>
-
-    <!-- Plan 2 (Popular) -->
-    <rect x="290" y="90" width="220" height="300" rx="16" fill="#1e1b4b" stroke="#6366f1" stroke-width="2"/>
-    <rect x="340" y="90" width="120" height="24" rx="12" fill="#6366f1"/>
-    <text x="400" y="106" fill="#ffffff" font-family="'Cairo', 'Segoe UI', system-ui, sans-serif" font-size="11" font-weight="900" text-anchor="middle">\u2B50 \u0627\u0644\u0623\u0643\u062B\u0631 \u0645\u0628\u064A\u0639\u0627\u064B \u0648\u062A\u0641\u0636\u064A\u0644\u0627\u064B</text>
-    <text x="400" y="140" fill="#a5b4fc" font-family="'Cairo', 'Segoe UI', system-ui, sans-serif" font-size="15" font-weight="800" text-anchor="middle">\u0628\u0627\u0642\u0629 \u0627\u0644\u0623\u0639\u0645\u0627\u0644 (Business)</text>
-    <text x="400" y="180" fill="#ffffff" font-family="'Cairo', 'Segoe UI', system-ui, sans-serif" font-size="26" font-weight="900" text-anchor="middle">2,500 <tspan font-size="13">\u062C.\u0645</tspan></text>
-    <text x="400" y="215" fill="#818cf8" font-family="'Cairo', 'Segoe UI', system-ui, sans-serif" font-size="12" font-weight="700" text-anchor="middle">\u2714 \u062E\u0637\u064A\u0646 \u0648\u0627\u062A\u0633\u0627\u0628 + \u062A\u0644\u064A\u062C\u0631\u0627\u0645</text>
-    <text x="400" y="245" fill="#818cf8" font-family="'Cairo', 'Segoe UI', system-ui, sans-serif" font-size="12" font-weight="700" text-anchor="middle">\u2714 \u0637\u0627\u0642\u0645 6 \u0645\u0648\u0638\u0641\u064A\u0646 \u0628\u0627\u0644\u0643\u0627\u0645\u0644</text>
-    <text x="400" y="275" fill="#818cf8" font-family="'Cairo', 'Segoe UI', system-ui, sans-serif" font-size="12" font-weight="700" text-anchor="middle">\u2714 \u062A\u062D\u0644\u064A\u0644\u0627\u062A \u0648\u0642\u0648\u0627\u0639\u062F \u0628\u064A\u0627\u0646\u0627\u062A \u0644\u062D\u0638\u064A\u0629</text>
-    <text x="400" y="305" fill="#818cf8" font-family="'Cairo', 'Segoe UI', system-ui, sans-serif" font-size="12" font-weight="700" text-anchor="middle">\u2714 \u0631\u062F\u0648\u062F \u0635\u0648\u062A\u064A\u0629 \u0641\u0648\u064A\u0633 PTT</text>
-
-    <!-- Plan 3 -->
-    <rect x="540" y="100" width="220" height="280" rx="16" fill="#111827" stroke="#1f2937"/>
-    <text x="650" y="135" fill="#9ca3af" font-family="'Cairo', 'Segoe UI', system-ui, sans-serif" font-size="14" font-weight="800" text-anchor="middle">\u0627\u0644\u0645\u0624\u0633\u0633\u0627\u062A (Enterprise)</text>
-    <text x="650" y="175" fill="#ffffff" font-family="'Cairo', 'Segoe UI', system-ui, sans-serif" font-size="24" font-weight="900" text-anchor="middle">4,900 <tspan font-size="13">\u062C.\u0645</tspan></text>
-    <text x="650" y="210" fill="#f59e0b" font-family="'Cairo', 'Segoe UI', system-ui, sans-serif" font-size="12" font-weight="700" text-anchor="middle">\u2714 \u062E\u0637\u0648\u0637 \u0648\u0645\u0648\u0638\u0641\u064A\u0646 \u0644\u0627 \u0646\u0647\u0627\u0626\u064A\u0629</text>
-    <text x="650" y="240" fill="#f59e0b" font-family="'Cairo', 'Segoe UI', system-ui, sans-serif" font-size="12" font-weight="700" text-anchor="middle">\u2714 \u0634\u062E\u0635\u064A\u0627\u062A \u0648\u062A\u0623\u0647\u064A\u0644 \u0645\u062E\u0635\u0635</text>
-    <text x="650" y="270" fill="#f59e0b" font-family="'Cairo', 'Segoe UI', system-ui, sans-serif" font-size="12" font-weight="700" text-anchor="middle">\u2714 \u0633\u064A\u0631\u0641\u0631 \u062E\u0627\u0635 \u0648\u062F\u0639\u0645 \u0645\u0628\u0627\u0634\u0631</text>
-  </svg>`;
-  return "data:image/svg+xml;base64," + Buffer.from(svg).toString("base64");
-}
 var ChatCoreSwarm = class {
   constructor() {
     this.ai = null;
@@ -2509,7 +2475,7 @@ ${knowledgeBaseText}
           agentName: "\u0627\u0644\u0623\u0633\u062A\u0627\u0630 \u0635\u0644\u0627\u062D \u0627\u0644\u062D\u0633\u0627\u0628\u0627\u062A",
           agentTitle: "Invoice Chief",
           text: replyText,
-          mediaUrl: generatePricingPlansSvg(),
+          mediaUrl: void 0,
           invoiceData
         };
       }
@@ -2576,11 +2542,11 @@ ${historySummary2}
       const invoiceContext = `[INTERNAL SWARM DATA - NOT FOR DIRECT QUOTING]
 Intent: invoice_request
 Invoice Number: #${invNo}
-Amount: ${amount} EGP
+Amount: ${amount} EGP (\u062A\u0646\u0628\u064A\u0647 \u062D\u0627\u0633\u0645: \u0627\u0644\u0633\u0639\u0631 \u0635\u0627\u0641\u064A \u0648\u0634\u0627\u0645\u0644 \u0627\u0644\u0636\u0631\u064A\u0628\u0629 100%. \u0644\u0627 \u062A\u0642\u0645 \u0628\u0625\u0636\u0627\u0641\u0629 14% \u0636\u0631\u064A\u0628\u0629 \u0641\u0648\u0642 \u0627\u0644\u0633\u0639\u0631. \u0625\u062C\u0645\u0627\u0644\u064A \u0627\u0644\u0633\u0639\u0631 \u0627\u0644\u0645\u0637\u0644\u0648\u0628 \u0647\u0648 ${amount} \u062C.\u0645 \u0641\u0642\u0637 \u0644\u0627 \u063A\u064A\u0631)
 Plan: ${planName}
 Payment: InstaPay=trkroshdi@instapay | Vodafone Cash=01115822923
 ${supabaseTraining2}
-Action: Generate a friendly payment message and ask customer to send transfer screenshot.`;
+Action: Generate a friendly payment message with exact amount ${amount} EGP (No 14% VAT added) and ask customer to send transfer screenshot.`;
       this.saveChatMessage(chatId, "user", rawText);
       return {
         agentId: "invoice",
@@ -2588,7 +2554,8 @@ Action: Generate a friendly payment message and ask customer to send transfer sc
         agentTitle: "Invoice & Billing Chief",
         text: invoiceContext,
         // Gemini uses this as context, writes its own reply
-        mediaUrl: generatePricingPlansSvg(),
+        mediaUrl: void 0,
+        // Clean formatted text output without broken SVG image attachment
         invoiceData,
         isInternalContext: true
         // Flag: do NOT send this text to customer directly
@@ -2641,7 +2608,7 @@ Action: Confirm that a visual card with pricing/plans has been prepared and is b
         agentName: "\u0643\u0631\u064A\u0645 \u0627\u0644\u062F\u064A\u0632\u0627\u064A\u0646 (Internal)",
         agentTitle: "Creative Media & Graphic Officer",
         text: mediaContext,
-        mediaUrl: shouldSendImage ? generatePricingPlansSvg() : void 0,
+        mediaUrl: void 0,
         isInternalContext: true
       };
     }
@@ -6636,6 +6603,73 @@ app.post("/api/auth/upgrade-subscription", (req, res) => {
     return;
   }
   res.status(404).json({ error: "User not found" });
+});
+app.get("/api/tickets", (req, res) => {
+  Promise.resolve().then(() => (init_db(), db_exports)).then(({ getAllTickets: getAllTickets2 }) => {
+    res.json({ tickets: getAllTickets2() });
+  });
+});
+app.post("/api/tickets", (req, res) => {
+  Promise.resolve().then(() => (init_db(), db_exports)).then(({ saveTicket: saveTicket2 }) => {
+    const ticket = saveTicket2(req.body);
+    res.json({ success: true, ticket });
+  });
+});
+app.put("/api/tickets/:id", (req, res) => {
+  Promise.resolve().then(() => (init_db(), db_exports)).then(({ saveTicket: saveTicket2 }) => {
+    const ticket = saveTicket2({ id: req.params.id, ...req.body });
+    res.json({ success: true, ticket });
+  });
+});
+app.delete("/api/tickets/:id", (req, res) => {
+  Promise.resolve().then(() => (init_db(), db_exports)).then(({ deleteTicket: deleteTicket2 }) => {
+    deleteTicket2(req.params.id);
+    res.json({ success: true });
+  });
+});
+app.post("/api/tickets/analyze-ai", async (req, res) => {
+  const { ticketId, issue, solution, customer, phone } = req.body;
+  try {
+    if (!ai) {
+      res.json({
+        coreIssue: issue || "\u0645\u0634\u0643\u0644\u0629 \u0641\u064A \u062A\u0641\u0639\u064A\u0644 \u0627\u0644\u062E\u062F\u0645\u0629 \u0648\u0627\u0644\u0631\u0628\u0637 \u0627\u0644\u062D\u0633\u0627\u0628\u064A",
+        rootCause: "\u062A\u062D\u0644\u064A\u0644 \u0623\u0648\u062A\u0648\u0645\u0627\u062A\u064A\u0643\u064A: \u062E\u0637\u0623 \u0641\u064A \u0645\u0632\u0627\u0645\u0646\u0629 \u0627\u0644\u062C\u0644\u0633\u0629 \u0623\u0648 \u062A\u0623\u062E\u0631 \u0627\u0644\u0627\u0633\u062A\u062C\u0627\u0628\u0629",
+        recommendedSolution: solution || "\u062A\u0645 \u0625\u0639\u0627\u062F\u0629 \u0636\u0628\u0637 \u0627\u0644\u062C\u0644\u0633\u0629 \u0648\u062A\u0623\u0643\u064A\u062F \u0627\u0644\u062A\u0641\u0639\u064A\u0644 \u0628\u0646\u062C\u0627\u062D."
+      });
+      return;
+    }
+    const response = await callGeminiWithRetry({
+      model: "gemini-2.0-flash",
+      contents: `\u0623\u0646\u062A \u0627\u0644\u062E\u0628\u064A\u0631 \u0627\u0644\u0641\u0646\u064A \u0648\u0645\u062D\u0644\u0644 \u0627\u0644\u062A\u0630\u0627\u0643\u0631 \u0648\u0627\u0644\u0634\u0643\u0627\u0648\u0649 \u0627\u0644\u0630\u0643\u064A (AI Ticket Analyst).
+\u0642\u0645 \u0628\u062A\u062D\u0644\u064A\u0644 \u0627\u0644\u0634\u0643\u0648\u0649 \u0648\u0627\u0644\u062A\u0630\u0643\u0631\u0629 \u0627\u0644\u062A\u0627\u0644\u064A\u0629 \u0644\u0644\u0639\u0645\u064A\u0644 (${customer || "\u0639\u0645\u064A\u0644"}) \u0648\u0627\u0633\u062A\u062E\u0631\u0627\u062C \u062A\u0644\u062E\u064A\u0635 \u0641\u0627\u062E\u0631 \u0648\u062A\u0648\u062C\u064A\u0647 \u0645\u062D\u0627\u0633\u0628\u064A \u0648\u0641\u0646\u064A:
+
+\u0627\u0644\u062A\u0630\u0643\u0631\u0629: #${ticketId || "TCK"}
+\u0648\u0635\u0641 \u0627\u0644\u0634\u0643\u0648\u0649/\u0627\u0644\u0645\u0634\u0643\u0644\u0629: "${issue || "\u0627\u0633\u062A\u0641\u0633\u0627\u0631 \u0639\u0627\u0645"}"
+\u0627\u0644\u062D\u0644 \u0627\u0644\u062D\u0627\u0644\u064A \u0625\u0646 \u0648\u062C\u062F: "${solution || "\u0644\u0627 \u064A\u0648\u062C\u062F"}"
+
+\u0623\u0631\u062C\u0639 \u0643\u0648\u062F JSON \u0641\u0642\u0637 \u0628\u0647\u0630\u0627 \u0627\u0644\u062A\u0646\u0633\u064A\u0642 \u0648\u0628\u0635\u064A\u063A\u0629 \u0639\u0631\u0628\u064A\u0629 \u0641\u0627\u062E\u0631\u0629 \u0648\u0645\u0628\u0627\u0634\u0631\u0629:
+{
+  "coreIssue": "\u0645\u0644\u062E\u0635 \u0627\u0644\u0645\u0634\u0643\u0644\u0629 \u0627\u0644\u0631\u0626\u064A\u0633\u064A\u0629 \u0627\u0644\u0645\u0628\u0627\u0634\u0631 \u0641\u064A \u0633\u0637\u0631 \u0648\u0627\u062D\u062F",
+  "rootCause": "\u0627\u0644\u0633\u0628\u0628 \u0627\u0644\u062C\u0630\u0631\u064A \u0627\u0644\u0641\u0646\u064A \u0627\u0644\u0645\u062A\u0648\u0642\u0639 \u0644\u0644\u0645\u0634\u0643\u0644\u0629",
+  "recommendedSolution": "\u0627\u0644\u062D\u0644 \u0627\u0644\u0645\u0648\u0635\u0649 \u0628\u0647 \u0645\u0646 \u0645\u0647\u0646\u062F\u0633 \u0639\u0645\u0631 \u0648\u0627\u0644\u062F\u0639\u0645 \u0627\u0644\u0641\u0646\u064A"
+}`
+    });
+    const text = response.text || "";
+    const cleanJson = text.replace(/```json/g, "").replace(/```/g, "").trim();
+    const parsed = JSON.parse(cleanJson);
+    res.json({
+      coreIssue: parsed.coreIssue || issue,
+      rootCause: parsed.rootCause || "\u062A\u062D\u0644\u064A\u0644 \u0630\u0643\u064A: \u0639\u062F\u0645 \u062A\u0637\u0627\u0628\u0642 \u0627\u0644\u0628\u064A\u0627\u0646\u0627\u062A \u0641\u064A \u0627\u0644\u0633\u062C\u0644 \u0627\u0644\u0644\u062D\u0638\u064A",
+      recommendedSolution: parsed.recommendedSolution || solution
+    });
+  } catch (err) {
+    console.error("Error analyzing ticket with AI:", err);
+    res.json({
+      coreIssue: issue || "\u0627\u0633\u062A\u0641\u0633\u0627\u0631 \u062A\u0642\u0646\u064A \u0639\u0627\u062C\u0644",
+      rootCause: "\u062A\u062D\u0644\u064A\u0644 \u0623\u0648\u062A\u0648\u0645\u0627\u062A\u064A\u0643\u064A: \u062E\u0637\u0623 \u0645\u0624\u0642\u062A \u0641\u064A \u0627\u0644\u0627\u062A\u0635\u0627\u0644 \u0628\u0627\u0644\u0633\u064A\u0631\u0641\u0631",
+      recommendedSolution: solution || "\u062A\u062D\u062F\u064A\u062B \u0627\u0644\u0628\u064A\u0627\u0646\u0627\u062A \u0648\u0625\u0639\u0627\u062F\u0629 \u062A\u0641\u0639\u064A\u0644 \u0627\u0644\u062C\u0644\u0633\u0629."
+    });
+  }
 });
 app.post("/api/admin/reject-user/:id", (req, res) => {
   const { id } = req.params;

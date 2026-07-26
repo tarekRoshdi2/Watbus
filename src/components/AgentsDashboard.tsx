@@ -6,7 +6,7 @@ import {
   Shield, Sliders, ListChecks, ArrowLeftRight, CreditCard, Palette, LifeBuoy, Compass, RotateCcw,
   Ticket, Layers, Copy, Download, PhoneForwarded, AlertTriangle, CheckCircle, FileCheck, Search, Plus, Volume2, PlayCircle, FileDown,
   Lightbulb, TrendingUp, Cpu, Flame, Megaphone, Users, BarChart2, Target, Eye, ShoppingCart, UserCheck, Briefcase, Smartphone,
-  Brain, Trash2, Network, Globe, Workflow, Share2
+  Brain, Trash2, Network, Globe, Workflow, Share2, Save
 } from 'lucide-react';
 
 export interface AgentConfig {
@@ -275,6 +275,79 @@ export default function AgentsDashboard({ lang, initialTab = 'roster' }: { lang:
     }, 6000);
   };
   const [selectedTicketModal, setSelectedTicketModal] = useState<any>(null);
+  const [isSavingTicket, setIsSavingTicket] = useState<boolean>(false);
+  const [isAnalyzingTicketAi, setIsAnalyzingTicketAi] = useState<boolean>(false);
+  const [aiAnalysisResult, setAiAnalysisResult] = useState<any>(null);
+
+  const handleSaveTicketModal = async () => {
+    if (!selectedTicketModal) return;
+    setIsSavingTicket(true);
+    try {
+      const res = await fetch(`/api/tickets/${selectedTicketModal.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(selectedTicketModal)
+      });
+      const data = await res.json();
+      if (data.ticket) {
+        setTicketsList(prev => prev.map(t => t.id === data.ticket.id ? data.ticket : t));
+      } else {
+        setTicketsList(prev => prev.map(t => t.id === selectedTicketModal.id ? selectedTicketModal : t));
+      }
+    } catch (err) {
+      console.error('Failed to save ticket:', err);
+      setTicketsList(prev => prev.map(t => t.id === selectedTicketModal.id ? selectedTicketModal : t));
+    } finally {
+      setIsSavingTicket(false);
+      setSelectedTicketModal(null);
+      setAiAnalysisResult(null);
+    }
+  };
+
+  const handleDeleteTicketModal = async () => {
+    if (!selectedTicketModal) return;
+    try {
+      await fetch(`/api/tickets/${selectedTicketModal.id}`, { method: 'DELETE' });
+      setTicketsList(prev => prev.filter(t => t.id !== selectedTicketModal.id));
+    } catch (err) {
+      console.error('Failed to delete ticket:', err);
+      setTicketsList(prev => prev.filter(t => t.id !== selectedTicketModal.id));
+    } finally {
+      setSelectedTicketModal(null);
+      setAiAnalysisResult(null);
+    }
+  };
+
+  const handleAnalyzeTicketWithAi = async () => {
+    if (!selectedTicketModal) return;
+    setIsAnalyzingTicketAi(true);
+    try {
+      const res = await fetch('/api/tickets/analyze-ai', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ticketId: selectedTicketModal.id,
+          issue: selectedTicketModal.issue,
+          solution: selectedTicketModal.solution,
+          customer: selectedTicketModal.customer,
+          phone: selectedTicketModal.phone
+        })
+      });
+      const data = await res.json();
+      setAiAnalysisResult(data);
+      if (data.recommendedSolution) {
+        setSelectedTicketModal((prev: any) => ({
+          ...prev,
+          solution: data.recommendedSolution,
+          issue: data.coreIssue || prev.issue
+        }));
+      }
+    } catch (err) {
+      console.error('Failed AI ticket analysis:', err);
+    } finally {
+      setIsAnalyzingTicketAi(false);
+    }
+  };
   const [selectedCustomerModal, setSelectedCustomerModal] = useState<any>(null);
   const [customerNotesEdit, setCustomerNotesEdit] = useState('');
 
@@ -602,29 +675,29 @@ export default function AgentsDashboard({ lang, initialTab = 'roster' }: { lang:
       name: isAr ? 'الأستاذ صلاح الحسابات (Invoice Chief)' : 'Invoice & Billing Agent',
       nameEn: 'Invoice Agent',
       role: 'invoice',
-      description: isAr ? 'المحاسب المالي المختص بتفنيذ البنود، حساب ضريبة القيمة المضافة 14%، وتوليد روابط سداد رسمية ومباشرة.' : 'Generates itemized invoices, calculates 14% VAT tax/discounts, creates secure instant payment links.',
+      description: isAr ? 'المحاسب المالي المختص بتفنيد البنود، إصدار الفواتير الرسمية الصافية، وتوفير حسابات التحويل الفوري (InstaPay/فودافون كاش).' : 'Generates itemized invoices, computes net total without additional tax, and provides instant payment accounts.',
       status: 'active',
       model: 'gemini-2.0-flash',
       temperature: 0.2,
       dialect: 'msa',
       systemPrompt: isAr 
-        ? 'أنت "الأستاذ صلاح" المحاسب المالي المعرف بالدقة والرصانة. تتحدث بالعربية الفصيحة البسيطة والمحاسبية. مهمتك تفنيد بنود الطلب، حساب المجموع الفرعي، تطبيق الخصم المستحق، حساب ضريبة القيمة المضافة 14%، وإصدار فاتورة رسمية برقم فريد مع رابط دفع آمن 100%.' 
-        : 'You are Mr. Salah, the certified Accounting & Billing Officer. Extract line items, apply accurate 14% VAT, compute grand totals, and output clean structured invoices with payment links.',
+        ? 'أنت "الأستاذ صلاح" المحاسب المالي المعرف بالدقة والرصانة. تتحدث بالعربية البسيطة والمحاسبية. مهمتك تفنيد بنود الطلب وحساب المبلغ النهائي المباشر (السعر شامل وصافي بدون أي 14% ضريبة إضافية) وإصدار فاتورة رسمية مع تفاصيل التحويل المباشرة.' 
+        : 'You are Mr. Salah, the certified Accounting & Billing Officer. Extract line items, compute exact net totals (no additional 14% VAT added), and output clean invoices.',
       triggerKeywords: ['فاتورة', 'فاتوره', 'عرض سعر', 'رابط الدفع', 'حساب الطلب', 'ادفع كام', 'كوبون', 'حساب'],
       responsibilities: [
         isAr ? 'تفنيد بنود الفاتورة وحساب المجموع بدقة دقيقة 100%' : '100% precise itemization & price calculation',
-        isAr ? 'حساب وتطبيق ضريبة القيمة المضافة (14% VAT)' : 'Automated 14% VAT computation',
-        isAr ? 'توليد روابط دفع سريعة وآمنة ومباشرة عبر بوابة سديد' : 'Generating instant secure payment links',
-        isAr ? 'إصدار وتجهيز فواتير PDF قابلة للطباعة والرصد' : 'Generating printable PDF invoices'
+        isAr ? 'حساب المجموع الصافي ومراعاة خيار (السعر شامل الضريبة / 0% VAT)' : 'Net price calculation (0% VAT included)',
+        isAr ? 'توليد تفاصيل التحويل الفوري InstaPay وفودافون كاش' : 'Generating instant payment details',
+        isAr ? 'إصدار وتجهيز فواتير رسمية معتمدة' : 'Generating certified official invoices'
       ],
       guardrails: {
         maxDiscountPercent: 20,
         autoVoiceCall: false,
         autoPaymentLink: true,
         workingHours: '24/7 (على مدار الساعة)',
-        taxRate: 14,
+        taxRate: 0,
         currency: 'EGP',
-        paymentGateway: 'ChatCore Pay'
+        paymentGateway: 'InstaPay & Vodafone Cash'
       },
       metrics: { totalChats: 185, resolvedTickets: 0, avgResponseTime: '0.3s', customerSatisfaction: 99 },
       recentActivities: [
@@ -3322,37 +3395,93 @@ export default function AgentsDashboard({ lang, initialTab = 'roster' }: { lang:
       {/* Ticket Details & Resolution Modal */}
       {selectedTicketModal && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-xs z-50 flex items-center justify-center p-4 animate-fade-in" dir={isAr ? 'rtl' : 'ltr'}>
-          <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl w-full max-w-xl p-6 space-y-4 shadow-2xl">
+          <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl w-full max-w-xl p-6 space-y-4 shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
+            {/* Modal Header */}
             <div className="flex items-center justify-between border-b border-zinc-200 dark:border-zinc-800 pb-3">
-              <h3 className="font-bold text-base text-zinc-900 dark:text-white flex items-center gap-2">
-                <Ticket className="w-5 h-5 text-emerald-500" />
-                تفاصيل التذكرة #{selectedTicketModal.id}
-              </h3>
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold">
+                  <Ticket className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-black text-base text-zinc-900 dark:text-white flex items-center gap-2">
+                    <span>تفاصيل وتعديل تذكرة الدعم</span>
+                    <span className="font-mono text-emerald-500 text-xs bg-emerald-50 dark:bg-emerald-950 px-2 py-0.5 rounded border border-emerald-300">#{selectedTicketModal.id}</span>
+                  </h3>
+                </div>
+              </div>
               <button onClick={() => setSelectedTicketModal(null)} className="text-zinc-400 hover:text-zinc-600 text-xl font-bold cursor-pointer">×</button>
             </div>
             
-            <div className="space-y-3 text-xs">
-              <div className="p-3 bg-zinc-50 dark:bg-zinc-800/60 rounded-lg space-y-1">
-                <span className="text-zinc-500 dark:text-zinc-400 block font-bold">بلاغ المشكلة الأصلي:</span>
-                <p className="text-zinc-900 dark:text-white font-medium">{selectedTicketModal.issue}</p>
+            <div className="space-y-4 text-xs overflow-y-auto custom-scrollbar p-1 flex-1">
+              {/* Customer Meta Row */}
+              <div className="grid grid-cols-2 gap-3 bg-zinc-50 dark:bg-zinc-800/60 p-3 rounded-2xl border border-zinc-200 dark:border-zinc-700">
+                <div>
+                  <span className="text-zinc-400 block text-[10px]">اسم العميل:</span>
+                  <span className="font-bold text-zinc-900 dark:text-white text-sm">{selectedTicketModal.customer || 'طارق رشدي'}</span>
+                </div>
+                <div className="text-left">
+                  <span className="text-zinc-400 block text-[10px]">تاريخ الإنشاء:</span>
+                  <span className="font-mono text-zinc-600 dark:text-zinc-400">{selectedTicketModal.time || '10:07 ص'}</span>
+                </div>
               </div>
 
-              <div className="p-3 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 rounded-lg space-y-1">
-                <span className="text-emerald-800 dark:text-emerald-300 block font-bold">الحل المقترح من مهندس عمر الدعم:</span>
-                <p className="text-emerald-900 dark:text-emerald-200 font-medium">{selectedTicketModal.solution}</p>
+              {/* AI Complaint Summarizer Action Bar */}
+              <button
+                onClick={handleAnalyzeTicketWithAi}
+                disabled={isAnalyzingTicketAi}
+                className="w-full py-3 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 disabled:opacity-50 text-white font-bold rounded-2xl text-xs transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer"
+              >
+                {isAnalyzingTicketAi ? (
+                  <Clock className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Brain className="w-4 h-4 text-amber-300" />
+                )}
+                <span>{isAnalyzingTicketAi ? 'جاري تحليل سياق الشكوى بالذكاء الاصطناعي...' : '🤖 تحليل الشكوى واستخراج التلخيص والحل الذكي (AI Analysis)'}</span>
+              </button>
+
+              {/* AI Analysis Result Display Box */}
+              {aiAnalysisResult && (
+                <div className="p-4 bg-purple-50 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-800/60 rounded-2xl space-y-2 animate-fade-in text-xs">
+                  <h4 className="font-bold text-purple-900 dark:text-purple-300 flex items-center gap-2 text-xs">
+                    <Sparkles className="w-4 h-4 text-amber-400" />
+                    نتائج ملخص الشكوى بالذكاء الاصطناعي (Gemini AI Summary):
+                  </h4>
+                  <p className="text-zinc-800 dark:text-zinc-200">📌 <strong>المشكلة الأساسية:</strong> {aiAnalysisResult.coreIssue}</p>
+                  <p className="text-zinc-800 dark:text-zinc-200">🔍 <strong>السبب الجذري:</strong> {aiAnalysisResult.rootCause}</p>
+                  <p className="text-emerald-700 dark:text-emerald-300 font-bold">💡 <strong>الحل الموصى به:</strong> {aiAnalysisResult.recommendedSolution}</p>
+                </div>
+              )}
+
+              {/* Issue Text Box */}
+              <div className="space-y-1">
+                <label className="block font-bold text-zinc-700 dark:text-zinc-300">موضوع المشكلة / البلاغ:</label>
+                <textarea
+                  rows={2}
+                  value={selectedTicketModal.issue || ''}
+                  onChange={(e) => setSelectedTicketModal({ ...selectedTicketModal, issue: e.target.value })}
+                  className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 rounded-xl p-3 outline-none focus:border-[#00a884] text-xs font-sans"
+                  placeholder="اكتب تفاصيل بلاغ المشكلة هنا..."
+                />
               </div>
 
+              {/* Status & Assigned Person Dropdowns */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-bold mb-1">تغيير حالة التذكرة:</label>
+                  <label className="block font-bold mb-1 text-zinc-700 dark:text-zinc-300">المسؤول عن الحل:</label>
+                  <input
+                    type="text"
+                    value={selectedTicketModal.assignedTo || 'مشرف بشري (Human Supervisor)'}
+                    onChange={e => setSelectedTicketModal({ ...selectedTicketModal, assignedTo: e.target.value })}
+                    className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 rounded-xl p-2.5 outline-none font-bold"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold mb-1 text-zinc-700 dark:text-zinc-300">حالة التذكرة:</label>
                   <select
                     value={selectedTicketModal.status}
-                    onChange={e => {
-                      const newStatus = e.target.value;
-                      setTicketsList(prev => prev.map(t => t.id === selectedTicketModal.id ? { ...t, status: newStatus as any } : t));
-                      setSelectedTicketModal({ ...selectedTicketModal, status: newStatus });
-                    }}
-                    className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 rounded-lg p-2 outline-none"
+                    onChange={e => setSelectedTicketModal({ ...selectedTicketModal, status: e.target.value })}
+                    className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 rounded-xl p-2.5 outline-none font-bold"
                   >
                     <option value="open">مفتوحة (Open)</option>
                     <option value="in_progress">جارِ المتابعة (In Progress)</option>
@@ -3360,29 +3489,48 @@ export default function AgentsDashboard({ lang, initialTab = 'roster' }: { lang:
                     <option value="escalated">تحويل للمشرف البشري (Escalated)</option>
                   </select>
                 </div>
-                <div>
-                  <label className="block font-bold mb-1">المسؤول عن التذكرة:</label>
-                  <input
-                    type="text"
-                    value={selectedTicketModal.assignedTo}
-                    onChange={e => {
-                      const val = e.target.value;
-                      setTicketsList(prev => prev.map(t => t.id === selectedTicketModal.id ? { ...t, assignedTo: val } : t));
-                      setSelectedTicketModal({ ...selectedTicketModal, assignedTo: val });
-                    }}
-                    className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 rounded-lg p-2 outline-none"
-                  />
-                </div>
+              </div>
+
+              {/* Solution Text Box */}
+              <div className="space-y-1">
+                <label className="block font-bold text-zinc-700 dark:text-zinc-300">حل المشكلة والرد المعتمد:</label>
+                <textarea
+                  rows={3}
+                  value={selectedTicketModal.solution || ''}
+                  onChange={(e) => setSelectedTicketModal({ ...selectedTicketModal, solution: e.target.value })}
+                  className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 rounded-xl p-3 outline-none focus:border-[#00a884] text-xs font-sans"
+                  placeholder="اكتب خطوات الحل أو النتيجة المتوصل إليها..."
+                />
               </div>
             </div>
 
-            <div className="flex justify-end pt-2 border-t border-zinc-200 dark:border-zinc-800">
+            {/* Modal Actions Footer */}
+            <div className="flex items-center justify-between pt-3 border-t border-zinc-200 dark:border-zinc-800">
               <button
-                onClick={() => setSelectedTicketModal(null)}
-                className="px-5 py-2 bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-lg text-xs transition-colors cursor-pointer"
+                onClick={handleDeleteTicketModal}
+                className="px-4 py-2.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 font-bold rounded-xl text-xs transition-colors flex items-center gap-1.5 cursor-pointer"
               >
-                حفظ التعديلات والتوافق
+                <Trash2 className="w-4 h-4" />
+                <span>حذف التذكرة</span>
               </button>
+
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setSelectedTicketModal(null)}
+                  className="px-4 py-2.5 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 text-zinc-700 dark:text-zinc-300 font-bold rounded-xl text-xs transition-colors cursor-pointer"
+                >
+                  إغلاق
+                </button>
+
+                <button
+                  onClick={handleSaveTicketModal}
+                  disabled={isSavingTicket}
+                  className="px-6 py-2.5 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-white font-bold rounded-xl text-xs transition-all shadow-md flex items-center gap-2 cursor-pointer"
+                >
+                  {isSavingTicket ? <Clock className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                  <span>{isSavingTicket ? 'جاري الحفظ...' : 'حفظ الحل والتحديث'}</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>
