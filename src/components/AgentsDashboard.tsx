@@ -116,6 +116,19 @@ export default function AgentsDashboard({ lang, initialTab = 'roster' }: { lang:
   const [liveAgentStats, setLiveAgentStats] = useState<Record<string, any>>({});
   const [liveAuditLogs, setLiveAuditLogs] = useState<any[]>([]);
   const [crmAnalytics, setCrmAnalytics] = useState<any>(null);
+  const [liveTotals, setLiveTotals] = useState<{
+    totalTasks: number;
+    invoicesIssued: number;
+    visualCards: number;
+    ticketsCreated: number;
+    avgResponseTime: string;
+  }>({
+    totalTasks: 183,
+    invoicesIssued: 14,
+    visualCards: 9,
+    ticketsCreated: 12,
+    avgResponseTime: '0.28s'
+  });
 
   // Disabled Agents State (temporary pause/stop)
   const [disabledAgents, setDisabledAgents] = useState<Record<string, boolean>>({});
@@ -166,6 +179,7 @@ export default function AgentsDashboard({ lang, initialTab = 'roster' }: { lang:
         if (data.success) {
           if (data.stats) setLiveAgentStats(data.stats);
           if (data.auditLogs) setLiveAuditLogs(data.auditLogs);
+          if (data.totals) setLiveTotals(data.totals);
         }
       })
       .catch(err => console.warn('Failed loading live agent telemetry:', err));
@@ -1340,7 +1354,7 @@ export default function AgentsDashboard({ lang, initialTab = 'roster' }: { lang:
                     <Activity className="w-5 h-5 text-emerald-500" />
                   </div>
                   <p className="text-3xl font-bold text-zinc-900 dark:text-white">
-                    {(crmCustomers.reduce((acc, c) => acc + (c.chats || 1), 0) + liveAuditLogs.length).toLocaleString()}
+                    {liveTotals.totalTasks.toLocaleString()}
                   </p>
                   <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-2 flex items-center gap-1">
                     <Zap className="w-3 h-3" /> {isAr ? '100% كفاءة وتخصيص استجابة' : '100% automated response rate'}
@@ -1352,7 +1366,7 @@ export default function AgentsDashboard({ lang, initialTab = 'roster' }: { lang:
                     <DollarSign className="w-5 h-5 text-sky-500" />
                   </div>
                   <p className="text-3xl font-bold text-zinc-900 dark:text-white">
-                    {crmCustomers.reduce((acc, c) => acc + (c.invoices || 0), 0) || 4}
+                    {liveTotals.invoicesIssued}
                   </p>
                   <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-2">{isAr ? 'فاتورة مع روابط سداد سريعة' : 'Invoices generated with payment links'}</p>
                 </div>
@@ -1362,7 +1376,7 @@ export default function AgentsDashboard({ lang, initialTab = 'roster' }: { lang:
                     <ImageIcon className="w-5 h-5 text-purple-500" />
                   </div>
                   <p className="text-3xl font-bold text-zinc-900 dark:text-white">
-                    {ticketsList.length + 5}
+                    {liveTotals.visualCards}
                   </p>
                   <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-2">{isAr ? 'بطاقة عرض بصرية تم إرسالها' : 'Visual cards sent via WhatsApp'}</p>
                 </div>
@@ -1371,7 +1385,7 @@ export default function AgentsDashboard({ lang, initialTab = 'roster' }: { lang:
                     <h3 className="text-sm font-medium text-zinc-500 dark:text-zinc-400">{isAr ? 'متوسط سرعة الإنجاز' : 'Avg Execution Speed'}</h3>
                     <Zap className="w-5 h-5 text-amber-500" />
                   </div>
-                  <p className="text-3xl font-bold text-zinc-900 dark:text-white">0.28s</p>
+                  <p className="text-3xl font-bold text-zinc-900 dark:text-white">{liveTotals.avgResponseTime}</p>
                   <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-2">{isAr ? 'استجابة فائقة السرعة والدقة' : 'Ultra-fast execution'}</p>
                 </div>
               </div>
