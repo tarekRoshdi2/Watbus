@@ -6,7 +6,7 @@ import {
   Shield, Sliders, ListChecks, ArrowLeftRight, CreditCard, Palette, LifeBuoy, Compass, RotateCcw,
   Ticket, Layers, Copy, Download, PhoneForwarded, AlertTriangle, CheckCircle, FileCheck, Search, Plus, Volume2, PlayCircle, FileDown,
   Lightbulb, TrendingUp, Cpu, Flame, Megaphone, Users, BarChart2, Target, Eye, ShoppingCart, UserCheck, Briefcase, Smartphone,
-  Brain, Trash2
+  Brain, Trash2, Network, Globe, Workflow, Share2
 } from 'lucide-react';
 
 export interface AgentConfig {
@@ -45,12 +45,15 @@ export interface AgentConfig {
   recentActivities: { id: string; time: string; action: string; status: 'success' | 'warning' }[];
 }
 
-export default function AgentsDashboard({ lang, initialTab = 'roster' }: { lang: 'ar' | 'en'; initialTab?: 'roster' | 'dev_agent' | 'marketing' | 'tickets' | 'crm' | 'analytics' | 'results' | 'payments' | 'playground' | 'telegram' }) {
+export default function AgentsDashboard({ lang, initialTab = 'roster' }: { lang: 'ar' | 'en'; initialTab?: 'roster' | 'dev_agent' | 'marketing' | 'tickets' | 'crm' | 'analytics' | 'results' | 'payments' | 'playground' | 'telegram' | 'omni_flow' }) {
   const isAr = lang === 'ar';
   
-  // Main Module View Hub Tabs ('roster' | 'dev_agent' | 'marketing' | 'tickets' | 'crm' | 'analytics' | 'results' | 'payments' | 'playground' | 'telegram')
-  const [mainHubTab, setMainHubTab] = useState<'roster' | 'dev_agent' | 'marketing' | 'tickets' | 'crm' | 'analytics' | 'results' | 'payments' | 'playground' | 'telegram'>(initialTab);
+  // Main Module View Hub Tabs ('roster' | 'dev_agent' | 'marketing' | 'tickets' | 'crm' | 'analytics' | 'results' | 'payments' | 'playground' | 'telegram' | 'omni_flow')
+  const [mainHubTab, setMainHubTab] = useState<'roster' | 'dev_agent' | 'marketing' | 'tickets' | 'crm' | 'analytics' | 'results' | 'payments' | 'playground' | 'telegram' | 'omni_flow'>(initialTab);
   useEffect(() => { setMainHubTab(initialTab); }, [initialTab]);
+
+  // Industry Preset Selector State for Universal Business Adaptation
+  const [activeIndustryPreset, setActiveIndustryPreset] = useState<'ecommerce' | 'realestate' | 'saas' | 'medical' | 'education' | 'automotive'>('saas');
 
   // Modal Settings Tabs
   const [activeTab, setActiveTab] = useState<'identity' | 'duties' | 'params' | 'analytics' | 'logs' | 'dispatch' | 'training'>('identity');
@@ -1478,6 +1481,305 @@ export default function AgentsDashboard({ lang, initialTab = 'roster' }: { lang:
                   ))}
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* VIEW OMNI FLOW: UNIVERSAL OMNI-CHANNEL BUSINESS ARCHITECTURE & DATA FLOW GRAPHIC */}
+          {mainHubTab === 'omni_flow' && (
+            <div className="space-y-8 animate-fade-in">
+              
+              {/* Header Banner & Industry Preset Selector */}
+              <div className="bg-gradient-to-r from-zinc-900 via-indigo-950 to-purple-950 p-6 rounded-2xl border border-indigo-500/30 text-white shadow-xl space-y-6">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-white/10 pb-5">
+                  <div className="flex items-center gap-4">
+                    <div className="w-14 h-14 rounded-2xl bg-indigo-500/20 text-indigo-400 border border-indigo-400/40 flex items-center justify-center font-bold text-2xl shrink-0 shadow-lg">
+                      🌐
+                    </div>
+                    <div>
+                      <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                        {isAr ? 'مخطط الهندسة البصرية الشاملة ومحاكاة نقل البيانات (Omni Flow Architecture)' : 'Omni Flow Architecture & Swarm Data Movement'}
+                      </h2>
+                      <p className="text-xs text-indigo-200/80 mt-1">
+                        {isAr ? 'عرض بصري توضيحي تفاعلي يوضح كيفية استقبال رسالة العميل وتوجيهها بين الموظفين وتزامنها مع Supabase CRM في أي مجال تجاري' : 'Interactive node flow showing how messages transition between AI staff and sync to Supabase'}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 bg-black/40 p-2 rounded-xl border border-white/10 shrink-0">
+                    <span className="w-3 h-3 rounded-full bg-emerald-400 animate-ping"></span>
+                    <span className="text-xs font-mono font-bold text-emerald-400">
+                      {isAr ? 'محرك الربط الحي: 0.28s latency' : 'Live Swarm Engine Active'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Industry Presets Quick Selection Bar */}
+                <div>
+                  <h3 className="text-xs font-bold text-indigo-300 uppercase tracking-wider mb-3 flex items-center gap-2">
+                    <Briefcase className="w-4 h-4 text-purple-400" />
+                    {isAr ? 'اختر مجالك التجاري لتهيئة المنظومة ورحلة العميل فوراً (One-Click Industry Adapter):' : 'Select Business Field to Auto-Configure Swarm:'}
+                  </h3>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2.5">
+                    <button
+                      onClick={() => setActiveIndustryPreset('saas')}
+                      className={`p-3 rounded-xl border text-xs font-bold transition-all cursor-pointer text-center space-y-1.5 ${
+                        activeIndustryPreset === 'saas'
+                          ? 'bg-indigo-600 text-white border-indigo-400 shadow-md ring-2 ring-indigo-400/50'
+                          : 'bg-white/5 hover:bg-white/10 border-white/10 text-zinc-300'
+                      }`}
+                    >
+                      <div className="text-xl">💻</div>
+                      <div>{isAr ? 'برمجيات SaaS' : 'SaaS & Tech'}</div>
+                    </button>
+
+                    <button
+                      onClick={() => setActiveIndustryPreset('ecommerce')}
+                      className={`p-3 rounded-xl border text-xs font-bold transition-all cursor-pointer text-center space-y-1.5 ${
+                        activeIndustryPreset === 'ecommerce'
+                          ? 'bg-indigo-600 text-white border-indigo-400 shadow-md ring-2 ring-indigo-400/50'
+                          : 'bg-white/5 hover:bg-white/10 border-white/10 text-zinc-300'
+                      }`}
+                    >
+                      <div className="text-xl">🛒</div>
+                      <div>{isAr ? 'تجارة وملابس' : 'E-Commerce'}</div>
+                    </button>
+
+                    <button
+                      onClick={() => setActiveIndustryPreset('realestate')}
+                      className={`p-3 rounded-xl border text-xs font-bold transition-all cursor-pointer text-center space-y-1.5 ${
+                        activeIndustryPreset === 'realestate'
+                          ? 'bg-indigo-600 text-white border-indigo-400 shadow-md ring-2 ring-indigo-400/50'
+                          : 'bg-white/5 hover:bg-white/10 border-white/10 text-zinc-300'
+                      }`}
+                    >
+                      <div className="text-xl">🏢</div>
+                      <div>{isAr ? 'عقارات واستثمار' : 'Real Estate'}</div>
+                    </button>
+
+                    <button
+                      onClick={() => setActiveIndustryPreset('medical')}
+                      className={`p-3 rounded-xl border text-xs font-bold transition-all cursor-pointer text-center space-y-1.5 ${
+                        activeIndustryPreset === 'medical'
+                          ? 'bg-indigo-600 text-white border-indigo-400 shadow-md ring-2 ring-indigo-400/50'
+                          : 'bg-white/5 hover:bg-white/10 border-white/10 text-zinc-300'
+                      }`}
+                    >
+                      <div className="text-xl">🏥</div>
+                      <div>{isAr ? 'عيادات وتجميل' : 'Medical & Health'}</div>
+                    </button>
+
+                    <button
+                      onClick={() => setActiveIndustryPreset('education')}
+                      className={`p-3 rounded-xl border text-xs font-bold transition-all cursor-pointer text-center space-y-1.5 ${
+                        activeIndustryPreset === 'education'
+                          ? 'bg-indigo-600 text-white border-indigo-400 shadow-md ring-2 ring-indigo-400/50'
+                          : 'bg-white/5 hover:bg-white/10 border-white/10 text-zinc-300'
+                      }`}
+                    >
+                      <div className="text-xl">🎓</div>
+                      <div>{isAr ? 'كورسات واستشارات' : 'Education & Coaching'}</div>
+                    </button>
+
+                    <button
+                      onClick={() => setActiveIndustryPreset('automotive')}
+                      className={`p-3 rounded-xl border text-xs font-bold transition-all cursor-pointer text-center space-y-1.5 ${
+                        activeIndustryPreset === 'automotive'
+                          ? 'bg-indigo-600 text-white border-indigo-400 shadow-md ring-2 ring-indigo-400/50'
+                          : 'bg-white/5 hover:bg-white/10 border-white/10 text-zinc-300'
+                      }`}
+                    >
+                      <div className="text-xl">🚗</div>
+                      <div>{isAr ? 'معارض سيارات' : 'Automotive & Cars'}</div>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* VISUAL GRAPHIC: INTERACTIVE SWARM DATA PIPELINE NODE FLOW */}
+              <div className="bg-white dark:bg-zinc-900 p-6 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-xs space-y-6">
+                <div className="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800 pb-4">
+                  <h3 className="font-bold text-base text-zinc-900 dark:text-white flex items-center gap-2">
+                    <Workflow className="w-5 h-5 text-indigo-500" />
+                    {isAr ? 'مخطط الرصد التفاعلي لتدفق الرسائل ونقل البيانات بين الموظفين (Swarm Pipeline Flow Graphic)' : 'Swarm Data Flow Graphic Pipeline'}
+                  </h3>
+                  <span className="text-xs text-zinc-500 font-mono">Realtime Protocol: WebSockets + Gemini 2.0 Flash</span>
+                </div>
+
+                {/* VISUAL DIAGRAM CARDS */}
+                <div className="grid grid-cols-1 md:grid-cols-5 gap-4 relative">
+                  
+                  {/* Step 1: Customer Input */}
+                  <div className="bg-gradient-to-b from-sky-50 to-white dark:from-sky-950/40 dark:to-zinc-900 p-4 rounded-2xl border border-sky-200 dark:border-sky-800/60 shadow-xs space-y-3 relative">
+                    <div className="w-8 h-8 rounded-full bg-sky-500 text-white flex items-center justify-center font-bold text-xs shadow-md">1</div>
+                    <h4 className="font-bold text-sm text-sky-950 dark:text-sky-300 flex items-center gap-1.5">
+                      <Smartphone className="w-4 h-4 text-sky-500" />
+                      {isAr ? 'العميل المباشر' : 'Inbound Customer'}
+                    </h4>
+                    <p className="text-[11px] text-zinc-600 dark:text-zinc-400">
+                      {isAr ? 'رسالة نصية أو فويس نوت عبر الواتساب أو التليجرام' : 'Text message or PTT Voice note via WhatsApp'}
+                    </p>
+                    <div className="pt-2 border-t border-sky-100 dark:border-sky-900/40 text-[10px] font-mono text-sky-600 dark:text-sky-400">
+                      ➜ Payload: message.received
+                    </div>
+                  </div>
+
+                  {/* Step 2: Master Router */}
+                  <div className="bg-gradient-to-b from-purple-50 to-white dark:from-purple-950/40 dark:to-zinc-900 p-4 rounded-2xl border border-purple-200 dark:border-purple-800/60 shadow-xs space-y-3 relative">
+                    <div className="w-8 h-8 rounded-full bg-purple-600 text-white flex items-center justify-center font-bold text-xs shadow-md">2</div>
+                    <h4 className="font-bold text-sm text-purple-950 dark:text-purple-300 flex items-center gap-1.5">
+                      <Brain className="w-4 h-4 text-purple-500" />
+                      {isAr ? 'الرائد المشرف' : 'Master Router Agent'}
+                    </h4>
+                    <p className="text-[11px] text-zinc-600 dark:text-zinc-400">
+                      {isAr ? 'تحليل النية والمشاعر وتقسيم الهدف في 0.15 ثانية' : 'Analyzes intent, sentiment & routes query'}
+                    </p>
+                    <div className="pt-2 border-t border-purple-100 dark:border-purple-900/40 text-[10px] font-mono text-purple-600 dark:text-purple-400">
+                      ➜ Route Intent: FAQ / Sales / Invoice
+                    </div>
+                  </div>
+
+                  {/* Step 3: Swarm Execution */}
+                  <div className="bg-gradient-to-b from-amber-50 to-white dark:from-amber-950/40 dark:to-zinc-900 p-4 rounded-2xl border border-amber-200 dark:border-amber-800/60 shadow-xs space-y-3 relative">
+                    <div className="w-8 h-8 rounded-full bg-amber-500 text-white flex items-center justify-center font-bold text-xs shadow-md">3</div>
+                    <h4 className="font-bold text-sm text-amber-950 dark:text-amber-300 flex items-center gap-1.5">
+                      <Users className="w-4 h-4 text-amber-500" />
+                      {isAr ? 'الموظف المختص' : 'Specialized AI Staff'}
+                    </h4>
+                    <p className="text-[11px] text-zinc-600 dark:text-zinc-400">
+                      {isAr ? 'أحمد المبيعات، أ. صلاح، أو م. عمر يولد المخرجات' : 'Sales, Invoice Chief, or Support Agent generates output'}
+                    </p>
+                    <div className="pt-2 border-t border-amber-100 dark:border-amber-900/40 text-[10px] font-mono text-amber-600 dark:text-amber-400">
+                      ➜ Swarm Logic Execution
+                    </div>
+                  </div>
+
+                  {/* Step 4: Supabase Cloud CRM */}
+                  <div className="bg-gradient-to-b from-emerald-50 to-white dark:from-emerald-950/40 dark:to-zinc-900 p-4 rounded-2xl border border-emerald-200 dark:border-emerald-800/60 shadow-xs space-y-3 relative">
+                    <div className="w-8 h-8 rounded-full bg-emerald-600 text-white flex items-center justify-center font-bold text-xs shadow-md">4</div>
+                    <h4 className="font-bold text-sm text-emerald-950 dark:text-emerald-300 flex items-center gap-1.5">
+                      <Globe className="w-4 h-4 text-emerald-500" />
+                      {isAr ? 'مزامنة Supabase CRM' : 'Supabase Sync'}
+                    </h4>
+                    <p className="text-[11px] text-zinc-600 dark:text-zinc-400">
+                      {isAr ? 'تسجيل العميل، التذكرة، الفاتورة وسجل المعاملات لحظياً' : 'Logs lead, ticket & invoice to Supabase DB'}
+                    </p>
+                    <div className="pt-2 border-t border-emerald-100 dark:border-emerald-900/40 text-[10px] font-mono text-emerald-600 dark:text-emerald-400">
+                      ➜ Supabase DB: Upsert 200 OK
+                    </div>
+                  </div>
+
+                  {/* Step 5: Final Response */}
+                  <div className="bg-gradient-to-b from-indigo-50 to-white dark:from-indigo-950/40 dark:to-zinc-900 p-4 rounded-2xl border border-indigo-200 dark:border-indigo-800/60 shadow-xs space-y-3 relative">
+                    <div className="w-8 h-8 rounded-full bg-indigo-600 text-white flex items-center justify-center font-bold text-xs shadow-md">5</div>
+                    <h4 className="font-bold text-sm text-indigo-950 dark:text-indigo-300 flex items-center gap-1.5">
+                      <Send className="w-4 h-4 text-indigo-500" />
+                      {isAr ? 'الرد الصريح الموحد' : 'Outbound Reply'}
+                    </h4>
+                    <p className="text-[11px] text-zinc-600 dark:text-zinc-400">
+                      {isAr ? 'إرسال الرد المنسق الودود للعميل عبر الواتساب' : 'Sends polished Arabic reply back to WhatsApp'}
+                    </p>
+                    <div className="pt-2 border-t border-indigo-100 dark:border-indigo-900/40 text-[10px] font-mono text-indigo-600 dark:text-indigo-400">
+                      ➜ Message Sent via Gateway
+                    </div>
+                  </div>
+
+                </div>
+              </div>
+
+              {/* CUSTOMER JOURNEY STAGES & AGENT MAPPING MATRIX */}
+              <div className="bg-white dark:bg-zinc-900 p-6 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-xs space-y-6">
+                <div className="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800 pb-4">
+                  <h3 className="font-bold text-base text-zinc-900 dark:text-white flex items-center gap-2">
+                    <Target className="w-5 h-5 text-purple-500" />
+                    {isAr ? 'خريطة مراحل رحلة العميل والموظف المسؤول في المجال المختارة' : 'Customer Journey & Assigned AI Agent Matrix'}
+                  </h3>
+                  <span className="text-xs font-bold text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-950 px-3 py-1 rounded-lg border border-purple-200 dark:border-purple-800">
+                    النشاط الحالي: {activeIndustryPreset.toUpperCase()}
+                  </span>
+                </div>
+
+                {/* 5 STAGES MATRIX GRID */}
+                <div className="grid grid-cols-1 md:grid-cols-5 gap-4 text-xs">
+                  
+                  {/* Stage 1 */}
+                  <div className="bg-zinc-50 dark:bg-zinc-800/60 p-4 rounded-xl border border-zinc-200 dark:border-zinc-700 space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300">
+                        المرحلة 1
+                      </span>
+                      <span className="text-zinc-400 font-mono text-[10px]">100% Auto</span>
+                    </div>
+                    <h4 className="font-bold text-zinc-900 dark:text-white text-sm">وعي واستفسار عام (Awareness)</h4>
+                    <p className="text-[11px] text-zinc-500">استقبال الترحيب وشرح الخدمات والكتالوج المبدئي.</p>
+                    <div className="pt-2 border-t border-zinc-200 dark:border-zinc-700 font-bold text-indigo-600 dark:text-indigo-400 flex items-center gap-1">
+                      🤖 أحمد المبيعات (Sales Specialist)
+                    </div>
+                  </div>
+
+                  {/* Stage 2 */}
+                  <div className="bg-zinc-50 dark:bg-zinc-800/60 p-4 rounded-xl border border-zinc-200 dark:border-zinc-700 space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-sky-100 text-sky-700 dark:bg-sky-950 dark:text-sky-300">
+                        المرحلة 2
+                      </span>
+                      <span className="text-zinc-400 font-mono text-[10px]">Media Cards</span>
+                    </div>
+                    <h4 className="font-bold text-zinc-900 dark:text-white text-sm">اهتمام ومقارنة العروض (Consideration)</h4>
+                    <p className="text-[11px] text-zinc-500">تقديم الباقات العروض البصرية والكروت التسويقية.</p>
+                    <div className="pt-2 border-t border-zinc-200 dark:border-zinc-700 font-bold text-pink-600 dark:text-pink-400 flex items-center gap-1">
+                      🎨 كريم الجرافيك + المبيعات
+                    </div>
+                  </div>
+
+                  {/* Stage 3 */}
+                  <div className="bg-zinc-50 dark:bg-zinc-800/60 p-4 rounded-xl border border-zinc-200 dark:border-zinc-700 space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300">
+                        المرحلة 3
+                      </span>
+                      <span className="text-zinc-400 font-mono text-[10px]">Invoice PDF</span>
+                    </div>
+                    <h4 className="font-bold text-zinc-900 dark:text-white text-sm">نية الشراء والفاتورة (Intent & Billing)</h4>
+                    <p className="text-[11px] text-zinc-500">إصدار الفاتورة وحساب 14% VAT وتوفير روابط InstaPay.</p>
+                    <div className="pt-2 border-t border-zinc-200 dark:border-zinc-700 font-bold text-purple-600 dark:text-purple-400 flex items-center gap-1">
+                      🧾 الأستاذ صلاح الحسابات
+                    </div>
+                  </div>
+
+                  {/* Stage 4 */}
+                  <div className="bg-zinc-50 dark:bg-zinc-800/60 p-4 rounded-xl border border-zinc-200 dark:border-zinc-700 space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
+                        المرحلة 4
+                      </span>
+                      <span className="text-zinc-400 font-mono text-[10px]">Activated</span>
+                    </div>
+                    <h4 className="font-bold text-zinc-900 dark:text-white text-sm">تفعيل وااشتراك فعلي (Action & Paid)</h4>
+                    <p className="text-[11px] text-zinc-500">مراجعة سكرين شوت التحويل وتأكيد الاشتراك فوراً.</p>
+                    <div className="pt-2 border-t border-zinc-200 dark:border-zinc-700 font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                      🟢 صلاح الحسابات + عمر الدعم
+                    </div>
+                  </div>
+
+                  {/* Stage 5 */}
+                  <div className="bg-zinc-50 dark:bg-zinc-800/60 p-4 rounded-xl border border-zinc-200 dark:border-zinc-700 space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300">
+                        المرحلة 5
+                      </span>
+                      <span className="text-zinc-400 font-mono text-[10px]">Loyalty Tickets</span>
+                    </div>
+                    <h4 className="font-bold text-zinc-900 dark:text-white text-sm">دعم فني وولاء (Support & Loyalty)</h4>
+                    <p className="text-[11px] text-zinc-500">حل المشاكل بفتح تذاكر #TCK ومتابعة التقييم.</p>
+                    <div className="pt-2 border-t border-zinc-200 dark:border-zinc-700 font-bold text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                      🛠️ مهندس عمر الدعم الفني
+                    </div>
+                  </div>
+
+                </div>
+              </div>
+
             </div>
           )}
 
