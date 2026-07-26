@@ -3990,6 +3990,12 @@ ai = initGeminiClient(0);
 async function callOpenRouterFallback(contents, systemPrompt) {
   const openRouterKey = process.env.OPENROUTER_API_KEY || process.env.VITE_OPENROUTER_API_KEY;
   if (!openRouterKey) return null;
+  const openRouterModels = [
+    "google/gemini-2.0-flash-lite:free",
+    "google/gemini-2.0-flash-lite",
+    "deepseek/deepseek-chat",
+    "meta-llama/llama-3.3-70b-instruct:free"
+  ];
   try {
     let userPrompt = "";
     if (typeof contents === "string") {
@@ -4001,28 +4007,34 @@ async function callOpenRouterFallback(contents, systemPrompt) {
     } else {
       userPrompt = JSON.stringify(contents);
     }
-    console.log("\u26A1 [OpenRouter API Fallback] Dispatching query via OpenRouter...");
-    const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${openRouterKey}`,
-        "Content-Type": "application/json",
-        "HTTP-Referer": "https://chat.expocore.net",
-        "X-Title": "ChatCore Enterprise AI"
-      },
-      body: JSON.stringify({
-        model: "google/gemini-2.0-flash-lite:free",
-        messages: [
-          ...systemPrompt ? [{ role: "system", content: systemPrompt }] : [],
-          { role: "user", content: userPrompt }
-        ]
-      })
-    });
-    const data = await res.json();
-    if (data?.choices?.[0]?.message?.content) {
-      const generatedText = data.choices[0].message.content;
-      console.log("\u{1F7E2} [OpenRouter Fallback Success] Successfully generated response via OpenRouter!");
-      return { text: generatedText };
+    for (const model of openRouterModels) {
+      try {
+        console.log(`\u26A1 [OpenRouter API Fallback] Dispatching query via OpenRouter model "${model}"...`);
+        const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${openRouterKey}`,
+            "Content-Type": "application/json",
+            "HTTP-Referer": "https://chat.expocore.net",
+            "X-Title": "ChatCore Enterprise AI"
+          },
+          body: JSON.stringify({
+            model,
+            messages: [
+              ...systemPrompt ? [{ role: "system", content: systemPrompt }] : [],
+              { role: "user", content: userPrompt }
+            ]
+          })
+        });
+        const data = await res.json();
+        if (data?.choices?.[0]?.message?.content) {
+          const generatedText = data.choices[0].message.content;
+          console.log(`\u{1F7E2} [OpenRouter Fallback Success] Successfully generated response via ${model}!`);
+          return { text: generatedText };
+        }
+      } catch (mErr) {
+        console.warn(`[OpenRouter Model Warning] Model ${model} failed, trying next:`, mErr);
+      }
     }
   } catch (err) {
     console.error("[OpenRouter Fallback Error]:", err);
@@ -8536,7 +8548,12 @@ async function globalIncomingHandler(deviceId, sock, jid, pushName, messageConte
             }
           });
           if (response && response.text) {
-            const parsed = JSON.parse(response.text.trim());
+            let parsed = null;
+            try {
+              const cleanText = response.text.trim().replace(/```json/g, "").replace(/```/g, "").trim();
+              parsed = JSON.parse(cleanText);
+            } catch (parseErr) {
+            }
             if (parsed && parsed.intent) {
               const finalAiAnalysis = {
                 intent: parsed.intent,
