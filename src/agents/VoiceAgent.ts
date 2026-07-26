@@ -53,10 +53,16 @@ export class VoiceAgent {
     if (base64Audio.includes(',')) {
       cleanBase64 = base64Audio.split(',')[1];
     }
-    const cleanMime = mimeType.split(';')[0].trim() || 'audio/ogg';
+    // Clean MIME type to remove parameters like codecs=opus which cause Gemini 400 Bad Request
+    let cleanMime = mimeType.split(';')[0].trim().toLowerCase();
+    if (!cleanMime || cleanMime.includes('opus') || cleanMime === 'audio/ptt') {
+      cleanMime = 'audio/ogg';
+    }
+
+    const modelsToTry = ['gemini-2.0-flash', 'gemini-2.0-flash-lite', 'gemini-1.5-flash'];
 
     // Try model fallback chain
-    for (const model of this.fallbackModels) {
+    for (const model of modelsToTry) {
       try {
         console.log(`[VoiceAgent] Transcribing voice note using model "${model}" with mime "${cleanMime}"...`);
         const response = await client.models.generateContent({
@@ -70,7 +76,7 @@ export class VoiceAgent {
             },
             `أنت خبير تفريغ ونطق الرسائل الصوتية بالعامية المصرية والعربية.
 استمع إلى التسجيل الصوتي جيداً واكتب النص المطلوب بالضبط:
-قم بتفريغ المضمون المنطوق بالكامل بدقة عالية وبدون تلخيص.`
+قم بتفريغ المضمون المنطوق بالكامل بدقة عالية وبدون تلخيص أو تعليقات إضافية.`
           ]
         });
 

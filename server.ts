@@ -249,13 +249,6 @@ app.use('/api', (req, res, next) => {
     return next();
   }
 
-  // Allow x-user-id header auth for client requests
-  const userIdHeader = req.headers['x-user-id'] as string;
-  if (userIdHeader) {
-    (req as any).user = { id: userIdHeader, role: userIdHeader.includes('admin') || userIdHeader.includes('tarek') ? 'admin' : 'user' };
-    return next();
-  }
-
   const authHeader = req.headers.authorization;
   if (authHeader && authHeader.startsWith('Bearer ')) {
     const token = authHeader.split(' ')[1];
@@ -264,15 +257,21 @@ app.use('/api', (req, res, next) => {
       (req as any).user = decoded;
       return next();
     } catch (err) {
-      // Token invalid or expired - fallback to default admin session for dashboard requests
-      (req as any).user = { id: 'admin-tarek', role: 'admin' };
-      return next();
+      return res.status(401).json({ error: 'رمز الجلسة غير صالحة أو منتهية الصلاحية (Invalid or expired token)' });
     }
   }
 
-  // Default fallback for dashboard requests: auto-authenticate as admin-tarek
-  (req as any).user = { id: 'admin-tarek', role: 'admin' };
-  next();
+  // Allow x-user-id header ONLY if provided with valid secret or for specific internal client requests with user verification
+  const userIdHeader = req.headers['x-user-id'] as string;
+  const db = readDb();
+  if (userIdHeader && db.users && db.users[userIdHeader]) {
+    const userObj = db.users[userIdHeader];
+    (req as any).user = { id: userObj.id, role: userObj.role || 'user' };
+    return next();
+  }
+
+  // Reject unauthenticated requests to protected endpoints
+  return res.status(401).json({ error: 'يتطلب الوصول تسجيل الدخول والمصادقة (Authentication required)' });
 });
 
 // Auth Login for Admin
@@ -6021,9 +6020,10 @@ function cleanOrphanedSessions() {
             {}
           );
           const base64Data = buffer.toString('base64');
-          const mimeType = messageContent.imageMessage.mimetype || 'image/jpeg';
+          const rawMime = messageContent.imageMessage.mimetype || 'image/jpeg';
+          const mimeType = rawMime.split(';')[0].trim().toLowerCase() || 'image/jpeg';
           
-          contentsPayload = {
+          const visionPromptPayload = {
             parts: [
               {
                 inlineData: {
@@ -6041,7 +6041,7 @@ function cleanOrphanedSessions() {
             try {
               const imageVisionRes = await callGeminiWithRetry({
                 model: 'gemini-3.5-flash',
-                contents: contentsPayload
+                contents: visionPromptPayload
               });
               if (imageVisionRes && imageVisionRes.text) {
                 const visionSummary = imageVisionRes.text.trim();
@@ -6098,6 +6098,20 @@ function cleanOrphanedSessions() {
               console.warn('[AI Vision Error] Image vision analysis fallback:', vErr);
             }
           }
+
+          contentsPayload = {
+            parts: [
+              {
+                inlineData: {
+                  data: base64Data,
+                  mimeType
+                }
+              },
+              {
+                text: userMessageText || 'صورة مرفقة من العميل'
+              }
+            ]
+          };
         } catch (err) {
           console.error('Failed to download incoming WhatsApp image:', err);
           contentsPayload = `[Image] User sent an image. Caption: "${userMessageText}". (System error: Could not download full image bytes for analysis). Respond politely based on the caption if any.`;
@@ -6112,14 +6126,31 @@ function cleanOrphanedSessions() {
           );
           incomingAudioBuffer = buffer;
           const base64Data = buffer.toString('base64');
-          const mimeType = messageContent.audioMessage.mimetype || 'audio/ogg; codecs=opus';
+          const rawMime = messageContent.audioMessage.mimetype || 'audio/ogg';
+          let cleanMime = rawMime.split(';')[0].trim().toLowerCase();
+          if (!cleanMime || cleanMime.includes('opus') || cleanMime === 'audio/ptt') {
+            cleanMime = 'audio/ogg';
+          }
           
           if (voiceAgent) {
             try {
-              const voiceRes = await voiceAgent.processVoiceMessage(base64Data, mimeType);
-              if (voiceRes && voiceRes.transcription) {
+              const voiceRes = await voiceAgent.processVoiceMessage(base64Data, cleanMime, ai || undefined);
+              if (voiceRes && voiceRes.transcription && voiceRes.transcription !== '[رسالة صوتية]') {
                 console.log(`[Voice Note Transcribed] Transcribed spoken audio: "${voiceRes.transcription}"`);
-                userMessageText = voiceRes.transcription;
+                userMessageText = `🎤 [رسالة صوتية من العميل]: "${voiceRes.transcription}"`;
+
+                // Update the saved message content in DB and notify UI
+                try {
+                  const db = readDb();
+                  const savedMsg = db.messages.find((m: Message) => m.id === messageId);
+                  if (savedMsg) {
+                    savedMsg.content = userMessageText;
+                    writeDb(db);
+                    broadcast({ type: 'message:new', message: savedMsg });
+                  }
+                } catch (dbErr) {
+                  console.error('Error updating transcribed message content in DB:', dbErr);
+                }
               }
             } catch (vErr) {
               console.warn('[VoiceAgent Error] Transcribe fallback:', vErr);
@@ -6131,17 +6162,51 @@ function cleanOrphanedSessions() {
               {
                 inlineData: {
                   data: base64Data,
-                  mimeType
+                  mimeType: cleanMime
                 }
               },
               {
-                text: 'The user sent a voice message. Listen to the audio, understand what they are saying, and generate a clear, professional conversational reply in the same language. If the language is Arabic, respond in the requested dialect.'
+                text: userMessageText || 'رسالة صوتية مرفقة من العميل'
               }
             ]
           };
         } catch (err) {
           console.error('Failed to download incoming WhatsApp voice note:', err);
           contentsPayload = `[Voice Note] User sent a voice recording. (System error: Could not process voice bytes). Respond politely notifying them that you received a voice note but had a temporary system issue reading it, and ask if they can type their query instead.`;
+        }
+      } else if (messageContent.documentMessage) {
+        try {
+          const docName = messageContent.documentMessage.fileName || 'مستند.pdf';
+          console.log(`Downloading incoming WhatsApp document (${docName}) for AI Agent...`);
+          const buffer = await downloadMediaMessage(
+            { key: { id: messageId, remoteJid: jid }, message: messageContent },
+            'buffer',
+            {}
+          );
+          const base64Data = buffer.toString('base64');
+          const rawMime = messageContent.documentMessage.mimetype || 'application/pdf';
+          const cleanMime = rawMime.split(';')[0].trim().toLowerCase() || 'application/pdf';
+
+          userMessageText = messageContent.documentMessage.caption 
+            ? `📄 [مستند مرفق: ${docName}] - تعليق: ${messageContent.documentMessage.caption}`
+            : `📄 [مستند مرفق من العميل: ${docName}]`;
+
+          contentsPayload = {
+            parts: [
+              {
+                inlineData: {
+                  data: base64Data,
+                  mimeType: cleanMime
+                }
+              },
+              {
+                text: `العميل أرسل مستنداً باسم "${docName}". قم بقراءة وتفريغ وتحليل محتوى هذا المستند بدقة وإجابة طلب العميل المتعلق بالمستند.`
+              }
+            ]
+          };
+        } catch (err) {
+          console.error('Failed to download incoming WhatsApp document:', err);
+          contentsPayload = `[Document] User sent a document. Respond politely offering assistance.`;
         }
       } else {
         contentsPayload = userMessageText || 'Hello';
@@ -6306,6 +6371,7 @@ Here are your elite operating parameters:
 
 1. PERSONALITY, TONE & DYNAMIC TIME CONTEXT:
 ${device.aiAgentInstructions ? `- Strict Persona Rules: ${device.aiAgentInstructions}` : ''}
+- CRITICAL MULTIMODAL CAPABILITY DIRECTIVE: You possess 100% full, native capabilities to understand, analyze, listen to audio voice recordings (voice notes), inspect images/photos, and read PDF/text documents sent by customers. NEVER claim or tell the user that you cannot read images, voice messages, or PDF files. You hear voice notes, inspect photos, and analyze PDF documents perfectly!
 - Keep your tone warm, welcoming, respectful, and highly prestigious.
 - Adapt your voice seamlessly to the requested style: ${device.aiVoiceTone || 'professional'}.
 - Use local context dynamically:
@@ -6515,28 +6581,24 @@ Formulate your exceptionally smart and professional response now:`;
           // 5b. If voice responses are enabled, synthesize the text response into a real voice note (TTS)
           if (shouldReplyWithVoice && responseText) {
             const tone = device.aiVoiceTone || 'professional';
-            console.log(`[AI Agent] Synthesizing voice note using gemini-3.1-flash-tts-preview for tone "${tone}"...`);
+            console.log(`[AI Agent] Synthesizing voice note for tone "${tone}"...`);
+            let voiceName: 'Zephyr' | 'Kore' | 'Puck' | 'Charon' | 'Fenrir' = 'Zephyr';
+            if (tone === 'friendly') {
+              voiceName = 'Kore';
+            } else if (tone === 'formal') {
+              voiceName = 'Puck';
+            }
+
             try {
-              // Custom emotional/stylistic prompting based on chosen agent tone
-              let ttsStylePrompt = '';
+              let ttsStylePrompt = `Say professionally, helpful, and naturally in Arabic: ${responseText}`;
               if (tone === 'friendly') {
                 ttsStylePrompt = `Say cheerfully in a warm, friendly, and welcoming Arabic tone: ${responseText}`;
               } else if (tone === 'formal') {
                 ttsStylePrompt = `Say in a clear, highly formal, respectful, and professional Arabic tone: ${responseText}`;
-              } else {
-                ttsStylePrompt = `Say professionally, helpful, and naturally in Arabic: ${responseText}`;
-              }
-
-              // Map Tone to a suitable prebuilt voice name
-              let voiceName = 'Zephyr'; // Default professional
-              if (tone === 'friendly') {
-                voiceName = 'Kore';
-              } else if (tone === 'formal') {
-                voiceName = 'Puck';
               }
 
               const ttsResponse = await callGeminiWithRetry({
-                model: 'gemini-3.1-flash-tts-preview',
+                model: 'gemini-2.0-flash',
                 contents: [{ parts: [{ text: ttsStylePrompt }] }],
                 config: {
                   responseModalities: ['AUDIO'],
@@ -6552,11 +6614,27 @@ Formulate your exceptionally smart and professional response now:`;
               if (base64Audio) {
                 responseAudioBuffer = Buffer.from(base64Audio, 'base64');
                 console.log(`[AI Agent] Successfully synthesized voice note (${responseAudioBuffer.length} bytes) using voice "${voiceName}".`);
-              } else {
-                console.warn('[AI Agent] TTS returned successful response but no audio parts were found.');
+              } else if (voiceAgent) {
+                console.log('[AI Agent] Primary TTS yielded no audio, attempting fallback via VoiceAgent...');
+                const voiceRes = await voiceAgent.synthesizeHumanVoice(responseText, voiceName, ai || undefined);
+                if (voiceRes && voiceRes.audioBuffer) {
+                  responseAudioBuffer = voiceRes.audioBuffer;
+                  console.log(`[AI Agent VoiceAgent Fallback] Generated ${responseAudioBuffer.length} bytes of human voice audio!`);
+                }
               }
             } catch (ttsErr) {
-              console.error('[AI Agent] Voice synthesis failed, falling back to text-only reply:', ttsErr);
+              console.warn('[AI Agent] Primary TTS failed, trying VoiceAgent fallback:', ttsErr);
+              if (voiceAgent) {
+                try {
+                  const voiceRes = await voiceAgent.synthesizeHumanVoice(responseText, voiceName, ai || undefined);
+                  if (voiceRes && voiceRes.audioBuffer) {
+                    responseAudioBuffer = voiceRes.audioBuffer;
+                    console.log(`[AI Agent VoiceAgent Fallback Success] Generated ${responseAudioBuffer.length} bytes of audio!`);
+                  }
+                } catch (vErr) {
+                  console.error('[AI Agent] Voice synthesis fallback failed:', vErr);
+                }
+              }
             }
           }
 

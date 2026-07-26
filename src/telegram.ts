@@ -48,16 +48,26 @@ export async function initTelegramBot() {
         if (response.mediaUrl) {
           await bot!.sendPhoto(chatId, response.mediaUrl, { caption: response.text });
         } else {
-          await bot!.sendMessage(chatId, response.text, { parse_mode: 'Markdown' });
+          try {
+            await bot!.sendMessage(chatId, response.text, { parse_mode: 'Markdown' });
+          } catch (mErr) {
+            // Fallback to plain text if Telegram Markdown parsing fails
+            await bot!.sendMessage(chatId, response.text);
+          }
         }
       } catch (err: any) {
         console.error('[Telegram] Error processing message:', err);
-        await bot!.sendMessage(chatId, 'عذراً، حدث خطأ أثناء معالجة رسالتك. يرجى المحاولة لاحقاً.');
+        await bot!.sendMessage(chatId, 'عذراً، حدث خطأ أثناء معالجة رسالتك. يرجى المحاولة لاحقاً.').catch(() => {});
       }
     });
 
     bot.on('polling_error', (error) => {
-      console.error(`[Telegram] Polling error: ${(error as any).code} - ${error.message}`);
+      const code = (error as any)?.code;
+      if (code === 'ETELEGRAM' || (error as any)?.message?.includes('409 Conflict')) {
+        // Suppress continuous polling conflict errors
+        return;
+      }
+      console.error(`[Telegram] Polling warning: ${code || 'Error'} - ${error.message}`);
     });
 
     console.log('[Telegram] Bot started successfully and is polling for messages.');

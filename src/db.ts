@@ -3,19 +3,10 @@ import fs from 'fs';
 import path from 'path';
 import { createClient } from '@supabase/supabase-js';
 import { User, Conversation, Message, StatusStory, DeviceLink, Campaign, CatalogItem, OtpLog, OtpSettings, Folder, Ticket, CallLog } from './types.js';
-import { backupDbToSupabase, restoreDbFromSupabase, isSupabaseConfigured } from './supabase.js';
+import { getSupabaseClient as getSupabaseSingleton, backupDbToSupabase, restoreDbFromSupabase, isSupabaseConfigured } from './supabase.js';
 
 export function getSupabaseClient() {
-  const url = process.env.SUPABASE_URL;
-  const key = process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (url && key) {
-    try {
-      return createClient(url, key);
-    } catch (e) {
-      return null;
-    }
-  }
-  return null;
+  return getSupabaseSingleton();
 }
 
 dotenv.config();
@@ -28,7 +19,12 @@ try {
   const pg = require('pg');
 
   if (process.env.DATABASE_URL) {
-    const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
+    const pool = new pg.Pool({ 
+      connectionString: process.env.DATABASE_URL,
+      max: 5,
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 5000,
+    });
     const adapter = new PrismaPg(pool);
     prismaInstance = new PrismaClient({ adapter });
   } else {

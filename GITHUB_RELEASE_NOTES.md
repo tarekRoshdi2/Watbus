@@ -1,12 +1,12 @@
-# 🚀 ChatCore Enterprise AI HQ - GitHub Release & Update Notes (v2.5.0)
+# 🚀 ChatCore Enterprise AI HQ - GitHub Release & Update Notes (v3.5.0)
 
 ## 📌 Executive Summary
-تحديث رئيسي شامل لمنظومة **ChatCore Enterprise AI Headquarters**:
+تحديث رئيسي وإصدار ذهبي شامل لمنظومة **ChatCore Enterprise AI Headquarters (v3.5.0)**:
+- **إصلاح وسد كافة الثغرات الأمنية (Security Hardening)**: إزالة ثغرة التجاوز `x-user-id` وتأمين JWT والـ Rate Limiting.
+- **معالجة تجميع اتصالات قاعدة البيانات (Supabase Pool Fix)**: تحديد حد أقصى `max: 5` لمنع أخطاء `EMAXCONNSESSION`.
+- **تعزيز الذكاء متعدد الوسائط (Multimodal AI & PDF Engine)**: إضافة التوجيه وتفحص مستندات الـ PDF والملفات بصورة كاملة.
 - **قاعدة بيانات سحابية متكاملة للموظفين الأذكياء (Supabase AI Staff Database)**.
-- **مركز تدريب وتخصص مستقل لكل موظف ذكي (Supabase Training HQ)**.
-- **ربط ديناميكي بين محرك المحادثات `ChatCoreSwarm` وقاعدة بيانات Supabase**.
-- **مفتاح تحكم دقيق (On/Off Toggle Button) لكل موظف** لحالات الإيقاف والتشغيل المؤقت.
-- **تأمين السيرفر ومعالجة جميع أخطاء بيئة التشغيل ES Modules**.
+- **تكامل واستقرار بوت تليجرام وخادم الواتساب (Telegram & Baileys Stabilization)**.
 
 ---
 
@@ -62,13 +62,18 @@
 
 ---
 
-## 🛠️ 4. Bug Fixes & Stability
+## 🛠️ 4. Bug Fixes, Security & Performance (v3.5.0 Gold)
 
-1. **إصلاح ES Module Scope**:
-   - حل خطأ `ReferenceError: require is not defined` واستبداله بـ `import crypto from 'crypto'`.
-2. **إصلاح استيراد الأيقونات في React**:
-   - إضافة استيراد `Brain` و `Trash2` من مكتبة `lucide-react`.
-3. **فحص الأنظمة والتأكد من البناء بدون أخطاء**:
+1. **إصلاح وسد الثغرات الأمنية الحادة (Auth Vulnerabilities)**:
+   - حذف ثغرة التجاوز عن طريق الهيدر `x-user-id` والـ fallback غير الآمن لـ `admin-tarek`.
+   - تأمين الـ JWT Token والـ Authorization Headers وإرجاع `401 Unauthorized` صريحة.
+2. **معالجة اتصالات قاعدة البيانات (Connection Pool & Supabase Limits)**:
+   - حل مشكلة `EMAXCONNSESSION` بتحديد `max: 5` اتصالات فقط لمجمع اتصالات `pg.Pool` في Prisma واستخدام الـ Supabase Client Singleton.
+3. **دعم المستندات والـ Multimodal Document Analysis**:
+   - دعم كامل لقراءة وتحليل وتفحص مستندات الـ PDF والملفات الصوتية والصورة تلقائياً.
+4. **تكامل البوتات والخدمات (Telegram & Card Generators)**:
+   - إصلاح معالجة Markdown في تليجرام لمنع تعليق أو سقوط البوت عند إرسال التنسيقات المعقدة.
+5. **فحص الأنظمة والتأكد من البناء بدون أخطاء**:
    - اجتياز اختبار `npx tsc --noEmit` بنجاح 100%.
 
 ---
