@@ -1827,6 +1827,14 @@ export default function App() {
         )}
 
 
+        {/* VIEW 10: ENTERPRISE AI HEADQUARTERS (AGENTS DASHBOARD) */}
+        {viewMode === 'agents_dashboard' && (
+          <AgentsDashboard
+            lang={lang}
+            initialTab={activeAgentsTab || 'roster'}
+          />
+        )}
+
         {/* VIEW 11: MEMBERSHIP & SUBSCRIPTION TIERS */}
         {viewMode === 'membership' && (
           <MembershipPlans
