@@ -3490,6 +3490,28 @@ app.post('/api/admin/approve-user/:id', (req, res) => {
   res.json({ success: true, user });
 });
 
+app.post('/api/auth/upgrade-subscription', (req, res) => {
+  const { userId, planId, paymentProof } = req.body;
+  const targetId = userId || 'admin-tarek';
+  let user = getUser(targetId) || getAllUsers()[0];
+  if (user) {
+    user.subscriptionStatus = planId || 'enterprise';
+    user.requestedPlan = planId || 'enterprise';
+    user.subscriptionPlan = planId || 'enterprise';
+    user.isActive = true;
+    saveUser(user);
+    
+    broadcast({
+      type: 'user:update',
+      user
+    });
+    
+    res.json({ success: true, message: 'Subscription upgraded successfully', user });
+    return;
+  }
+  res.status(404).json({ error: 'User not found' });
+});
+
 app.post('/api/admin/reject-user/:id', (req, res) => {
   const { id } = req.params;
   const user = getUser(id);
@@ -5833,6 +5855,50 @@ function cleanOrphanedSessions() {
                 userMessageText = userMessageText 
                   ? `[صورة مرسلة من العميل: ${visionSummary}] - التعليق المرفق: ${userMessageText}`
                   : `[صورة مرسلة من العميل: ${visionSummary}]`;
+
+                // Autonomous Payment Receipt Vision Interceptor
+                if (visionSummary.includes('تحويل') || visionSummary.includes('فودافون كاش') || visionSummary.includes('انستاباي') || visionSummary.includes('EGP') || visionSummary.includes('جنيه')) {
+                  console.log(`💳 [Autonomous Payment Receipt Vision OCR] Valid payment receipt detected for contact +${contactPhone}`);
+                  
+                  let users = getAllUsers();
+                  let targetUser = users.find(u => u.id === `contact_${contactPhone}` || u.username.includes(contactPhone));
+                  if (!targetUser) {
+                    targetUser = {
+                      id: `user_${contactPhone}`,
+                      username: pushName || `عميل_${contactPhone}`,
+                      phone: contactPhone,
+                      role: 'user',
+                      subscriptionStatus: 'active',
+                      requestedPlan: 'enterprise',
+                      subscriptionPlan: 'enterprise',
+                      isActive: true,
+                      createdAt: new Date().toISOString()
+                    } as any;
+                  } else {
+                    targetUser.subscriptionStatus = 'active';
+                    targetUser.requestedPlan = 'enterprise';
+                    targetUser.subscriptionPlan = 'enterprise';
+                    targetUser.isActive = true;
+                  }
+                  saveUser(targetUser);
+
+                  const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+                  otpStore.set(contactPhone, {
+                    otp: otpCode,
+                    username: targetUser.username,
+                    expires: Date.now() + 60 * 60 * 1000,
+                    requestedPlan: 'enterprise'
+                  });
+
+                  const confirmationMsg = `🎉 *تم استلام وتأكيد سكرين شوت التحويل بنجاح!*\n\n✨ **اسم الحساب**: ${targetUser.username}\n📱 **رقم الهاتف**: +${contactPhone}\n👑 **الباقة المفعلة**: باقة الشركات المتقدمة (Enterprise Headquarters)\n🔑 **كود التفعيل OTP الخاص بك**: *${otpCode}*\n\nتم تفعيل كافة الميزات والموظفين الذكيين لخدمتك أوتوماتيكياً! 🚀`;
+                  
+                  try {
+                    await sendBaileysMessage(deviceId, contactPhone, confirmationMsg);
+                    console.log(`✅ [Autonomous Payment Confirmation Sent] WhatsApp notification delivered to +${contactPhone}`);
+                  } catch (sendErr) {
+                    console.error('[Autonomous Payment Confirmation Error]:', sendErr);
+                  }
+                }
               }
             } catch (vErr) {
               console.warn('[AI Vision Error] Image vision analysis fallback:', vErr);

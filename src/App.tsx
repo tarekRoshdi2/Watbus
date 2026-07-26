@@ -23,7 +23,8 @@ import AiKnowledgeBase from './components/AiKnowledgeBase.js';
 import ExpoCoreAgent from './components/ExpoCoreAgent.js';
 import CustomerFlowBuilder from './components/CustomerFlowBuilder.js';
 import AgentsDashboard from './components/AgentsDashboard.js';
-import { Menu, X, LayoutDashboard, MessageSquare, Smartphone, Megaphone, LogOut, Loader2, Languages, Shield, Users, Group, Star, Brain, Bot, Workflow, CreditCard, Sparkles, Camera, Upload, Save, Check, Ticket } from 'lucide-react';
+import MembershipPlans from './components/MembershipPlans.js';
+import { Menu, X, LayoutDashboard, MessageSquare, Smartphone, Megaphone, LogOut, Loader2, Languages, Shield, Users, Group, Star, Brain, Bot, Workflow, CreditCard, Sparkles, Camera, Upload, Save, Check, Ticket, Crown } from 'lucide-react';
 import { translations } from './translations.js';
 
 // Subtle synthesizer chime for incoming message alerts
@@ -91,7 +92,7 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [authMode, setAuthMode] = useState<'landing' | 'login' | 'register' | 'demo'>('landing');
   const [activeAgentsTab, setActiveAgentsTab] = useState<'roster' | 'payments' | 'playground'>('roster');
-  const [viewMode, setViewMode] = useState<'dashboard' | 'admin' | 'clients' | 'chat' | 'whatsapp_settings' | 'marketing' | 'group_manager' | 'feedback' | 'knowledge_base' | 'expocore_agent' | 'customer_flow' | 'agents_dashboard'>('dashboard');
+  const [viewMode, setViewMode] = useState<'dashboard' | 'admin' | 'clients' | 'chat' | 'whatsapp_settings' | 'marketing' | 'group_manager' | 'feedback' | 'knowledge_base' | 'expocore_agent' | 'customer_flow' | 'agents_dashboard' | 'membership'>('dashboard');
 
   const [lang, setLang] = useState<'ar' | 'en'>(() => {
     const saved = localStorage.getItem('system_lang');
@@ -1421,6 +1422,14 @@ export default function App() {
               </button>
 
               <button
+                onClick={() => setViewMode('membership')}
+                className={"w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs transition-all cursor-pointer " + (viewMode === 'membership' ? 'bg-amber-500/20 text-amber-400 font-bold border border-amber-500/30' : 'text-zinc-400 hover:text-white hover:bg-white/5')}
+              >
+                <Crown className="w-4 h-4 text-amber-400 flex-shrink-0" />
+                <span className="truncate">العضويات والباقات 🔥</span>
+              </button>
+
+              <button
                 onClick={() => setViewMode('feedback')}
                 className={"w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs transition-all cursor-pointer " + (viewMode === 'feedback' ? 'bg-[#00a884]/20 text-[#00a884] font-bold border border-[#00a884]/30' : 'text-zinc-400 hover:text-white hover:bg-white/5')}
               >
@@ -1818,9 +1827,15 @@ export default function App() {
         )}
 
 
-        {/* VIEW 10: AI AGENTS DASHBOARD */}
-        {viewMode === 'agents_dashboard' && (
-          <AgentsDashboard lang={lang} initialTab={activeAgentsTab} />
+        {/* VIEW 11: MEMBERSHIP & SUBSCRIPTION TIERS */}
+        {viewMode === 'membership' && (
+          <MembershipPlans
+            currentUser={currentUser}
+            lang={lang}
+            onUpgradeSuccess={(updatedUser) => {
+              if (updatedUser) setCurrentUser(updatedUser);
+            }}
+          />
         )}
       </div>
 

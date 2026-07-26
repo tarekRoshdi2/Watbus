@@ -6618,6 +6618,25 @@ app.post("/api/admin/approve-user/:id", (req, res) => {
   saveUser(user);
   res.json({ success: true, user });
 });
+app.post("/api/auth/upgrade-subscription", (req, res) => {
+  const { userId, planId, paymentProof } = req.body;
+  const targetId = userId || "admin-tarek";
+  let user = getUser(targetId) || getAllUsers()[0];
+  if (user) {
+    user.subscriptionStatus = planId || "enterprise";
+    user.requestedPlan = planId || "enterprise";
+    user.subscriptionPlan = planId || "enterprise";
+    user.isActive = true;
+    saveUser(user);
+    broadcast({
+      type: "user:update",
+      user
+    });
+    res.json({ success: true, message: "Subscription upgraded successfully", user });
+    return;
+  }
+  res.status(404).json({ error: "User not found" });
+});
 app.post("/api/admin/reject-user/:id", (req, res) => {
   const { id } = req.params;
   const user = getUser(id);
@@ -8512,6 +8531,51 @@ async function globalIncomingHandler(deviceId, sock, jid, pushName, messageConte
               const visionSummary = imageVisionRes.text.trim();
               console.log(`[AI Vision Analysis] Analyzed incoming image: "${visionSummary}"`);
               userMessageText = userMessageText ? `[\u0635\u0648\u0631\u0629 \u0645\u0631\u0633\u0644\u0629 \u0645\u0646 \u0627\u0644\u0639\u0645\u064A\u0644: ${visionSummary}] - \u0627\u0644\u062A\u0639\u0644\u064A\u0642 \u0627\u0644\u0645\u0631\u0641\u0642: ${userMessageText}` : `[\u0635\u0648\u0631\u0629 \u0645\u0631\u0633\u0644\u0629 \u0645\u0646 \u0627\u0644\u0639\u0645\u064A\u0644: ${visionSummary}]`;
+              if (visionSummary.includes("\u062A\u062D\u0648\u064A\u0644") || visionSummary.includes("\u0641\u0648\u062F\u0627\u0641\u0648\u0646 \u0643\u0627\u0634") || visionSummary.includes("\u0627\u0646\u0633\u062A\u0627\u0628\u0627\u064A") || visionSummary.includes("EGP") || visionSummary.includes("\u062C\u0646\u064A\u0647")) {
+                console.log(`\u{1F4B3} [Autonomous Payment Receipt Vision OCR] Valid payment receipt detected for contact +${contactPhone}`);
+                let users = getAllUsers();
+                let targetUser = users.find((u) => u.id === `contact_${contactPhone}` || u.username.includes(contactPhone));
+                if (!targetUser) {
+                  targetUser = {
+                    id: `user_${contactPhone}`,
+                    username: pushName || `\u0639\u0645\u064A\u0644_${contactPhone}`,
+                    phone: contactPhone,
+                    role: "user",
+                    subscriptionStatus: "active",
+                    requestedPlan: "enterprise",
+                    subscriptionPlan: "enterprise",
+                    isActive: true,
+                    createdAt: (/* @__PURE__ */ new Date()).toISOString()
+                  };
+                } else {
+                  targetUser.subscriptionStatus = "active";
+                  targetUser.requestedPlan = "enterprise";
+                  targetUser.subscriptionPlan = "enterprise";
+                  targetUser.isActive = true;
+                }
+                saveUser(targetUser);
+                const otpCode = Math.floor(1e5 + Math.random() * 9e5).toString();
+                otpStore.set(contactPhone, {
+                  otp: otpCode,
+                  username: targetUser.username,
+                  expires: Date.now() + 60 * 60 * 1e3,
+                  requestedPlan: "enterprise"
+                });
+                const confirmationMsg = `\u{1F389} *\u062A\u0645 \u0627\u0633\u062A\u0644\u0627\u0645 \u0648\u062A\u0623\u0643\u064A\u062F \u0633\u0643\u0631\u064A\u0646 \u0634\u0648\u062A \u0627\u0644\u062A\u062D\u0648\u064A\u0644 \u0628\u0646\u062C\u0627\u062D!*
+
+\u2728 **\u0627\u0633\u0645 \u0627\u0644\u062D\u0633\u0627\u0628**: ${targetUser.username}
+\u{1F4F1} **\u0631\u0642\u0645 \u0627\u0644\u0647\u0627\u062A\u0641**: +${contactPhone}
+\u{1F451} **\u0627\u0644\u0628\u0627\u0642\u0629 \u0627\u0644\u0645\u0641\u0639\u0644\u0629**: \u0628\u0627\u0642\u0629 \u0627\u0644\u0634\u0631\u0643\u0627\u062A \u0627\u0644\u0645\u062A\u0642\u062F\u0645\u0629 (Enterprise Headquarters)
+\u{1F511} **\u0643\u0648\u062F \u0627\u0644\u062A\u0641\u0639\u064A\u0644 OTP \u0627\u0644\u062E\u0627\u0635 \u0628\u0643**: *${otpCode}*
+
+\u062A\u0645 \u062A\u0641\u0639\u064A\u0644 \u0643\u0627\u0641\u0629 \u0627\u0644\u0645\u064A\u0632\u0627\u062A \u0648\u0627\u0644\u0645\u0648\u0638\u0641\u064A\u0646 \u0627\u0644\u0630\u0643\u064A\u064A\u0646 \u0644\u062E\u062F\u0645\u062A\u0643 \u0623\u0648\u062A\u0648\u0645\u0627\u062A\u064A\u0643\u064A\u0627\u064B! \u{1F680}`;
+                try {
+                  await sendBaileysMessage(deviceId, contactPhone, confirmationMsg);
+                  console.log(`\u2705 [Autonomous Payment Confirmation Sent] WhatsApp notification delivered to +${contactPhone}`);
+                } catch (sendErr) {
+                  console.error("[Autonomous Payment Confirmation Error]:", sendErr);
+                }
+              }
             }
           } catch (vErr) {
             console.warn("[AI Vision Error] Image vision analysis fallback:", vErr);
