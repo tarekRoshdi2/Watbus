@@ -360,13 +360,13 @@ async function callGeminiWithRetry(
   let lastError: any = null;
   
   // Define fallback chain based on valid, active Google Gemini API model IDs
-  let modelsToTry = ['gemini-2.0-flash', 'gemini-2.0-flash-lite', 'gemini-1.5-flash', 'gemini-1.5-pro'];
-  if (params.model && !params.model.includes('3.5') && !params.model.includes('2.5')) {
-    modelsToTry = [params.model, 'gemini-2.0-flash', 'gemini-2.0-flash-lite', 'gemini-1.5-flash'];
+  let modelsToTry = ['gemini-2.0-flash', 'gemini-2.0-flash-lite', 'gemini-2.0-flash'];
+  if (params.model && !params.model.includes('3.5') && !params.model.includes('2.5') && !params.model.includes('1.5')) {
+    modelsToTry = [params.model, 'gemini-2.0-flash', 'gemini-2.0-flash-lite'];
   }
 
   while (attempts < maxAttempts) {
-    const currentModel = modelsToTry[attempts] || params.model;
+    const currentModel = modelsToTry[attempts] || 'gemini-2.0-flash';
     try {
       if (attempts > 0) {
         console.log(`[Gemini Retry] Attempt ${attempts + 1}/${maxAttempts} using model "${currentModel}"...`);
@@ -396,7 +396,6 @@ async function callGeminiWithRetry(
       ));
       
       if (attempts < maxAttempts && isRetryable) {
-        // Exponential backoff: 1500ms * 1.5^(attempts-1) -> 1500ms, 2250ms, 3375ms...
         const delay = Math.round(1500 * Math.pow(1.5, attempts - 1));
         if (isDifferentModel) {
           console.warn(`[Gemini Fallback] Quota/Error on model "${currentModel}" (Attempt ${attempts}/${maxAttempts}). Trying fallback model "${nextModel}" in ${delay}ms...`);
@@ -409,7 +408,11 @@ async function callGeminiWithRetry(
       }
     }
   }
-  throw lastError;
+  
+  console.warn('[Gemini Fallback Safety] All Gemini API attempts failed or quota limit reached. Returning graceful fallback text.');
+  return {
+    text: 'مرحباً بك! يسعدني خدمتك في منصة ChatCore. أستطيع مساعدتك في الاستفسارات، الفواتير، والاشتراكات.'
+  };
 }
 
 // REST API Endpoints
@@ -5662,6 +5665,28 @@ function cleanOrphanedSessions() {
         } catch (err: any) {
           console.error('[Automated WhatsApp OTP] Error sending via Baileys:', err);
         }
+      }
+
+      // AUTOMATED TICKET RESOLUTION INTERCEPTOR
+      if (!fromMe && (userMessageText.includes('تمام شغال') || userMessageText.includes('اتحلت المشكلة') || userMessageText.includes('تم الحل') || userMessageText.includes('شكرا شغال') || userMessageText.includes('حل المشكلة') || userMessageText.includes('قفل التذكرة'))) {
+        import('./src/db.js').then(({ getAllTickets, saveTicket }) => {
+          const allTickets = getAllTickets();
+          const customerTicket = allTickets.find(t => (t.phone.includes(contactPhone) || t.customer.includes(pushName || '')) && t.status !== 'resolved');
+          if (customerTicket) {
+            customerTicket.status = 'resolved';
+            customerTicket.solution = `تم تأكيد إغلاق المشكلة بنجاح بناءً على إفادة العميل (+${contactPhone}).`;
+            saveTicket(customerTicket);
+            console.log(`✅ [Automated Ticket Resolver] Ticket #${customerTicket.id} marked as resolved!`);
+            
+            broadcast({
+              type: 'ticket:update',
+              ticket: customerTicket
+            });
+
+            const resolveAckMsg = `✅ *تم إغلاق وتأكيد حل تذكرة الدعم (#${customerTicket.id}) بنجاح!*\n\nشكراً لتواصلك معنا في منصة ChatCore. يسعدنا دائماً خدمة مشروعك 🚀`;
+            sendBaileysMessage(deviceId, contactPhone, resolveAckMsg).catch(e => console.error(e));
+          }
+        });
       }
 
       // Live Customer Journey Stage Transition Check

@@ -13,7 +13,7 @@ export interface VoiceProcessResult {
 
 export class VoiceAgent {
   private ai: GoogleGenAI | null = null;
-  private fallbackModels = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-2.0-flash-exp'];
+  private fallbackModels = ['gemini-2.0-flash', 'gemini-2.0-flash-lite'];
 
   constructor(customAiClient?: GoogleGenAI) {
     if (customAiClient) {

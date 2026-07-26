@@ -1169,10 +1169,21 @@ export async function sendBaileysMessage(
         caption: text
       }, sendOptions);
     } else if (imageBuffer) {
-      sentMsg = await sock.sendMessage(cleanPhone, {
-        image: imageBuffer,
-        caption: text
-      }, sendOptions);
+      let finalImg: any = imageBuffer;
+      const rawImg: any = imageBuffer;
+      if (typeof rawImg === 'string' && rawImg.startsWith('data:image/svg+xml;base64,')) {
+        const b64 = rawImg.replace('data:image/svg+xml;base64,', '');
+        finalImg = Buffer.from(b64, 'base64');
+      }
+      try {
+        sentMsg = await sock.sendMessage(cleanPhone, {
+          image: finalImg,
+          caption: text
+        }, sendOptions);
+      } catch (imgErr) {
+        console.warn('[Baileys Image Dispatch Warning] Error sending image, falling back to text:', imgErr);
+        sentMsg = await sock.sendMessage(cleanPhone, { text }, sendOptions);
+      }
     } else {
       sentMsg = await sock.sendMessage(cleanPhone, { text }, sendOptions);
     }

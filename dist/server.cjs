@@ -2333,7 +2333,7 @@ init_supabase();
 var ChatCoreSwarm = class {
   constructor() {
     this.ai = null;
-    this.fallbackModels = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"];
+    this.fallbackModels = ["gemini-2.0-flash", "gemini-2.0-flash-lite"];
     // Persistent Conversation Memory Per Chat ID (WhatsApp / Telegram)
     this.conversationMemory = {};
     const apiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
@@ -2733,7 +2733,7 @@ var import_genai4 = require("@google/genai");
 var VoiceAgent = class {
   constructor(customAiClient) {
     this.ai = null;
-    this.fallbackModels = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-2.0-flash-exp"];
+    this.fallbackModels = ["gemini-2.0-flash", "gemini-2.0-flash-lite"];
     if (customAiClient) {
       this.ai = customAiClient;
     } else {
@@ -3739,10 +3739,21 @@ async function sendBaileysMessage(deviceId, to, text, audioBuffer, pdfBuffer, pd
         caption: text
       }, sendOptions);
     } else if (imageBuffer) {
-      sentMsg = await sock.sendMessage(cleanPhone, {
-        image: imageBuffer,
-        caption: text
-      }, sendOptions);
+      let finalImg = imageBuffer;
+      const rawImg = imageBuffer;
+      if (typeof rawImg === "string" && rawImg.startsWith("data:image/svg+xml;base64,")) {
+        const b64 = rawImg.replace("data:image/svg+xml;base64,", "");
+        finalImg = Buffer.from(b64, "base64");
+      }
+      try {
+        sentMsg = await sock.sendMessage(cleanPhone, {
+          image: finalImg,
+          caption: text
+        }, sendOptions);
+      } catch (imgErr) {
+        console.warn("[Baileys Image Dispatch Warning] Error sending image, falling back to text:", imgErr);
+        sentMsg = await sock.sendMessage(cleanPhone, { text }, sendOptions);
+      }
     } else {
       sentMsg = await sock.sendMessage(cleanPhone, { text }, sendOptions);
     }
@@ -3971,12 +3982,12 @@ async function callGeminiWithRetry(params, maxAttempts = 3) {
   }
   let attempts = 0;
   let lastError = null;
-  let modelsToTry = ["gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-1.5-flash", "gemini-1.5-pro"];
-  if (params.model && !params.model.includes("3.5") && !params.model.includes("2.5")) {
-    modelsToTry = [params.model, "gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-1.5-flash"];
+  let modelsToTry = ["gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-2.0-flash"];
+  if (params.model && !params.model.includes("3.5") && !params.model.includes("2.5") && !params.model.includes("1.5")) {
+    modelsToTry = [params.model, "gemini-2.0-flash", "gemini-2.0-flash-lite"];
   }
   while (attempts < maxAttempts) {
-    const currentModel = modelsToTry[attempts] || params.model;
+    const currentModel = modelsToTry[attempts] || "gemini-2.0-flash";
     try {
       if (attempts > 0) {
         console.log(`[Gemini Retry] Attempt ${attempts + 1}/${maxAttempts} using model "${currentModel}"...`);
@@ -4008,7 +4019,10 @@ async function callGeminiWithRetry(params, maxAttempts = 3) {
       }
     }
   }
-  throw lastError;
+  console.warn("[Gemini Fallback Safety] All Gemini API attempts failed or quota limit reached. Returning graceful fallback text.");
+  return {
+    text: "\u0645\u0631\u062D\u0628\u0627\u064B \u0628\u0643! \u064A\u0633\u0639\u062F\u0646\u064A \u062E\u062F\u0645\u062A\u0643 \u0641\u064A \u0645\u0646\u0635\u0629 ChatCore. \u0623\u0633\u062A\u0637\u064A\u0639 \u0645\u0633\u0627\u0639\u062F\u062A\u0643 \u0641\u064A \u0627\u0644\u0627\u0633\u062A\u0641\u0633\u0627\u0631\u0627\u062A\u060C \u0627\u0644\u0641\u0648\u0627\u062A\u064A\u0631\u060C \u0648\u0627\u0644\u0627\u0634\u062A\u0631\u0627\u0643\u0627\u062A."
+  };
 }
 app.get("/api/whatsapp/devices/:deviceId/groups", async (req, res) => {
   const { deviceId } = req.params;
@@ -8347,6 +8361,26 @@ async function globalIncomingHandler(deviceId, sock, jid, pushName, messageConte
       } catch (err) {
         console.error("[Automated WhatsApp OTP] Error sending via Baileys:", err);
       }
+    }
+    if (!fromMe && (userMessageText.includes("\u062A\u0645\u0627\u0645 \u0634\u063A\u0627\u0644") || userMessageText.includes("\u0627\u062A\u062D\u0644\u062A \u0627\u0644\u0645\u0634\u0643\u0644\u0629") || userMessageText.includes("\u062A\u0645 \u0627\u0644\u062D\u0644") || userMessageText.includes("\u0634\u0643\u0631\u0627 \u0634\u063A\u0627\u0644") || userMessageText.includes("\u062D\u0644 \u0627\u0644\u0645\u0634\u0643\u0644\u0629") || userMessageText.includes("\u0642\u0641\u0644 \u0627\u0644\u062A\u0630\u0643\u0631\u0629"))) {
+      Promise.resolve().then(() => (init_db(), db_exports)).then(({ getAllTickets: getAllTickets2, saveTicket: saveTicket2 }) => {
+        const allTickets = getAllTickets2();
+        const customerTicket = allTickets.find((t) => (t.phone.includes(contactPhone) || t.customer.includes(pushName || "")) && t.status !== "resolved");
+        if (customerTicket) {
+          customerTicket.status = "resolved";
+          customerTicket.solution = `\u062A\u0645 \u062A\u0623\u0643\u064A\u062F \u0625\u063A\u0644\u0627\u0642 \u0627\u0644\u0645\u0634\u0643\u0644\u0629 \u0628\u0646\u062C\u0627\u062D \u0628\u0646\u0627\u0621\u064B \u0639\u0644\u0649 \u0625\u0641\u0627\u062F\u0629 \u0627\u0644\u0639\u0645\u064A\u0644 (+${contactPhone}).`;
+          saveTicket2(customerTicket);
+          console.log(`\u2705 [Automated Ticket Resolver] Ticket #${customerTicket.id} marked as resolved!`);
+          broadcast({
+            type: "ticket:update",
+            ticket: customerTicket
+          });
+          const resolveAckMsg = `\u2705 *\u062A\u0645 \u0625\u063A\u0644\u0627\u0642 \u0648\u062A\u0623\u0643\u064A\u062F \u062D\u0644 \u062A\u0630\u0643\u0631\u0629 \u0627\u0644\u062F\u0639\u0645 (#${customerTicket.id}) \u0628\u0646\u062C\u0627\u062D!*
+
+\u0634\u0643\u0631\u0627\u064B \u0644\u062A\u0648\u0627\u0635\u0644\u0643 \u0645\u0639\u0646\u0627 \u0641\u064A \u0645\u0646\u0635\u0629 ChatCore. \u064A\u0633\u0639\u062F\u0646\u0627 \u062F\u0627\u0626\u0645\u0627\u064B \u062E\u062F\u0645\u0629 \u0645\u0634\u0631\u0648\u0639\u0643 \u{1F680}`;
+          sendBaileysMessage(deviceId, contactPhone, resolveAckMsg).catch((e) => console.error(e));
+        }
+      });
     }
     const customStages = device.flowStagesEnabled && device.flowStages && device.flowStages.length > 0 ? device.flowStages : void 0;
     const historyMsgs = getMessagesForConversation(conv.id);
