@@ -366,6 +366,7 @@ __export(db_exports, {
   getAllFolders: () => getAllFolders,
   getAllTickets: () => getAllTickets,
   getAllUsers: () => getAllUsers,
+  getCRMCustomers: () => getCRMCustomers,
   getCallLogs: () => getCallLogs,
   getConversationsForUser: () => getConversationsForUser,
   getLeads: () => getLeads,
@@ -373,7 +374,9 @@ __export(db_exports, {
   getOrCreateConversation: () => getOrCreateConversation,
   getOtpLogs: () => getOtpLogs,
   getOtpSettings: () => getOtpSettings,
+  getPaymentConfig: () => getPaymentConfig,
   getPaymentSettings: () => getPaymentSettings,
+  getSupabaseClient: () => getSupabaseClient2,
   getUser: () => getUser,
   getUserByUsername: () => getUserByUsername2,
   incrementUserAiUsage: () => incrementUserAiUsage,
@@ -386,6 +389,7 @@ __export(db_exports, {
   recordAgentActivity: () => recordAgentActivity,
   resetDbCache: () => resetDbCache,
   saveAgentConfig: () => saveAgentConfig,
+  saveCRMCustomer: () => saveCRMCustomer,
   saveCallLog: () => saveCallLog,
   saveCampaign: () => saveCampaign,
   saveConversation: () => saveConversation,
@@ -395,6 +399,7 @@ __export(db_exports, {
   saveMessage: () => saveMessage,
   saveOtpLog: () => saveOtpLog,
   saveOtpSettings: () => saveOtpSettings,
+  savePaymentConfig: () => savePaymentConfig,
   savePaymentSettings: () => savePaymentSettings,
   saveStatus: () => saveStatus,
   saveTicket: () => saveTicket,
@@ -406,6 +411,18 @@ __export(db_exports, {
   updateUserPresence: () => updateUserPresence,
   writeDb: () => writeDb
 });
+function getSupabaseClient2() {
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (url && key) {
+    try {
+      return (0, import_supabase_js2.createClient)(url, key);
+    } catch (e) {
+      return null;
+    }
+  }
+  return null;
+}
 function getInitialDb() {
   return {
     users: {
@@ -1333,12 +1350,115 @@ function saveCallLog(log) {
   writeDb(db);
   return log;
 }
-var import_dotenv, import_fs2, import_path2, prismaInstance, prisma, DB_FILE, META_AI_USER, ADMIN_USER, cachedDb, writeTimeout, isWriting, pendingWrite;
+function getPaymentConfig() {
+  const db = readDb();
+  if (!db.paymentConfig) {
+    db.paymentConfig = {
+      vodafoneCashNo: "01115822923",
+      instaPayId: "trkroshdi@instapay",
+      bankIbanNo: "EG1234567890123456789012345",
+      accountHolderName: "\u0637\u0627\u0631\u0642 \u0631\u0634\u062F\u064A (Tarek Roshdi)",
+      bankName: "\u0627\u0644\u0628\u0646\u0643 \u0627\u0644\u0623\u0647\u0644\u064A \u0627\u0644\u0645\u0635\u0631\u064A (NBE)",
+      vodafoneActive: true,
+      instaPayActive: true,
+      bankActive: true,
+      screenshotRequired: true
+    };
+    writeDb(db);
+  }
+  return db.paymentConfig;
+}
+function savePaymentConfig(cfg) {
+  const db = readDb();
+  const current = getPaymentConfig();
+  const updated = { ...current, ...cfg };
+  db.paymentConfig = updated;
+  writeDb(db);
+  const supabase = getSupabaseClient2();
+  if (supabase) {
+    Promise.resolve(supabase.from("payment_settings").upsert({
+      id: "default_config",
+      vodafone_cash_no: updated.vodafoneCashNo,
+      instapay_id: updated.instaPayId,
+      bank_iban: updated.bankIbanNo,
+      account_holder: updated.accountHolderName,
+      bank_name: updated.bankName,
+      updated_at: (/* @__PURE__ */ new Date()).toISOString()
+    })).catch((e) => console.error("[Supabase Sync] Payment config error:", e));
+  }
+  return updated;
+}
+function getCRMCustomers() {
+  const db = readDb();
+  if (!db.crmCustomers || !Array.isArray(db.crmCustomers) || db.crmCustomers.length === 0) {
+    db.crmCustomers = [
+      {
+        id: "CUST-01",
+        name: "\u0645. \u0637\u0627\u0631\u0642 \u0631\u0634\u062F\u064A",
+        phone: "+201115822923",
+        ltv: "12,500 EGP",
+        segment: "VIP Enterprise",
+        chats: 40,
+        invoices: 4,
+        status: "Active Buyer",
+        agent: "\u0623\u062D\u0645\u062F \u0627\u0644\u0645\u0628\u064A\u0639\u0627\u062A",
+        notes: "\u0627\u0644\u0645\u0627\u0644\u0643 \u0648\u0627\u0644\u0645\u0624\u0633\u0633 \u0627\u0644\u0631\u0626\u064A\u0633\u064A \u0644\u0644\u0645\u0646\u0638\u0648\u0645\u0629."
+      }
+    ];
+    writeDb(db);
+  }
+  return db.crmCustomers;
+}
+function saveCRMCustomer(customer) {
+  const db = readDb();
+  const list = getCRMCustomers();
+  const existingIdx = list.findIndex((c) => c.id === customer.id || c.phone === customer.phone);
+  let savedCust;
+  if (existingIdx >= 0) {
+    list[existingIdx] = { ...list[existingIdx], ...customer };
+    savedCust = list[existingIdx];
+  } else {
+    const custId = customer.id || `CUST-${(list.length + 1).toString().padStart(2, "0")}`;
+    savedCust = {
+      id: custId,
+      name: customer.name,
+      phone: customer.phone,
+      ltv: customer.ltv || "0 EGP",
+      segment: customer.segment || "Starter Lead",
+      chats: customer.chats || 1,
+      invoices: customer.invoices || 0,
+      status: customer.status || "Active Lead",
+      agent: customer.agent || "\u0623\u062D\u0645\u062F \u0627\u0644\u0645\u0628\u064A\u0639\u0627\u062A",
+      notes: customer.notes || "",
+      createdAt: (/* @__PURE__ */ new Date()).toISOString()
+    };
+    list.unshift(savedCust);
+  }
+  db.crmCustomers = list;
+  writeDb(db);
+  const supabase = getSupabaseClient2();
+  if (supabase) {
+    Promise.resolve(supabase.from("crm_customers").upsert({
+      id: savedCust.id,
+      name: savedCust.name,
+      phone: savedCust.phone,
+      ltv: savedCust.ltv,
+      segment: savedCust.segment,
+      status: savedCust.status,
+      assigned_agent: savedCust.agent,
+      notes: savedCust.notes,
+      updated_at: (/* @__PURE__ */ new Date()).toISOString()
+    })).catch((e) => console.error("[Supabase Sync] CRM customer error:", e));
+  }
+  return savedCust;
+}
+var import_dotenv, import_fs2, import_path2, import_supabase_js2, prismaInstance, prisma, DB_FILE, META_AI_USER, ADMIN_USER, cachedDb, writeTimeout, isWriting, pendingWrite;
 var init_db = __esm({
   "src/db.ts"() {
     import_dotenv = __toESM(require("dotenv"), 1);
     import_fs2 = __toESM(require("fs"), 1);
     import_path2 = __toESM(require("path"), 1);
+    import_supabase_js2 = require("@supabase/supabase-js");
     init_supabase();
     import_dotenv.default.config();
     try {
@@ -4810,64 +4930,58 @@ app.post("/api/conversations", (req, res) => {
     }
   });
 });
+app.get("/api/payment-settings", (req, res) => {
+  res.json({ success: true, settings: getPaymentConfig() });
+});
+app.post("/api/payment-settings", (req, res) => {
+  const updated = savePaymentConfig(req.body);
+  res.json({ success: true, settings: updated });
+});
+app.get("/api/admin/settings", (req, res) => {
+  res.json({ success: true, settings: getPaymentConfig() });
+});
+app.post("/api/admin/settings", (req, res) => {
+  const updated = savePaymentConfig(req.body);
+  res.json({ success: true, settings: updated });
+});
+app.post("/api/crm/customers", (req, res) => {
+  const { name, phone, ltv, segment, agent, notes } = req.body;
+  if (!name || !phone) {
+    res.status(400).json({ error: "Name and phone are required" });
+    return;
+  }
+  const saved = saveCRMCustomer({ name, phone, ltv, segment, agent, notes });
+  res.json({ success: true, customer: saved });
+});
 app.get("/api/crm/data", (req, res) => {
   const db = readDb();
+  const storedCrm = getCRMCustomers();
   const convList = Object.values(db.conversations || {});
-  const userList = Object.values(db.users || {});
   const msgList = Object.values(db.messages || {});
-  let dynamicCustomers = convList.map((c, idx) => {
+  let dynamicCustomers = [...storedCrm];
+  convList.forEach((c, idx) => {
     const contactId = c.participantIds?.find((id) => id.startsWith("contact_")) || c.recipientId || "";
-    const contact = userList.find((u) => u.id === contactId) || { username: `\u0639\u0645\u064A\u0644 \u0648\u0627\u062A\u0633\u0627\u0628 #${idx + 1}` };
-    const rawPhone = contactId.replace(/^contact_/, "") || "201000000000";
-    const convMsgs = msgList.filter((m) => m.conversationId === c.id);
-    let agent = "\u0623\u062D\u0645\u062F \u0627\u0644\u0645\u0628\u064A\u0639\u0627\u062A";
-    const hasInvoiceMsg = convMsgs.some((m) => m.content?.includes("\u0641\u0627\u062A\u0648\u0631\u0629") || m.content?.includes("#INV-"));
-    const hasSupportMsg = convMsgs.some((m) => m.content?.includes("\u062A\u0630\u0643\u0631\u0629") || m.content?.includes("\u0631\u0628\u0637"));
-    const hasDesignMsg = convMsgs.some((m) => m.content?.includes("\u062A\u0635\u0645\u064A\u0645") || m.content?.includes("\u0643\u0627\u0631\u062A"));
-    if (hasInvoiceMsg) agent = "\u0627\u0644\u0623\u0633\u062A\u0627\u0630 \u0635\u0644\u0627\u062D \u0627\u0644\u062D\u0633\u0627\u0628\u0627\u062A";
-    else if (hasSupportMsg) agent = "\u0645\u0647\u0646\u062F\u0633 \u0639\u0645\u0631 \u0627\u0644\u062F\u0639\u0645";
-    else if (hasDesignMsg) agent = "\u0643\u0631\u064A\u0645 \u0627\u0644\u062F\u064A\u0632\u0627\u064A\u0646";
-    let status = "Lead Inquiry";
-    if (hasInvoiceMsg) status = "Pending Invoice";
-    if (c.label === "\u0639\u0645\u064A\u0644 \u0645\u062D\u062A\u0645\u0644" || c.label === "\u062C\u062F\u064A\u062F") status = "Lead Inquiry";
-    if (c.label === "\u0645\u0643\u062A\u0645\u0644" || hasInvoiceMsg) status = "Active Buyer";
-    let ltvVal = 1200;
-    if (convMsgs.length > 8) ltvVal = 2500;
-    if (convMsgs.length > 20) ltvVal = 4900;
-    return {
-      id: `CUST-${(idx + 1).toString().padStart(2, "0")}`,
-      name: contact.username || `\u0639\u0645\u064A\u0644 #${rawPhone.slice(-4)}`,
-      phone: rawPhone.startsWith("+") ? rawPhone : `+${rawPhone}`,
-      ltv: `${ltvVal.toLocaleString()} EGP`,
-      segment: ltvVal >= 4900 ? "VIP Enterprise" : ltvVal >= 2500 ? "Business Swarm" : "Starter Lead",
-      chats: convMsgs.length || 1,
-      invoices: hasInvoiceMsg ? 1 : 0,
-      status,
-      agent
-    };
+    const rawPhone = contactId.replace(/^contact_/, "") || "";
+    if (rawPhone && !dynamicCustomers.some((cust) => cust.phone.includes(rawPhone))) {
+      const convMsgs = msgList.filter((m) => m.conversationId === c.id);
+      dynamicCustomers.push({
+        id: `CUST-${(dynamicCustomers.length + 1).toString().padStart(2, "0")}`,
+        name: `\u0639\u0645\u064A\u0644 \u0648\u0627\u062A\u0633\u0627\u0628 #${rawPhone.slice(-4)}`,
+        phone: rawPhone.startsWith("+") ? rawPhone : `+${rawPhone}`,
+        ltv: "1,500 EGP",
+        segment: "Starter Lead",
+        chats: convMsgs.length || 1,
+        invoices: 0,
+        status: "Active Lead",
+        agent: "\u0623\u062D\u0645\u062F \u0627\u0644\u0645\u0628\u064A\u0639\u0627\u062A",
+        notes: ""
+      });
+    }
   });
-  if (dynamicCustomers.length === 0) {
-    dynamicCustomers = [
-      { id: "CUST-01", name: "\u0645. \u0637\u0627\u0631\u0642 \u0631\u0634\u062F\u064A", phone: "+201115822923", ltv: "4,900 EGP", segment: "VIP Enterprise", chats: 18, invoices: 2, status: "Active Buyer", agent: "\u0623\u062D\u0645\u062F \u0627\u0644\u0645\u0628\u064A\u0639\u0627\u062A" }
-    ];
-  }
-  const dynamicTickets = msgList.filter((m) => m.content?.includes("\u{1F3AB}") || m.content?.includes("\u062A\u0630\u0643\u0631\u0629") || m.content?.includes("TCK-")).map((m, idx) => {
-    const match = m.content?.match(/#(TCK-\d+|TCK-[A-Z0-9]+)/);
-    const ticketId = match ? match[1] : `TCK-${Math.floor(7e3 + idx * 111)}`;
-    return {
-      id: ticketId,
-      customer: `\u0639\u0645\u064A\u0644 \u0648\u0627\u062A\u0633\u0627\u0628`,
-      phone: "+201115822923",
-      category: "technical",
-      priority: "high",
-      status: "open",
-      time: new Date(m.timestamp || Date.now()).toLocaleTimeString("ar-EG", { hour: "2-digit", minute: "2-digit" }),
-      issue: m.content?.substring(0, 80) || "\u062A\u0623\u0643\u064A\u062F \u062A\u0630\u0643\u0631\u0629 \u062F\u0639\u0645 \u0641\u0646\u064A \u0648\u0631\u0628\u0637 \u0627\u0644\u0628\u0648\u062A",
-      solution: "\u0645\u062A\u0627\u0628\u0639\u0629 \u0623\u0648\u062A\u0648\u0645\u0627\u062A\u064A\u0643\u064A\u0629 \u0639\u0628\u0631 \u0648\u0643\u064A\u0644 \u0627\u0644\u062F\u0639\u0645 \u0627\u0644\u0641\u0646\u064A \u0645\u0647\u0646\u062F\u0633 \u0639\u0645\u0631.",
-      assignedTo: "\u0645\u0647\u0646\u062F\u0633 \u0639\u0645\u0631 \u0627\u0644\u062F\u0639\u0645"
-    };
-  });
-  const grossRev = dynamicCustomers.reduce((acc, c) => acc + (parseInt(c.ltv.replace(/[^0-9]/g, ""), 10) || 0), 0);
+  const grossRev = dynamicCustomers.reduce((acc, c) => acc + (parseInt(String(c.ltv).replace(/[^0-9]/g, ""), 10) || 0), 0);
+  const activeBuyers = dynamicCustomers.filter((c) => c.status === "Active Buyer" || c.invoices && c.invoices > 0).length;
+  const leadsCount = Math.max(dynamicCustomers.length, 1);
+  const conversionPct = (activeBuyers / leadsCount * 100).toFixed(1);
   res.json({
     success: true,
     totalCustomersCount: dynamicCustomers.length,
@@ -4875,11 +4989,11 @@ app.get("/api/crm/data", (req, res) => {
     tickets: getAllTickets(),
     analytics: {
       grossRevenue: `${grossRev.toLocaleString()} EGP`,
-      conversionRate: dynamicCustomers.length > 0 ? `${(dynamicCustomers.filter((c) => c.status === "Active Buyer").length / dynamicCustomers.length * 100).toFixed(1)}%` : "100.0%",
-      totalIncomingLeads: dynamicCustomers.length,
-      pitchDeliveredCount: Math.round(dynamicCustomers.length * 0.75) || 1,
-      invoicesIssuedCount: Math.round(dynamicCustomers.length * 0.4) || 1,
-      paidOrdersCount: Math.round(dynamicCustomers.length * 0.3) || 1
+      conversionRate: `${conversionPct}%`,
+      totalIncomingLeads: leadsCount,
+      pitchDeliveredCount: Math.max(1, Math.round(leadsCount * 0.75)),
+      invoicesIssuedCount: Math.max(1, Math.round(leadsCount * 0.5)),
+      paidOrdersCount: Math.max(1, activeBuyers)
     }
   });
 });

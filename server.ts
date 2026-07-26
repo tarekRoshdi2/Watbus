@@ -123,6 +123,10 @@ import {
   getAgentStats,
   recordAgentActivity,
   getAgentAuditLogs,
+  getPaymentConfig,
+  savePaymentConfig,
+  getCRMCustomers,
+  saveCRMCustomer,
   syncDatabaseWithSupabase,
   getCallLogs,
   saveCallLog
@@ -1515,79 +1519,70 @@ app.post('/api/conversations', (req, res) => {
   });
 });
 
+// Admin Payment Configuration API Endpoints
+app.get('/api/payment-settings', (req, res) => {
+  res.json({ success: true, settings: getPaymentConfig() });
+});
+
+app.post('/api/payment-settings', (req, res) => {
+  const updated = savePaymentConfig(req.body);
+  res.json({ success: true, settings: updated });
+});
+
+app.get('/api/admin/settings', (req, res) => {
+  res.json({ success: true, settings: getPaymentConfig() });
+});
+
+app.post('/api/admin/settings', (req, res) => {
+  const updated = savePaymentConfig(req.body);
+  res.json({ success: true, settings: updated });
+});
+
+// CRM Add Customer Endpoint
+app.post('/api/crm/customers', (req, res) => {
+  const { name, phone, ltv, segment, agent, notes } = req.body;
+  if (!name || !phone) {
+    res.status(400).json({ error: 'Name and phone are required' });
+    return;
+  }
+  const saved = saveCRMCustomer({ name, phone, ltv, segment, agent, notes });
+  res.json({ success: true, customer: saved });
+});
+
 // Live CRM Directory & Telemetry Analytics Endpoint
 app.get('/api/crm/data', (req, res) => {
   const db = readDb();
+  const storedCrm = getCRMCustomers();
   const convList = Object.values(db.conversations || {});
-  const userList = Object.values(db.users || {});
   const msgList = Object.values(db.messages || {});
 
-  let dynamicCustomers = convList.map((c: any, idx: number) => {
+  let dynamicCustomers = [...storedCrm];
+
+  // Merge any active whatsapp conversations not already in stored CRM
+  convList.forEach((c: any, idx: number) => {
     const contactId = c.participantIds?.find((id: string) => id.startsWith('contact_')) || c.recipientId || '';
-    const contact = userList.find((u: any) => u.id === contactId) || { username: `عميل واتساب #${idx + 1}` };
-    const rawPhone = contactId.replace(/^contact_/, '') || '201000000000';
-    const convMsgs = msgList.filter((m: any) => m.conversationId === c.id);
-
-    // Determine Agent
-    let agent = 'أحمد المبيعات';
-    const hasInvoiceMsg = convMsgs.some((m: any) => m.content?.includes('فاتورة') || m.content?.includes('#INV-'));
-    const hasSupportMsg = convMsgs.some((m: any) => m.content?.includes('تذكرة') || m.content?.includes('ربط'));
-    const hasDesignMsg = convMsgs.some((m: any) => m.content?.includes('تصميم') || m.content?.includes('كارت'));
-
-    if (hasInvoiceMsg) agent = 'الأستاذ صلاح الحسابات';
-    else if (hasSupportMsg) agent = 'مهندس عمر الدعم';
-    else if (hasDesignMsg) agent = 'كريم الديزاين';
-
-    let status = 'Lead Inquiry';
-    if (hasInvoiceMsg) status = 'Pending Invoice';
-    if (c.label === 'عميل محتمل' || c.label === 'جديد') status = 'Lead Inquiry';
-    if (c.label === 'مكتمل' || hasInvoiceMsg) status = 'Active Buyer';
-
-    let ltvVal = 1200;
-    if (convMsgs.length > 8) ltvVal = 2500;
-    if (convMsgs.length > 20) ltvVal = 4900;
-
-    return {
-      id: `CUST-${(idx + 1).toString().padStart(2, '0')}`,
-      name: contact.username || `عميل #${rawPhone.slice(-4)}`,
-      phone: rawPhone.startsWith('+') ? rawPhone : `+${rawPhone}`,
-      ltv: `${ltvVal.toLocaleString()} EGP`,
-      segment: ltvVal >= 4900 ? 'VIP Enterprise' : (ltvVal >= 2500 ? 'Business Swarm' : 'Starter Lead'),
-      chats: convMsgs.length || 1,
-      invoices: hasInvoiceMsg ? 1 : 0,
-      status,
-      agent
-    };
+    const rawPhone = contactId.replace(/^contact_/, '') || '';
+    if (rawPhone && !dynamicCustomers.some(cust => cust.phone.includes(rawPhone))) {
+      const convMsgs = msgList.filter((m: any) => m.conversationId === c.id);
+      dynamicCustomers.push({
+        id: `CUST-${(dynamicCustomers.length + 1).toString().padStart(2, '0')}`,
+        name: `عميل واتساب #${rawPhone.slice(-4)}`,
+        phone: rawPhone.startsWith('+') ? rawPhone : `+${rawPhone}`,
+        ltv: '1,500 EGP',
+        segment: 'Starter Lead',
+        chats: convMsgs.length || 1,
+        invoices: 0,
+        status: 'Active Lead',
+        agent: 'أحمد المبيعات',
+        notes: ''
+      });
+    }
   });
 
-  // Fallback starter directory if no contacts created yet
-  if (dynamicCustomers.length === 0) {
-    dynamicCustomers = [
-      { id: 'CUST-01', name: 'م. طارق رشدي', phone: '+201115822923', ltv: '4,900 EGP', segment: 'VIP Enterprise', chats: 18, invoices: 2, status: 'Active Buyer', agent: 'أحمد المبيعات' }
-    ];
-  }
-
-  // Extract Support Tickets
-  const dynamicTickets = msgList
-    .filter((m: any) => m.content?.includes('🎫') || m.content?.includes('تذكرة') || m.content?.includes('TCK-'))
-    .map((m: any, idx: number) => {
-      const match = m.content?.match(/#(TCK-\d+|TCK-[A-Z0-9]+)/);
-      const ticketId = match ? match[1] : `TCK-${Math.floor(7000 + idx * 111)}`;
-      return {
-        id: ticketId,
-        customer: `عميل واتساب`,
-        phone: '+201115822923',
-        category: 'technical',
-        priority: 'high',
-        status: 'open',
-        time: new Date(m.timestamp || Date.now()).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }),
-        issue: m.content?.substring(0, 80) || 'تأكيد تذكرة دعم فني وربط البوت',
-        solution: 'متابعة أوتوماتيكية عبر وكيل الدعم الفني مهندس عمر.',
-        assignedTo: 'مهندس عمر الدعم'
-      };
-    });
-
-  const grossRev = dynamicCustomers.reduce((acc, c) => acc + (parseInt(c.ltv.replace(/[^0-9]/g, ''), 10) || 0), 0);
+  const grossRev = dynamicCustomers.reduce((acc, c) => acc + (parseInt(String(c.ltv).replace(/[^0-9]/g, ''), 10) || 0), 0);
+  const activeBuyers = dynamicCustomers.filter(c => c.status === 'Active Buyer' || (c.invoices && c.invoices > 0)).length;
+  const leadsCount = Math.max(dynamicCustomers.length, 1);
+  const conversionPct = ((activeBuyers / leadsCount) * 100).toFixed(1);
 
   res.json({
     success: true,
@@ -1596,11 +1591,11 @@ app.get('/api/crm/data', (req, res) => {
     tickets: getAllTickets(),
     analytics: {
       grossRevenue: `${grossRev.toLocaleString()} EGP`,
-      conversionRate: dynamicCustomers.length > 0 ? `${(dynamicCustomers.filter(c => c.status === 'Active Buyer').length / dynamicCustomers.length * 100).toFixed(1)}%` : '100.0%',
-      totalIncomingLeads: dynamicCustomers.length,
-      pitchDeliveredCount: Math.round(dynamicCustomers.length * 0.75) || 1,
-      invoicesIssuedCount: Math.round(dynamicCustomers.length * 0.4) || 1,
-      paidOrdersCount: Math.round(dynamicCustomers.length * 0.3) || 1
+      conversionRate: `${conversionPct}%`,
+      totalIncomingLeads: leadsCount,
+      pitchDeliveredCount: Math.max(1, Math.round(leadsCount * 0.75)),
+      invoicesIssuedCount: Math.max(1, Math.round(leadsCount * 0.5)),
+      paidOrdersCount: Math.max(1, activeBuyers)
     }
   });
 });

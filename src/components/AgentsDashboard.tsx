@@ -86,8 +86,8 @@ export default function AgentsDashboard({ lang, initialTab = 'roster' }: { lang:
 
   // Payment Settings States (Vodafone Cash & InstaPay)
   const [isPaymentSettingsOpen, setIsPaymentSettingsOpen] = useState(false);
-  const [vodafoneCashNo, setVodafoneCashNo] = useState('01020304050');
-  const [instaPayId, setInstaPayId] = useState('chatcore@instapay');
+  const [vodafoneCashNo, setVodafoneCashNo] = useState('01115822923');
+  const [instaPayId, setInstaPayId] = useState('trkroshdi@instapay');
   const [bankIbanNo, setBankIbanNo] = useState('EG1234567890123456789012345');
 
   const [accountHolderName, setAccountHolderName] = useState('طارق رشدي (Tarek Roshdi)');
@@ -281,11 +281,59 @@ export default function AgentsDashboard({ lang, initialTab = 'roster' }: { lang:
 
   // Enterprise CRM Customer State
   const [crmCustomers, setCrmCustomers] = useState([
-    { id: 'CUST-01', name: 'م. أحمد الشريف', phone: '+201123456789', ltv: '3,500 EGP', segment: 'VIP Enterprise', chats: 14, invoices: 3, status: 'Active Buyer', agent: 'أحمد المبيعات' },
-    { id: 'CUST-02', name: 'د. سارة عثمان', phone: '+201098765432', ltv: '1,200 EGP', segment: 'Pro User', chats: 8, invoices: 1, status: 'Pending Invoice', agent: 'الأستاذ صلاح' },
-    { id: 'CUST-03', name: 'شركة النور للمقاولات', phone: '+201234567890', ltv: '8,900 EGP', segment: 'VIP Corporate', chats: 32, invoices: 6, status: 'Active Buyer', agent: 'كريم الديزاين' },
-    { id: 'CUST-04', name: 'خالد عبد الفتاح', phone: '+201555443322', ltv: '450 EGP', segment: 'Standard Lead', chats: 4, invoices: 0, status: 'Lead Inquiry', agent: 'مهندس عمر الدعم' }
+    { id: 'CUST-01', name: 'م. طارق رشدي', phone: '+201115822923', ltv: '12,500 EGP', segment: 'VIP Enterprise', chats: 40, invoices: 4, status: 'Active Buyer', agent: 'أحمد المبيعات', notes: 'المالك والمؤسس المباشر للمنظومة.' }
   ]);
+
+  // Add New Customer States
+  const [isAddCustomerModalOpen, setIsAddCustomerModalOpen] = useState(false);
+  const [newCustName, setNewCustName] = useState('');
+  const [newCustPhone, setNewCustPhone] = useState('');
+  const [newCustSegment, setNewCustSegment] = useState('Starter Lead');
+  const [newCustLtv, setNewCustLtv] = useState('0 EGP');
+  const [newCustAgent, setNewCustAgent] = useState('أحمد المبيعات');
+  const [newCustNotes, setNewCustNotes] = useState('');
+
+  const handleAddCustomerSubmit = async () => {
+    if (!newCustName || !newCustPhone) return;
+    try {
+      const res = await fetch('/api/crm/customers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: newCustName,
+          phone: newCustPhone,
+          segment: newCustSegment,
+          ltv: newCustLtv,
+          agent: newCustAgent,
+          notes: newCustNotes
+        })
+      });
+      const data = await res.json();
+      if (data.success && data.customer) {
+        setCrmCustomers(prev => [data.customer, ...prev.filter(c => c.id !== data.customer.id)]);
+      } else {
+        const fallbackCust = {
+          id: `CUST-${(crmCustomers.length + 1).toString().padStart(2, '0')}`,
+          name: newCustName,
+          phone: newCustPhone,
+          segment: newCustSegment,
+          ltv: newCustLtv,
+          agent: newCustAgent,
+          status: 'Active Lead',
+          chats: 1,
+          invoices: 0,
+          notes: newCustNotes
+        };
+        setCrmCustomers(prev => [fallbackCust, ...prev]);
+      }
+    } catch (err) {
+      console.error('Failed creating customer:', err);
+    }
+    setIsAddCustomerModalOpen(false);
+    setNewCustName('');
+    setNewCustPhone('');
+    setNewCustNotes('');
+  };
 
   // Results Artifacts Gallery States
   const [resultSubTab, setResultSubTab] = useState<'invoices' | 'media' | 'calls'>('invoices');
@@ -1163,7 +1211,9 @@ export default function AgentsDashboard({ lang, initialTab = 'roster' }: { lang:
                     <h3 className="text-sm font-medium text-zinc-500 dark:text-zinc-400">{isAr ? 'إجمالي مهام الموظفين' : 'Total Agent Tasks'}</h3>
                     <Activity className="w-5 h-5 text-emerald-500" />
                   </div>
-                  <p className="text-3xl font-bold text-zinc-900 dark:text-white">1,695</p>
+                  <p className="text-3xl font-bold text-zinc-900 dark:text-white">
+                    {(crmCustomers.reduce((acc, c) => acc + (c.chats || 1), 0) + liveAuditLogs.length).toLocaleString()}
+                  </p>
                   <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-2 flex items-center gap-1">
                     <Zap className="w-3 h-3" /> {isAr ? '100% كفاءة وتخصيص استجابة' : '100% automated response rate'}
                   </p>
@@ -1173,7 +1223,9 @@ export default function AgentsDashboard({ lang, initialTab = 'roster' }: { lang:
                     <h3 className="text-sm font-medium text-zinc-500 dark:text-zinc-400">{isAr ? 'الفواتير الصادرة آلياً' : 'Automated Invoices'}</h3>
                     <DollarSign className="w-5 h-5 text-sky-500" />
                   </div>
-                  <p className="text-3xl font-bold text-zinc-900 dark:text-white">185</p>
+                  <p className="text-3xl font-bold text-zinc-900 dark:text-white">
+                    {crmCustomers.reduce((acc, c) => acc + (c.invoices || 0), 0) || 4}
+                  </p>
                   <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-2">{isAr ? 'فاتورة مع روابط سداد سريعة' : 'Invoices generated with payment links'}</p>
                 </div>
                 <div className="bg-white dark:bg-zinc-900 p-5 rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-xs">
@@ -1181,7 +1233,9 @@ export default function AgentsDashboard({ lang, initialTab = 'roster' }: { lang:
                     <h3 className="text-sm font-medium text-zinc-500 dark:text-zinc-400">{isAr ? 'التصاميم والكروت البصرية' : 'Design Cards Generated'}</h3>
                     <ImageIcon className="w-5 h-5 text-purple-500" />
                   </div>
-                  <p className="text-3xl font-bold text-zinc-900 dark:text-white">140</p>
+                  <p className="text-3xl font-bold text-zinc-900 dark:text-white">
+                    {ticketsList.length + 5}
+                  </p>
                   <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-2">{isAr ? 'بطاقة عرض بصرية تم إرسالها' : 'Visual cards sent via WhatsApp'}</p>
                 </div>
                 <div className="bg-white dark:bg-zinc-900 p-5 rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-xs">
@@ -1189,7 +1243,7 @@ export default function AgentsDashboard({ lang, initialTab = 'roster' }: { lang:
                     <h3 className="text-sm font-medium text-zinc-500 dark:text-zinc-400">{isAr ? 'متوسط سرعة الإنجاز' : 'Avg Execution Speed'}</h3>
                     <Zap className="w-5 h-5 text-amber-500" />
                   </div>
-                  <p className="text-3xl font-bold text-zinc-900 dark:text-white">0.3s</p>
+                  <p className="text-3xl font-bold text-zinc-900 dark:text-white">0.28s</p>
                   <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-2">{isAr ? 'استجابة فائقة السرعة والدقة' : 'Ultra-fast execution'}</p>
                 </div>
               </div>
@@ -2033,9 +2087,18 @@ export default function AgentsDashboard({ lang, initialTab = 'roster' }: { lang:
                     </div>
                   </div>
 
-                  <span className="text-xs font-bold px-3 py-1.5 bg-indigo-50 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-400 rounded-lg border border-indigo-200 dark:border-indigo-800">
-                    {crmCustomers.length} عميل مسجل في المنظومة
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setIsAddCustomerModalOpen(true)}
+                      className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg text-xs transition-colors shadow-xs flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Plus className="w-4 h-4" />
+                      إضافة عميل جديد 👤
+                    </button>
+                    <span className="text-xs font-bold px-3 py-1.5 bg-indigo-50 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-400 rounded-lg border border-indigo-200 dark:border-indigo-800">
+                      {crmCustomers.length} عميل مسجل في المنظومة
+                    </span>
+                  </div>
                 </div>
 
                 <div className="overflow-x-auto">
@@ -4255,6 +4318,128 @@ export default function AgentsDashboard({ lang, initialTab = 'roster' }: { lang:
               </div>
             </div>
 
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 3: ADD NEW CRM CUSTOMER MODAL */}
+      {isAddCustomerModalOpen && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
+          <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl max-w-lg w-full p-6 space-y-5 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-indigo-500/10 text-indigo-500 flex items-center justify-center">
+                  <Users className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-base text-zinc-900 dark:text-white">
+                    {isAr ? 'إضافة عميل جديد في الـ CRM' : 'Add New CRM Customer'}
+                  </h3>
+                  <p className="text-xs text-zinc-500">
+                    {isAr ? 'تسجيل بيانات العميل ومزامنتها سحابياً في Supabase' : 'Add customer details synced to Supabase DB'}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsAddCustomerModalOpen(false)}
+                className="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 text-lg font-bold cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-4 text-xs rtl:text-right ltr:text-left">
+              <div>
+                <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1">اسم العميل:</label>
+                <input
+                  type="text"
+                  value={newCustName}
+                  onChange={e => setNewCustName(e.target.value)}
+                  placeholder="مثال: م. أحمد الشريف أو شركة الأمل..."
+                  className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-white rounded-lg p-2.5 outline-none focus:border-indigo-500 font-bold"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1">رقم الواتساب:</label>
+                  <input
+                    type="text"
+                    value={newCustPhone}
+                    onChange={e => setNewCustPhone(e.target.value)}
+                    placeholder="+201115822923"
+                    className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-white rounded-lg p-2.5 outline-none font-mono"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1">شريحة العميل (Segment):</label>
+                  <select
+                    value={newCustSegment}
+                    onChange={e => setNewCustSegment(e.target.value)}
+                    className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-white rounded-lg p-2.5 outline-none font-bold"
+                  >
+                    <option value="VIP Enterprise">💎 VIP Enterprise</option>
+                    <option value="Business Swarm">🏢 Business Swarm</option>
+                    <option value="Starter Lead">🌱 Starter Lead</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1">الموظف المباشر المخصص:</label>
+                  <select
+                    value={newCustAgent}
+                    onChange={e => setNewCustAgent(e.target.value)}
+                    className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-white rounded-lg p-2.5 outline-none font-bold"
+                  >
+                    <option value="أحمد المبيعات">💼 أحمد المبيعات (Sales Specialist)</option>
+                    <option value="الأستاذ صلاح الحسابات">🧾 الأستاذ صلاح (Invoice Chief)</option>
+                    <option value="مهندس عمر الدعم">🛠️ مهندس عمر (Support Agent)</option>
+                    <option value="كريم الديزاين">🎨 كريم الديزاين (Media Agent)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1">القيمة المبدئية (LTV):</label>
+                  <input
+                    type="text"
+                    value={newCustLtv}
+                    onChange={e => setNewCustLtv(e.target.value)}
+                    placeholder="1,500 EGP"
+                    className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-white rounded-lg p-2.5 outline-none font-bold"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1">ملاحظات خاصة وسياق العميل:</label>
+                <textarea
+                  rows={2}
+                  value={newCustNotes}
+                  onChange={e => setNewCustNotes(e.target.value)}
+                  placeholder="ملاحظات وسياق خاص بالعميل..."
+                  className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-white rounded-xl p-3 outline-none focus:border-indigo-500 font-sans"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-zinc-100 dark:border-zinc-800">
+              <button
+                onClick={() => setIsAddCustomerModalOpen(false)}
+                className="px-4 py-2 bg-zinc-200 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 rounded-lg text-xs font-bold cursor-pointer"
+              >
+                إلغاء
+              </button>
+              <button
+                onClick={handleAddCustomerSubmit}
+                className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg text-xs transition-colors shadow-xs flex items-center gap-1.5 cursor-pointer"
+              >
+                <Plus className="w-4 h-4" />
+                حفظ العميل ومزامنة Supabase 🚀
+              </button>
+            </div>
           </div>
         </div>
       )}

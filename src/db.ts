@@ -1,8 +1,22 @@
 import dotenv from 'dotenv';
 import fs from 'fs';
 import path from 'path';
+import { createClient } from '@supabase/supabase-js';
 import { User, Conversation, Message, StatusStory, DeviceLink, Campaign, CatalogItem, OtpLog, OtpSettings, Folder, Ticket, CallLog } from './types.js';
 import { backupDbToSupabase, restoreDbFromSupabase, isSupabaseConfigured } from './supabase.js';
+
+export function getSupabaseClient() {
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (url && key) {
+    try {
+      return createClient(url, key);
+    } catch (e) {
+      return null;
+    }
+  }
+  return null;
+}
 
 dotenv.config();
 
@@ -63,6 +77,8 @@ export interface DbSchema {
   agentStats?: Record<string, AgentStatsItem>;
   agentAuditLogs?: AgentAuditLog[];
   paymentSettings?: PaymentSettings;
+  paymentConfig?: PaymentConfig;
+  crmCustomers?: any[];
   callLogs?: CallLog[];
 }
 
@@ -1272,4 +1288,131 @@ export function saveCallLog(log: any): any {
   }
   writeDb(db);
   return log;
+}
+
+// Payment Settings Management & Supabase Sync
+export interface PaymentConfig {
+  vodafoneCashNo: string;
+  instaPayId: string;
+  bankIbanNo: string;
+  accountHolderName: string;
+  bankName: string;
+  vodafoneActive: boolean;
+  instaPayActive: boolean;
+  bankActive: boolean;
+  screenshotRequired: boolean;
+}
+
+export function getPaymentConfig(): PaymentConfig {
+  const db = readDb();
+  if (!db.paymentConfig) {
+    db.paymentConfig = {
+      vodafoneCashNo: '01115822923',
+      instaPayId: 'trkroshdi@instapay',
+      bankIbanNo: 'EG1234567890123456789012345',
+      accountHolderName: 'طارق رشدي (Tarek Roshdi)',
+      bankName: 'البنك الأهلي المصري (NBE)',
+      vodafoneActive: true,
+      instaPayActive: true,
+      bankActive: true,
+      screenshotRequired: true
+    };
+    writeDb(db);
+  }
+  return db.paymentConfig;
+}
+
+export function savePaymentConfig(cfg: Partial<PaymentConfig>): PaymentConfig {
+  const db = readDb();
+  const current = getPaymentConfig();
+  const updated = { ...current, ...cfg };
+  db.paymentConfig = updated;
+  writeDb(db);
+
+  // Sync to Supabase cloud
+  const supabase = getSupabaseClient();
+  if (supabase) {
+    Promise.resolve(supabase.from('payment_settings').upsert({
+      id: 'default_config',
+      vodafone_cash_no: updated.vodafoneCashNo,
+      instapay_id: updated.instaPayId,
+      bank_iban: updated.bankIbanNo,
+      account_holder: updated.accountHolderName,
+      bank_name: updated.bankName,
+      updated_at: new Date().toISOString()
+    })).catch(e => console.error('[Supabase Sync] Payment config error:', e));
+  }
+
+  return updated;
+}
+
+// CRM Customers Persistence
+export function getCRMCustomers(): any[] {
+  const db = readDb();
+  if (!db.crmCustomers || !Array.isArray(db.crmCustomers) || db.crmCustomers.length === 0) {
+    db.crmCustomers = [
+      { 
+        id: 'CUST-01', 
+        name: 'م. طارق رشدي', 
+        phone: '+201115822923', 
+        ltv: '12,500 EGP', 
+        segment: 'VIP Enterprise', 
+        chats: 40, 
+        invoices: 4, 
+        status: 'Active Buyer', 
+        agent: 'أحمد المبيعات',
+        notes: 'المالك والمؤسس الرئيسي للمنظومة.'
+      }
+    ];
+    writeDb(db);
+  }
+  return db.crmCustomers;
+}
+
+export function saveCRMCustomer(customer: any): any {
+  const db = readDb();
+  const list = getCRMCustomers();
+  const existingIdx = list.findIndex((c: any) => c.id === customer.id || c.phone === customer.phone);
+  
+  let savedCust: any;
+  if (existingIdx >= 0) {
+    list[existingIdx] = { ...list[existingIdx], ...customer };
+    savedCust = list[existingIdx];
+  } else {
+    const custId = customer.id || `CUST-${(list.length + 1).toString().padStart(2, '0')}`;
+    savedCust = {
+      id: custId,
+      name: customer.name,
+      phone: customer.phone,
+      ltv: customer.ltv || '0 EGP',
+      segment: customer.segment || 'Starter Lead',
+      chats: customer.chats || 1,
+      invoices: customer.invoices || 0,
+      status: customer.status || 'Active Lead',
+      agent: customer.agent || 'أحمد المبيعات',
+      notes: customer.notes || '',
+      createdAt: new Date().toISOString()
+    };
+    list.unshift(savedCust);
+  }
+  db.crmCustomers = list;
+  writeDb(db);
+
+  // Sync to Supabase cloud
+  const supabase = getSupabaseClient();
+  if (supabase) {
+    Promise.resolve(supabase.from('crm_customers').upsert({
+      id: savedCust.id,
+      name: savedCust.name,
+      phone: savedCust.phone,
+      ltv: savedCust.ltv,
+      segment: savedCust.segment,
+      status: savedCust.status,
+      assigned_agent: savedCust.agent,
+      notes: savedCust.notes,
+      updated_at: new Date().toISOString()
+    })).catch(e => console.error('[Supabase Sync] CRM customer error:', e));
+  }
+
+  return savedCust;
 }
