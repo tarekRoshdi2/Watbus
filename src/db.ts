@@ -243,6 +243,30 @@ export async function syncDatabaseWithSupabase(): Promise<boolean> {
       console.log('[Supabase DB Sync] Restoring latest database state from Supabase...');
       const remoteDb = supabaseRecord.data;
       const currentLocal = readDb();
+
+      // Intelligently merge devices so AI settings and knowledge sources are never overwritten by empty fields
+      const mergedDevices: Record<string, DeviceLink> = { ...(remoteDb.devices || {}) };
+      if (currentLocal.devices) {
+        for (const [devId, localDev] of Object.entries(currentLocal.devices)) {
+          const remoteDev = mergedDevices[devId];
+          if (!remoteDev) {
+            mergedDevices[devId] = localDev;
+          } else {
+            mergedDevices[devId] = {
+              ...remoteDev,
+              ...localDev,
+              aiAgentEnabled: localDev.aiAgentEnabled ?? remoteDev.aiAgentEnabled,
+              aiAgentName: localDev.aiAgentName || remoteDev.aiAgentName,
+              aiAgentInstructions: localDev.aiAgentInstructions || remoteDev.aiAgentInstructions,
+              aiKnowledgeBase: localDev.aiKnowledgeBase || remoteDev.aiKnowledgeBase,
+              knowledgeBaseSources: (localDev.knowledgeBaseSources && localDev.knowledgeBaseSources.length > 0)
+                ? localDev.knowledgeBaseSources
+                : remoteDev.knowledgeBaseSources
+            };
+          }
+        }
+      }
+
       const mergedDb: DbSchema = {
         ...currentLocal,
         ...remoteDb,
@@ -251,7 +275,7 @@ export async function syncDatabaseWithSupabase(): Promise<boolean> {
         tickets: { ...currentLocal.tickets, ...(remoteDb.tickets || {}) },
         agentsConfig: { ...currentLocal.agentsConfig, ...(remoteDb.agentsConfig || {}) },
         campaigns: { ...currentLocal.campaigns, ...(remoteDb.campaigns || {}) },
-        devices: { ...currentLocal.devices, ...(remoteDb.devices || {}) }
+        devices: mergedDevices
       };
       cachedDb = mergedDb;
       fs.writeFileSync(DB_FILE, JSON.stringify(mergedDb, null, 2), 'utf-8');
@@ -605,7 +629,13 @@ export function saveDevice(device: DeviceLink): DeviceLink {
       method: device.method,
       status: device.status,
       tenantId: 'default',
-      userId: validUserId
+      userId: validUserId,
+      aiAgentEnabled: !!device.aiAgentEnabled,
+      aiAgentName: device.aiAgentName || null,
+      aiAgentInstructions: device.aiAgentInstructions || null,
+      aiModel: device.aiModel || 'gemini-1.5-flash',
+      aiTemperature: device.aiTemperature || 0.7,
+      aiKnowledgeBase: device.aiKnowledgeBase || null
     },
     create: {
       id: device.id,
@@ -615,9 +645,18 @@ export function saveDevice(device: DeviceLink): DeviceLink {
       method: device.method,
       status: device.status,
       tenantId: 'default',
-      userId: validUserId
+      userId: validUserId,
+      aiAgentEnabled: !!device.aiAgentEnabled,
+      aiAgentName: device.aiAgentName || null,
+      aiAgentInstructions: device.aiAgentInstructions || null,
+      aiModel: device.aiModel || 'gemini-1.5-flash',
+      aiTemperature: device.aiTemperature || 0.7,
+      aiKnowledgeBase: device.aiKnowledgeBase || null
     }
   }).catch(e => console.error('[Prisma Sync] Error saving device', e));
+
+  // Immediate cloud backup trigger for device configuration
+  backupDbToSupabase(db).catch(e => console.error('[Supabase Device Backup Error]', e));
 
   return device;
 }
