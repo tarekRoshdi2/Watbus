@@ -3958,27 +3958,80 @@ var server = import_http.default.createServer(app);
 var wss = new import_ws.WebSocketServer({ noServer: true });
 var activeConnections = /* @__PURE__ */ new Map();
 var autoPairCooldowns = /* @__PURE__ */ new Map();
+var geminiKeysPool = [];
+if (process.env.GEMINI_API_KEYS) {
+  geminiKeysPool.push(...process.env.GEMINI_API_KEYS.split(",").map((k) => k.trim()).filter(Boolean));
+}
+if (process.env.GEMINI_API_KEY && !geminiKeysPool.includes(process.env.GEMINI_API_KEY)) {
+  geminiKeysPool.unshift(process.env.GEMINI_API_KEY);
+}
+var activeKeyIndex = 0;
 var ai = null;
-if (process.env.GEMINI_API_KEY) {
+function initGeminiClient(keyIndex = 0) {
+  const currentKey = geminiKeysPool[keyIndex] || process.env.GEMINI_API_KEY;
+  if (!currentKey) return null;
   try {
-    ai = new import_genai9.GoogleGenAI({
-      apiKey: process.env.GEMINI_API_KEY,
+    const client = new import_genai9.GoogleGenAI({
+      apiKey: currentKey,
       httpOptions: {
         headers: {
           "User-Agent": "aistudio-build"
         }
       }
     });
-    console.log("Gemini AI initialized successfully.");
+    console.log(`\u{1F7E2} Gemini AI initialized successfully using Key #${keyIndex + 1} (${currentKey.substring(0, 8)}...).`);
+    return client;
   } catch (err) {
-    console.error("Failed to initialize Gemini AI client:", err);
+    console.error(`Failed to initialize Gemini AI client for Key #${keyIndex + 1}:`, err);
+    return null;
   }
-} else {
-  console.log("GEMINI_API_KEY not found in environment. Meta AI will operate in interactive simulation mode.");
+}
+ai = initGeminiClient(0);
+async function callOpenRouterFallback(contents, systemPrompt) {
+  const openRouterKey = process.env.OPENROUTER_API_KEY || process.env.VITE_OPENROUTER_API_KEY;
+  if (!openRouterKey) return null;
+  try {
+    let userPrompt = "";
+    if (typeof contents === "string") {
+      userPrompt = contents;
+    } else if (Array.isArray(contents)) {
+      userPrompt = contents.map((c) => typeof c === "string" ? c : JSON.stringify(c)).join("\n");
+    } else if (contents?.parts) {
+      userPrompt = contents.parts.map((p) => p.text || "").join("\n");
+    } else {
+      userPrompt = JSON.stringify(contents);
+    }
+    console.log("\u26A1 [OpenRouter API Fallback] Dispatching query via OpenRouter...");
+    const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${openRouterKey}`,
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://chat.expocore.net",
+        "X-Title": "ChatCore Enterprise AI"
+      },
+      body: JSON.stringify({
+        model: "google/gemini-2.0-flash-lite:free",
+        messages: [
+          ...systemPrompt ? [{ role: "system", content: systemPrompt }] : [],
+          { role: "user", content: userPrompt }
+        ]
+      })
+    });
+    const data = await res.json();
+    if (data?.choices?.[0]?.message?.content) {
+      const generatedText = data.choices[0].message.content;
+      console.log("\u{1F7E2} [OpenRouter Fallback Success] Successfully generated response via OpenRouter!");
+      return { text: generatedText };
+    }
+  } catch (err) {
+    console.error("[OpenRouter Fallback Error]:", err);
+  }
+  return null;
 }
 async function callGeminiWithRetry(params, maxAttempts = 3) {
-  if (!ai) {
-    throw new Error("Gemini AI client is not initialized");
+  if (!ai && geminiKeysPool.length > 0) {
+    ai = initGeminiClient(0);
   }
   let attempts = 0;
   let lastError = null;
@@ -3986,7 +4039,7 @@ async function callGeminiWithRetry(params, maxAttempts = 3) {
   if (params.model && !params.model.includes("3.5") && !params.model.includes("2.5") && !params.model.includes("1.5")) {
     modelsToTry = [params.model, "gemini-2.0-flash", "gemini-2.0-flash-lite"];
   }
-  while (attempts < maxAttempts) {
+  while (attempts < maxAttempts && ai) {
     const currentModel = modelsToTry[attempts] || "gemini-2.0-flash";
     try {
       if (attempts > 0) {
@@ -4003,6 +4056,11 @@ async function callGeminiWithRetry(params, maxAttempts = 3) {
       lastError = err;
       const errStr = String(err?.message || err);
       const isHardQuotaExceeded = errStr.includes("quota") || errStr.includes("billing") || errStr.includes("FreeTier") || errStr.includes("RESOURCE_EXHAUSTED");
+      if (isHardQuotaExceeded && geminiKeysPool.length > 1) {
+        activeKeyIndex = (activeKeyIndex + 1) % geminiKeysPool.length;
+        console.warn(`\u{1F504} [Gemini Multi-Key Rotation] Key #${activeKeyIndex} quota reached. Rotating to Key #${activeKeyIndex + 1}...`);
+        ai = initGeminiClient(activeKeyIndex);
+      }
       const nextModel = modelsToTry[attempts];
       const isDifferentModel = !!(nextModel && nextModel !== currentModel);
       const isRetryable = isDifferentModel || !isHardQuotaExceeded && (err?.status === 503 || err?.status === 429 || errStr.includes("503") || errStr.includes("429") || errStr.includes("demand") || errStr.includes("temporary") || errStr.includes("UNAVAILABLE") || errStr.includes("ResourceExhausted") || errStr.includes("overloaded"));
@@ -4018,6 +4076,10 @@ async function callGeminiWithRetry(params, maxAttempts = 3) {
         break;
       }
     }
+  }
+  const openRouterRes = await callOpenRouterFallback(params.contents, params.config?.systemInstruction);
+  if (openRouterRes) {
+    return openRouterRes;
   }
   console.warn("[Gemini Fallback Safety] All Gemini API attempts failed or quota limit reached. Returning graceful fallback text.");
   return {
@@ -8970,6 +9032,51 @@ Using the above internal context, now write your complete response as ${device.a
             }
           });
           responseText = response?.text || "";
+          if (!responseText || responseText.includes("\u0623\u0633\u062A\u0637\u064A\u0639 \u0645\u0633\u0627\u0639\u062F\u062A\u0643 \u0641\u064A \u0627\u0644\u0627\u0633\u062A\u0641\u0633\u0627\u0631\u0627\u062A\u060C \u0627\u0644\u0641\u0648\u0627\u062A\u064A\u0631\u060C \u0648\u0627\u0644\u0627\u0634\u062A\u0631\u0627\u0643\u0627\u062A")) {
+            const uText = (userMessageText || "").toLowerCase();
+            if (swarmRes?.invoiceData || uText.includes("\u0641\u0627\u062A\u0648\u0631\u0629") || uText.includes("\u0633\u062F\u0627\u062F") || uText.includes("\u0628\u064A\u0627\u0646\u0627\u062A \u0627\u0644\u062F\u0641\u0639") || uText.includes("inv-") || uText.includes("\u0627\u0644\u062F\u0641\u0639")) {
+              const invNo = swarmRes?.invoiceData?.invoiceNumber || "INV-CC-" + Math.floor(1e5 + Math.random() * 9e5);
+              const amt = swarmRes?.invoiceData?.amount || 2500;
+              responseText = `\u{1F9FE} **\u062A\u0641\u0627\u0635\u064A\u0644 \u0628\u064A\u0627\u0646\u0627\u062A \u0627\u0644\u0641\u0627\u062A\u0648\u0631\u0629 \u0648\u0627\u0644\u062F\u0641\u0639 \u0627\u0644\u0641\u0648\u0631\u064A (ChatCore Invoice)**:
+
+\u2022 **\u0631\u0642\u0645 \u0627\u0644\u0641\u0627\u062A\u0648\u0631\u0629**: #${invNo}
+\u2022 **\u0627\u0644\u0645\u0628\u0644\u063A \u0627\u0644\u0645\u0633\u062A\u062D\u0642**: ${amt} \u062C.\u0645 (\u0627\u0644\u0633\u0639\u0631 \u0634\u0627\u0645\u0644 \u0648\u0635\u0627\u0641\u064A 100% \u0628\u062F\u0648\u0646 \u0623\u064A \u0636\u0631\u064A\u0628\u0629 \u0625\u0636\u0627\u0641\u064A\u0629)
+\u2022 **\u0627\u0644\u0628\u0627\u0642\u0629**: \u0628\u0627\u0642\u0629 \u0627\u0644\u0645\u062D\u062A\u0631\u0641\u064A\u0646 \u0648\u0627\u0644\u0623\u0639\u0645\u0627\u0644 \u0627\u0644\u0645\u062A\u0631\u0627\u0628\u0637\u0629 (Pro Swarm)
+
+\u{1F4F1} **\u062D\u0633\u0627\u0628\u0627\u062A \u0627\u0644\u062A\u062D\u0648\u064A\u0644 \u0627\u0644\u0645\u0639\u062A\u0645\u062F\u0629**:
+\u2022 **\u062A\u0637\u0628\u064A\u0642 \u0625\u0646\u0633\u062A\u0627\u0628\u0627\u064A (InstaPay)**: \`trkroshdi@instapay\` (\u0628\u0627\u0633\u0645: \u0637\u0627\u0631\u0642 \u0631\u0634\u062F\u064A)
+\u2022 **\u0627\u0644\u0645\u062D\u0627\u0641\u0638 \u0627\u0644\u0625\u0644\u0643\u062A\u0631\u0648\u0646\u064A\u0629 (\u0641\u0648\u062F\u0627\u0641\u0648\u0646 \u0643\u0627\u0634)**: \`01115822923\`
+\u2022 **\u0627\u0644\u062A\u062D\u0648\u064A\u0644 \u0627\u0644\u0628\u0646\u0643\u064A (IBAN)**: \`EG1234567890123456789012345\`
+
+\u0628\u0645\u062C\u0631\u062F \u0633\u062F\u0627\u062F \u0627\u0644\u0645\u0628\u0644\u063A\u060C \u064A\u0631\u062C\u0649 \u0625\u0631\u0633\u0627\u0644 \u0635\u0648\u0631\u0629 \u0625\u064A\u0635\u0627\u0644 \u0627\u0644\u062A\u062D\u0648\u064A\u0644 (Screenshot) \u0647\u0646\u0627 \u0648\u0633\u0646\u0642\u0648\u0645 \u0628\u062A\u0641\u0639\u064A\u0644 \u062D\u0633\u0627\u0628\u0643 \u0623\u0648\u062A\u0648\u0645\u0627\u062A\u064A\u0643\u064A\u0627\u064B \u{1F680}`;
+            } else if (uText.includes("\u062E\u062F\u0645\u0629") || uText.includes("\u062E\u062F\u0645\u0627\u062A") || uText.includes("\u0628\u0627\u0642\u0629") || uText.includes("\u0628\u0627\u0642\u0627\u062A") || uText.includes("\u0623\u0633\u0639\u0627\u0631") || uText.includes("\u0627\u0633\u0639\u0627\u0631")) {
+              responseText = `\u{1F451} **\u0628\u0627\u0642\u0627\u062A \u0648\u0623\u0633\u0639\u0627\u0631 \u0645\u0646\u0635\u0629 ChatCore \u0644\u0644\u0630\u0643\u0627\u0621 \u0627\u0644\u0627\u0635\u0637\u0646\u0627\u0639\u064A**:
+
+1\uFE0F\u20E3 **\u0627\u0644\u0628\u0627\u0642\u0629 \u0627\u0644\u0623\u0633\u0627\u0633\u064A\u0629 (Starter)** \u2014 1,000 \u062C.\u0645/\u0634\u0647\u0631\u064A\u0627\u064B
+\u2022 \u062C\u0647\u0627\u0632 \u0648\u0627\u062A\u0633\u0627\u0628 \u0648\u0627\u062D\u062F + \u0643\u0648\u062F OTP \u062A\u0644\u0642\u0627\u0626\u064A + \u0633\u062C\u0644 \u0645\u062D\u0627\u062F\u062B\u0627\u062A.
+
+2\uFE0F\u20E3 **\u0627\u0644\u0628\u0627\u0642\u0629 \u0627\u0644\u0627\u062D\u062A\u0631\u0627\u0641\u064A\u0629 (Pro)** \u2014 2,000 \u062C.\u0645/\u0634\u0647\u0631\u064A\u0627\u064B (\u2B50 \u0627\u0644\u0623\u0643\u062B\u0631 \u0627\u062E\u062A\u064A\u0627\u0631\u0627\u064B)
+\u2022 5 \u0623\u062C\u0647\u0632\u0629 + \u0637\u0627\u0642\u0645 \u0627\u0644\u0645\u0648\u0638\u0641\u064A\u0646 \u0627\u0644\u0630\u0643\u064A\u064A\u0646 \u0628\u0627\u0644\u0643\u0627\u0645\u0644 + \u062A\u0641\u0631\u064A\u063A \u0627\u0644\u0635\u0648\u062A\u064A\u0627\u062A.
+
+3\uFE0F\u20E3 **\u0628\u0627\u0642\u0629 \u0627\u0644\u0645\u0624\u0633\u0633\u0627\u062A (Enterprise HQ)** \u2014 4,000 \u062C.\u0645/\u0634\u0647\u0631\u064A\u0627\u064B
+\u2022 \u0623\u062C\u0647\u0632\u0629 \u0644\u0627 \u0646\u0647\u0627\u0626\u064A\u0629 + \u0645\u0642\u0631 \u0627\u0644\u0645\u0648\u0638\u0641\u064A\u0646 HQ + \u062F\u0639\u0645 VIP 24/7.
+
+\u0627\u062E\u062A\u0631 \u0627\u0644\u0628\u0627\u0642\u0629 \u0627\u0644\u0645\u0646\u0627\u0633\u0628\u0629 \u0648\u0633\u0646\u0631\u0633\u0644 \u0644\u0643 \u0631\u0627\u0628\u0637 \u0648\u0628\u064A\u0627\u0646\u0627\u062A \u0627\u0644\u062F\u0641\u0639 \u0627\u0644\u0641\u0648\u0631\u064A \u{1F680}`;
+            } else if (uText.includes("\u0623\u0647\u0644\u0627\u064B") || uText.includes("\u0627\u0647\u0644\u0627") || uText.includes("\u0633\u0644\u0627\u0645") || uText.includes("\u0645\u0631\u062D\u0628\u0627") || uText.includes("\u0627\u0632\u064A\u0643")) {
+              responseText = `\u0623\u0647\u0644\u0627\u064B \u0628\u0643 \u064A\u0627 \u0623\u0633\u062A\u0627\u0630 ${pushName || "\u0627\u0644\u0639\u0645\u064A\u0644 \u0627\u0644\u0639\u0632\u064A\u0632"}! \u{1F44B}
+\u0645\u0639\u0627\u0643 *\u0623\u062D\u0645\u062F \u0627\u0644\u0645\u0628\u064A\u0639\u0627\u062A* \u0648\u0637\u0627\u0642\u0645 \u0627\u0644\u0645\u0648\u0638\u0641\u064A\u0646 \u0627\u0644\u0630\u0643\u064A\u064A\u0646 \u0641\u064A \u0645\u0646\u0635\u0629 ChatCore.
+\u0643\u064A\u0641 \u064A\u0645\u0643\u0646\u0646\u064A \u0645\u0633\u0627\u0639\u062F\u062A\u0643 \u0627\u0644\u064A\u0648\u0645 \u0641\u064A \u062A\u0641\u0639\u064A\u0644 \u062E\u062F\u0645\u0627\u062A \u0627\u0644\u0648\u0627\u062A\u0633\u0627\u0628 \u0648\u0627\u0644\u0631\u0628\u0637 \u0627\u0644\u0630\u0643\u064A\u061F \u{1F680}`;
+            } else {
+              responseText = `\u0645\u0631\u062D\u0628\u0627\u064B \u0628\u0643 \u064A\u0627 \u0623\u0633\u062A\u0627\u0630 ${pushName || "\u0627\u0644\u0639\u0645\u064A\u0644 \u0627\u0644\u0639\u0632\u064A\u0632"}! \u{1F44B}
+\u0645\u0639\u0627\u0643 \u0637\u0627\u0642\u0645 \u0627\u0644\u0645\u0648\u0638\u0641\u064A\u0646 \u0627\u0644\u0630\u0643\u064A\u064A\u0646 \u0641\u064A \u0645\u0646\u0635\u0629 ChatCore.
+\u0623\u0633\u062A\u0637\u064A\u0639 \u0645\u0633\u0627\u0639\u062F\u062A\u0643 \u0641\u0648\u0631\u0627\u064B \u0641\u064A:
+\u2022 \u{1F9FE} \u062A\u0641\u0627\u0635\u064A\u0644 \u0627\u0644\u0641\u0648\u0627\u062A\u064A\u0631 \u0648\u0627\u0644\u062A\u062D\u0648\u064A\u0644 \u0627\u0644\u0641\u0648\u0631\u064A (InstaPay / \u0641\u0648\u062F\u0627\u0641\u0648\u0646 \u0643\u0627\u0634)
+\u2022 \u{1F451} \u0628\u0627\u0642\u0627\u062A \u0648\u0623\u0633\u0639\u0627\u0631 \u0627\u0644\u0627\u0634\u062A\u0631\u0627\u0643\u0627\u062A
+\u2022 \u{1F6E0}\uFE0F \u0627\u0644\u062F\u0639\u0645 \u0627\u0644\u0641\u0646\u064A \u0648\u062A\u0641\u0639\u064A\u0644 \u062D\u0633\u0627\u0628\u0627\u062A \u0627\u0644\u0648\u0627\u062A\u0633\u0627\u0628
+
+\u062A\u0641\u0636\u0644 \u0628\u0643\u062A\u0627\u0628\u0629 \u0637\u0644\u0628\u0643 \u0648\u0633\u0623\u0642\u0648\u0645 \u0628\u062E\u062F\u0645\u062A\u0643 \u0641\u0648\u0631\u0627\u064B \u{1F680}`;
+            }
+          }
         }
         console.log(`[AI Agent] Generated text response: "${responseText.substring(0, 100)}${responseText.length > 100 ? "..." : ""}"`);
         if (shouldReplyWithVoice && responseText) {

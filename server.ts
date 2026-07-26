@@ -320,29 +320,91 @@ const activeConnections = new Map<string, WebSocket>();
 // Auto-Pair cooldown tracker: prevents re-triggering session start within 30s per device
 const autoPairCooldowns = new Map<string, number>();
 
-// Initialize Gemini AI Client
+// Initialize Gemini API Keys Pool & Multi-Key Rotation
+const geminiKeysPool: string[] = [];
+if (process.env.GEMINI_API_KEYS) {
+  geminiKeysPool.push(...process.env.GEMINI_API_KEYS.split(',').map(k => k.trim()).filter(Boolean));
+}
+if (process.env.GEMINI_API_KEY && !geminiKeysPool.includes(process.env.GEMINI_API_KEY)) {
+  geminiKeysPool.unshift(process.env.GEMINI_API_KEY);
+}
+
+let activeKeyIndex = 0;
 let ai: GoogleGenAI | null = null;
-if (process.env.GEMINI_API_KEY) {
+
+function initGeminiClient(keyIndex = 0): GoogleGenAI | null {
+  const currentKey = geminiKeysPool[keyIndex] || process.env.GEMINI_API_KEY;
+  if (!currentKey) return null;
   try {
-    ai = new GoogleGenAI({
-      apiKey: process.env.GEMINI_API_KEY,
+    const client = new GoogleGenAI({
+      apiKey: currentKey,
       httpOptions: {
         headers: {
           'User-Agent': 'aistudio-build',
         },
       },
     });
-    console.log('Gemini AI initialized successfully.');
+    console.log(`🟢 Gemini AI initialized successfully using Key #${keyIndex + 1} (${currentKey.substring(0, 8)}...).`);
+    return client;
   } catch (err) {
-    console.error('Failed to initialize Gemini AI client:', err);
+    console.error(`Failed to initialize Gemini AI client for Key #${keyIndex + 1}:`, err);
+    return null;
   }
-} else {
-  console.log('GEMINI_API_KEY not found in environment. Meta AI will operate in interactive simulation mode.');
+}
+
+ai = initGeminiClient(0);
+
+/**
+ * OpenRouter API Fallback Engine (Triggered when Gemini API quota is exhausted)
+ */
+async function callOpenRouterFallback(contents: any, systemPrompt?: string): Promise<any> {
+  const openRouterKey = process.env.OPENROUTER_API_KEY || process.env.VITE_OPENROUTER_API_KEY;
+  if (!openRouterKey) return null;
+
+  try {
+    let userPrompt = '';
+    if (typeof contents === 'string') {
+      userPrompt = contents;
+    } else if (Array.isArray(contents)) {
+      userPrompt = contents.map(c => typeof c === 'string' ? c : JSON.stringify(c)).join('\n');
+    } else if (contents?.parts) {
+      userPrompt = contents.parts.map((p: any) => p.text || '').join('\n');
+    } else {
+      userPrompt = JSON.stringify(contents);
+    }
+
+    console.log('⚡ [OpenRouter API Fallback] Dispatching query via OpenRouter...');
+    const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${openRouterKey}`,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': 'https://chat.expocore.net',
+        'X-Title': 'ChatCore Enterprise AI'
+      },
+      body: JSON.stringify({
+        model: 'google/gemini-2.0-flash-lite:free',
+        messages: [
+          ...(systemPrompt ? [{ role: 'system', content: systemPrompt }] : []),
+          { role: 'user', content: userPrompt }
+        ]
+      })
+    });
+
+    const data = await res.json();
+    if (data?.choices?.[0]?.message?.content) {
+      const generatedText = data.choices[0].message.content;
+      console.log('🟢 [OpenRouter Fallback Success] Successfully generated response via OpenRouter!');
+      return { text: generatedText };
+    }
+  } catch (err) {
+    console.error('[OpenRouter Fallback Error]:', err);
+  }
+  return null;
 }
 
 /**
- * Helper to call Gemini API with robust retries, exponential backoff, and model fallbacks.
- * This guards against 503 Service Unavailable, 429 Rate Limits, and other transient network issues.
+ * Helper to call Gemini API with robust retries, exponential backoff, Multi-Key Rotation, and OpenRouter fallback.
  */
 async function callGeminiWithRetry(
   params: {
@@ -352,8 +414,8 @@ async function callGeminiWithRetry(
   },
   maxAttempts = 3
 ): Promise<any> {
-  if (!ai) {
-    throw new Error('Gemini AI client is not initialized');
+  if (!ai && geminiKeysPool.length > 0) {
+    ai = initGeminiClient(0);
   }
 
   let attempts = 0;
@@ -365,7 +427,7 @@ async function callGeminiWithRetry(
     modelsToTry = [params.model, 'gemini-2.0-flash', 'gemini-2.0-flash-lite'];
   }
 
-  while (attempts < maxAttempts) {
+  while (attempts < maxAttempts && ai) {
     const currentModel = modelsToTry[attempts] || 'gemini-2.0-flash';
     try {
       if (attempts > 0) {
@@ -384,6 +446,13 @@ async function callGeminiWithRetry(
       const errStr = String(err?.message || err);
       const isHardQuotaExceeded = errStr.includes('quota') || errStr.includes('billing') || errStr.includes('FreeTier') || errStr.includes('RESOURCE_EXHAUSTED');
       
+      // Multi-Key Rotation Check
+      if (isHardQuotaExceeded && geminiKeysPool.length > 1) {
+        activeKeyIndex = (activeKeyIndex + 1) % geminiKeysPool.length;
+        console.warn(`🔄 [Gemini Multi-Key Rotation] Key #${activeKeyIndex} quota reached. Rotating to Key #${activeKeyIndex + 1}...`);
+        ai = initGeminiClient(activeKeyIndex);
+      }
+
       const nextModel = modelsToTry[attempts];
       const isDifferentModel = !!(nextModel && nextModel !== currentModel);
 
@@ -409,6 +478,12 @@ async function callGeminiWithRetry(
     }
   }
   
+  // Try OpenRouter API Fallback before returning generic fallback text
+  const openRouterRes = await callOpenRouterFallback(params.contents, params.config?.systemInstruction);
+  if (openRouterRes) {
+    return openRouterRes;
+  }
+
   console.warn('[Gemini Fallback Safety] All Gemini API attempts failed or quota limit reached. Returning graceful fallback text.');
   return {
     text: 'مرحباً بك! يسعدني خدمتك في منصة ChatCore. أستطيع مساعدتك في الاستفسارات، الفواتير، والاشتراكات.'
@@ -6367,6 +6442,53 @@ Formulate your exceptionally smart and professional response now:`;
               }
             });
             responseText = response?.text || '';
+
+            // SMART INTENT-BASED FALLBACK (When Gemini is on quota limit or returns generic text)
+            if (!responseText || responseText.includes('أستطيع مساعدتك في الاستفسارات، الفواتير، والاشتراكات')) {
+              const uText = (userMessageText || '').toLowerCase();
+              if (swarmRes?.invoiceData || uText.includes('فاتورة') || uText.includes('سداد') || uText.includes('بيانات الدفع') || uText.includes('inv-') || uText.includes('الدفع')) {
+                const invNo = swarmRes?.invoiceData?.invoiceNumber || 'INV-CC-' + Math.floor(100000 + Math.random() * 900000);
+                const amt = swarmRes?.invoiceData?.amount || 2500;
+                responseText = `🧾 **تفاصيل بيانات الفاتورة والدفع الفوري (ChatCore Invoice)**:
+
+• **رقم الفاتورة**: #${invNo}
+• **المبلغ المستحق**: ${amt} ج.م (السعر شامل وصافي 100% بدون أي ضريبة إضافية)
+• **الباقة**: باقة المحترفين والأعمال المترابطة (Pro Swarm)
+
+📱 **حسابات التحويل المعتمدة**:
+• **تطبيق إنستاباي (InstaPay)**: \`trkroshdi@instapay\` (باسم: طارق رشدي)
+• **المحافظ الإلكترونية (فودافون كاش)**: \`01115822923\`
+• **التحويل البنكي (IBAN)**: \`EG1234567890123456789012345\`
+
+بمجرد سداد المبلغ، يرجى إرسال صورة إيصال التحويل (Screenshot) هنا وسنقوم بتفعيل حسابك أوتوماتيكياً 🚀`;
+              } else if (uText.includes('خدمة') || uText.includes('خدمات') || uText.includes('باقة') || uText.includes('باقات') || uText.includes('أسعار') || uText.includes('اسعار')) {
+                responseText = `👑 **باقات وأسعار منصة ChatCore للذكاء الاصطناعي**:
+
+1️⃣ **الباقة الأساسية (Starter)** — 1,000 ج.م/شهرياً
+• جهاز واتساب واحد + كود OTP تلقائي + سجل محادثات.
+
+2️⃣ **الباقة الاحترافية (Pro)** — 2,000 ج.م/شهرياً (⭐ الأكثر اختياراً)
+• 5 أجهزة + طاقم الموظفين الذكيين بالكامل + تفريغ الصوتيات.
+
+3️⃣ **باقة المؤسسات (Enterprise HQ)** — 4,000 ج.م/شهرياً
+• أجهزة لا نهائية + مقر الموظفين HQ + دعم VIP 24/7.
+
+اختر الباقة المناسبة وسنرسل لك رابط وبيانات الدفع الفوري 🚀`;
+              } else if (uText.includes('أهلاً') || uText.includes('اهلا') || uText.includes('سلام') || uText.includes('مرحبا') || uText.includes('ازيك')) {
+                responseText = `أهلاً بك يا أستاذ ${pushName || 'العميل العزيز'}! 👋
+معاك *أحمد المبيعات* وطاقم الموظفين الذكيين في منصة ChatCore.
+كيف يمكنني مساعدتك اليوم في تفعيل خدمات الواتساب والربط الذكي؟ 🚀`;
+              } else {
+                responseText = `مرحباً بك يا أستاذ ${pushName || 'العميل العزيز'}! 👋
+معاك طاقم الموظفين الذكيين في منصة ChatCore.
+أستطيع مساعدتك فوراً في:
+• 🧾 تفاصيل الفواتير والتحويل الفوري (InstaPay / فودافون كاش)
+• 👑 باقات وأسعار الاشتراكات
+• 🛠️ الدعم الفني وتفعيل حسابات الواتساب
+
+تفضل بكتابة طلبك وسأقوم بخدمتك فوراً 🚀`;
+              }
+            }
           }
 
           console.log(`[AI Agent] Generated text response: "${responseText.substring(0, 100)}${responseText.length > 100 ? '...' : ''}"`);
