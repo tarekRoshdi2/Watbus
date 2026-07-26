@@ -220,7 +220,7 @@ export interface OtpLog {
   phone: string;
   otp: string;
   message: string;
-  status: 'sent' | 'failed';
+  status: 'sent' | 'failed' | 'fallback_sent';
   error?: string;
   deviceId?: string;
   deviceName?: string;

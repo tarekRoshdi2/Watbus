@@ -1267,6 +1267,36 @@ export function deleteTicket(id: string): boolean {
   return false;
 }
 
+export function autoExtractAndSaveTickets(content: string, phone: string, customerName = 'عميل واتساب'): any[] {
+  if (!content) return [];
+  const matches = content.match(/#(TCK-\d+|TCK-[A-Z0-9]+)/gi);
+  const created: any[] = [];
+  if (matches && matches.length > 0) {
+    matches.forEach(ticketIdStr => {
+      const cleanId = ticketIdStr.replace('#', '').toUpperCase();
+      const existing = getAllTickets().find(t => t.id === cleanId);
+      if (!existing) {
+        const newT = saveTicket({
+          id: cleanId,
+          customer: customerName,
+          phone: phone.startsWith('+') ? phone : `+${phone}`,
+          category: 'technical',
+          priority: 'high',
+          status: 'open',
+          time: new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }),
+          issue: content.substring(0, 120),
+          solution: 'تم فتح وتأكيد التذكرة أوتوماتيكياً بواسطة الذكاء الاصطناعي وجاري الحل.',
+          assignedTo: 'مهندس عمر الدعم',
+          createdAt: new Date().toISOString()
+        });
+        created.push(newT);
+        console.log(`🎫 [Auto Automation] Automatically registered mentioned ticket ${cleanId} for ${phone} in DB & Supabase!`);
+      }
+    });
+  }
+  return created;
+}
+
 // Call Logs Management
 export function getCallLogs(): any[] {
   const db = readDb();
