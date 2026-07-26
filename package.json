@@ -59,7 +59,6 @@
     "@types/react-dom": "^19.2.3",
     "@types/ws": "^8.18.1",
     "autoprefixer": "^10.4.21",
-    "playwright": "^1.62.0",
     "prisma": "^7.9.0",
     "tailwindcss": "^4.1.14",
     "tsx": "^4.21.0",

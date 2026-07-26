@@ -221,7 +221,7 @@ function getOrCreateContactUser(jid: string, pushName?: string) {
 /**
  * Recursively unwrap common Baileys message containers (ephemeral, view-once, template, etc.)
  */
-export function getRealMessageContent(messageObj: any): any {
+function getRealMessageContent(messageObj: any): any {
   if (!messageObj) return null;
   
   // If it's a message wrapper, drill down
