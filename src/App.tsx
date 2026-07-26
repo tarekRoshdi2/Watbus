@@ -1073,6 +1073,9 @@ export default function App() {
           <img
             src={currentUser.avatarUrl}
             alt="Avatar"
+            onError={(e) => {
+              (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80';
+            }}
             onClick={() => setShowProfileSettings(true)}
             className="w-8 h-8 rounded-full border border-zinc-700 cursor-pointer"
           />
@@ -1434,6 +1437,9 @@ export default function App() {
             <img
               src={currentUser.avatarUrl}
               alt="Avatar"
+              onError={(e) => {
+                (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80';
+              }}
               onClick={() => setShowProfileSettings(true)}
               className="w-8 h-8 rounded-full border border-zinc-800 cursor-pointer hover:ring-2 hover:ring-[#00a884]"
             />
@@ -1483,7 +1489,14 @@ export default function App() {
               {/* Avatar Upload Header */}
               <div className="flex flex-col items-center gap-3">
                 <div className="relative group">
-                  <img src={profileAvatarUrl || currentUser.avatarUrl} alt="avatar" className="w-24 h-24 rounded-full object-cover border-4 border-emerald-500/40 shadow-xl group-hover:opacity-80 transition-opacity" />
+                  <img
+                    src={profileAvatarUrl || currentUser.avatarUrl}
+                    alt="avatar"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80';
+                    }}
+                    className="w-24 h-24 rounded-full object-cover border-4 border-emerald-500/40 shadow-xl group-hover:opacity-80 transition-opacity"
+                  />
                   <label htmlFor="profile-avatar-file" className="absolute inset-0 flex items-center justify-center bg-black/40 rounded-full opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer text-white text-xs font-bold gap-1">
                     <Camera className="w-5 h-5" />
                     <span>{lang === 'ar' ? 'تغيير' : 'Edit'}</span>

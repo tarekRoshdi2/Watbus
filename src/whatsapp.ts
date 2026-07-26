@@ -111,16 +111,12 @@ async function syncProfilePicture(sock: any, jid: string, contactId: string) {
   try {
     if (!sock || !jid) return;
     
-    // Check if the user already has a real WhatsApp profile picture URL
-    const existing = getAllUsers().find((u) => u.id === contactId);
-    if (existing && existing.avatarUrl && existing.avatarUrl.includes('pps.whatsapp.net')) {
-      return; // Already loaded real WhatsApp avatar
-    }
+    const user = getAllUsers().find((u) => u.id === contactId);
+    if (!user) return;
 
-    const url = await sock.profilePictureUrl(jid, 'image');
-    if (url) {
-      const user = getAllUsers().find((u) => u.id === contactId);
-      if (user) {
+    try {
+      const url = await sock.profilePictureUrl(jid, 'image');
+      if (url && url !== user.avatarUrl) {
         user.avatarUrl = url;
         saveUser(user);
         broadcastUpdate({
@@ -128,9 +124,15 @@ async function syncProfilePicture(sock: any, jid: string, contactId: string) {
           user
         });
       }
+    } catch (picErr) {
+      // If WhatsApp CDN returns 404 or profile is private, fallback to clean avatar
+      if (user.avatarUrl && user.avatarUrl.includes('pps.whatsapp.net')) {
+        user.avatarUrl = 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80';
+        saveUser(user);
+      }
     }
   } catch (err) {
-    // Silently ignore if profile picture is private, unavailable or rate-limited
+    // Silently ignore
   }
 }
 

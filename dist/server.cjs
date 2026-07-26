@@ -2950,20 +2950,22 @@ function setIncomingMessageHandler(handler) {
 async function syncProfilePicture(sock, jid, contactId) {
   try {
     if (!sock || !jid) return;
-    const existing = getAllUsers().find((u) => u.id === contactId);
-    if (existing && existing.avatarUrl && existing.avatarUrl.includes("pps.whatsapp.net")) {
-      return;
-    }
-    const url = await sock.profilePictureUrl(jid, "image");
-    if (url) {
-      const user = getAllUsers().find((u) => u.id === contactId);
-      if (user) {
+    const user = getAllUsers().find((u) => u.id === contactId);
+    if (!user) return;
+    try {
+      const url = await sock.profilePictureUrl(jid, "image");
+      if (url && url !== user.avatarUrl) {
         user.avatarUrl = url;
         saveUser(user);
         broadcastUpdate({
           type: "user:update",
           user
         });
+      }
+    } catch (picErr) {
+      if (user.avatarUrl && user.avatarUrl.includes("pps.whatsapp.net")) {
+        user.avatarUrl = "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80";
+        saveUser(user);
       }
     }
   } catch (err) {

@@ -354,6 +354,9 @@ export default function Sidebar({
                     src={avatarUrl}
                     alt={recipientName}
                     referrerPolicy="no-referrer"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80';
+                    }}
                     className="w-full h-full rounded-full object-cover bg-zinc-100"
                   />
                 </div>
