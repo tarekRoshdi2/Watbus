@@ -168,10 +168,104 @@ import {
   sessionsInProgress,
   hasSavedSession,
   parseSpintax,
-  normalizePhoneNumber
+  normalizePhoneNumber,
+  getRealMessageContent
 } from './src/whatsapp.js';
 
-import { downloadMediaMessage } from '@whiskeysockets/baileys';
+import { downloadMediaMessage, downloadContentFromMessage } from '@whiskeysockets/baileys';
+
+/**
+ * Helper to download media binary from Meta Cloud API Webhook
+ */
+async function downloadMetaCloudMedia(mediaId: string, accessToken?: string): Promise<Buffer | null> {
+  if (!mediaId) return null;
+  const token = accessToken || process.env.META_ACCESS_TOKEN || process.env.WHATSAPP_TOKEN || process.env.META_CLOUD_TOKEN;
+  if (!token) {
+    console.warn('[Meta Cloud Media] No access token available to download mediaId:', mediaId);
+    return null;
+  }
+
+  try {
+    console.log(`[Meta Cloud Media] Fetching media metadata for ID "${mediaId}"...`);
+    const res1 = await fetch(`https://graph.facebook.com/v19.0/${mediaId}`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    const data1 = await res1.json();
+    if (!data1?.url) {
+      console.warn('[Meta Cloud Media] Meta Graph API returned no download URL:', data1);
+      return null;
+    }
+
+    console.log(`[Meta Cloud Media] Downloading binary buffer from Meta CDN...`);
+    const res2 = await fetch(data1.url, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    const arrayBuf = await res2.arrayBuffer();
+    const buffer = Buffer.from(arrayBuf);
+    console.log(`[Meta Cloud Media Success] Downloaded ${buffer.length} bytes for media ID "${mediaId}".`);
+    return buffer;
+  } catch (err) {
+    console.error('[Meta Cloud Media Error] Failed downloading media:', err);
+    return null;
+  }
+}
+
+/**
+ * Universal WhatsApp Media Buffer Downloader (Supports Baileys QR & Meta Cloud API Webhook)
+ */
+async function getBufferFromWhatsAppMessage(
+  messageContent: any,
+  type: 'image' | 'audio' | 'document',
+  sock?: any
+): Promise<Buffer | null> {
+  // 1. If buffer was pre-downloaded (e.g. from Meta Cloud API Webhook)
+  if (messageContent?.mediaBuffer && Buffer.isBuffer(messageContent.mediaBuffer)) {
+    console.log(`[Media Download] Using pre-downloaded binary buffer (${messageContent.mediaBuffer.length} bytes).`);
+    return messageContent.mediaBuffer;
+  }
+
+  // 2. Unwrap Baileys message containers if nested
+  const cleanObj = (typeof getRealMessageContent === 'function') ? getRealMessageContent(messageContent) : messageContent;
+  const mediaObj = cleanObj?.[`${type}Message`];
+
+  if (!mediaObj) {
+    console.warn(`[Media Download] No ${type}Message object found in messageContent.`);
+    return null;
+  }
+
+  // 3. Attempt Baileys stream decrypt using downloadContentFromMessage
+  try {
+    console.log(`[Baileys Media Download] Streaming ${type} via downloadContentFromMessage...`);
+    const mediaTypeKey = type === 'document' ? 'document' : (type === 'image' ? 'image' : 'audio');
+    const stream = await downloadContentFromMessage(mediaObj, mediaTypeKey);
+    let buffer = Buffer.from([]);
+    for await (const chunk of stream) {
+      buffer = Buffer.concat([buffer, chunk]);
+    }
+    if (buffer.length > 0) {
+      console.log(`[Baileys Media Download Success] Downloaded ${buffer.length} bytes of ${type}.`);
+      return buffer;
+    }
+  } catch (streamErr: any) {
+    console.warn(`[Baileys Stream Warning] downloadContentFromMessage failed for ${type}:`, streamErr?.message || streamErr);
+  }
+
+  // 4. Fallback to Baileys downloadMediaMessage
+  try {
+    console.log(`[Baileys Media Fallback] Trying downloadMediaMessage for ${type}...`);
+    const buffer = await downloadMediaMessage(
+      { key: {}, message: messageContent },
+      'buffer',
+      {},
+      { reuploadRequest: sock?.updateMediaMessage, logger: { info: () => {}, error: () => {}, warn: () => {}, debug: () => {}, trace: () => {}, child: () => ({ info: () => {}, error: () => {}, warn: () => {}, debug: () => {}, trace: () => {} }) } as any }
+    );
+    return buffer;
+  } catch (dlErr: any) {
+    console.error(`[Baileys Media Fallback Error] downloadMediaMessage failed for ${type}:`, dlErr?.message || dlErr);
+  }
+
+  return null;
+}
 
 import { User, Conversation, Message, StatusStory, WsEvent, DeviceLink, Campaign, FlowStage } from './src/types.js';
 
@@ -6014,11 +6108,10 @@ function cleanOrphanedSessions() {
         userMessageText = messageContent.imageMessage.caption || '';
         try {
           console.log('Downloading incoming WhatsApp image for AI Agent...');
-          const buffer = await downloadMediaMessage(
-            { key: { id: messageId, remoteJid: jid }, message: messageContent },
-            'buffer',
-            {}
-          );
+          const buffer = await getBufferFromWhatsAppMessage(messageContent, 'image', sock);
+          if (!buffer) {
+            throw new Error('Could not download image binary buffer.');
+          }
           const base64Data = buffer.toString('base64');
           const rawMime = messageContent.imageMessage.mimetype || 'image/jpeg';
           const mimeType = rawMime.split(';')[0].trim().toLowerCase() || 'image/jpeg';
@@ -6112,18 +6205,17 @@ function cleanOrphanedSessions() {
               }
             ]
           };
-        } catch (err) {
-          console.error('Failed to download incoming WhatsApp image:', err);
+        } catch (err: any) {
+          console.error('Failed to download incoming WhatsApp image:', err?.message || err);
           contentsPayload = `[Image] User sent an image. Caption: "${userMessageText}". (System error: Could not download full image bytes for analysis). Respond politely based on the caption if any.`;
         }
       } else if (messageContent.audioMessage) {
         try {
           console.log('Downloading incoming WhatsApp voice note for AI Agent...');
-          const buffer = await downloadMediaMessage(
-            { key: { id: messageId, remoteJid: jid }, message: messageContent },
-            'buffer',
-            {} as any
-          );
+          const buffer = await getBufferFromWhatsAppMessage(messageContent, 'audio', sock);
+          if (!buffer) {
+            throw new Error('Could not download audio binary buffer.');
+          }
           incomingAudioBuffer = buffer;
           const base64Data = buffer.toString('base64');
           const rawMime = messageContent.audioMessage.mimetype || 'audio/ogg';
@@ -6790,9 +6882,41 @@ async function processMetaWebhook(body: any) {
                 if (msg.type === 'text') {
                   messageContent = { conversation: msg.text.body };
                 } else if (msg.type === 'image') {
-                  messageContent = { imageMessage: { caption: msg.image?.caption || '' } };
+                  const mediaId = msg.image?.id;
+                  const mimeType = msg.image?.mime_type || 'image/jpeg';
+                  const caption = msg.image?.caption || '';
+                  let mediaBuffer: Buffer | null = null;
+                  if (mediaId) {
+                    mediaBuffer = await downloadMetaCloudMedia(mediaId, device?.cloudApiKey || device?.token || device?.apiKey);
+                  }
+                  messageContent = { 
+                    imageMessage: { mimetype: mimeType, caption }, 
+                    mediaBuffer 
+                  };
                 } else if (msg.type === 'audio') {
-                  messageContent = { audioMessage: { mimetype: 'audio/ogg' } };
+                  const mediaId = msg.audio?.id;
+                  const mimeType = msg.audio?.mime_type || 'audio/ogg';
+                  let mediaBuffer: Buffer | null = null;
+                  if (mediaId) {
+                    mediaBuffer = await downloadMetaCloudMedia(mediaId, device?.cloudApiKey || device?.token || device?.apiKey);
+                  }
+                  messageContent = { 
+                    audioMessage: { mimetype: mimeType }, 
+                    mediaBuffer 
+                  };
+                } else if (msg.type === 'document') {
+                  const mediaId = msg.document?.id;
+                  const mimeType = msg.document?.mime_type || 'application/pdf';
+                  const fileName = msg.document?.filename || 'مستند.pdf';
+                  const caption = msg.document?.caption || '';
+                  let mediaBuffer: Buffer | null = null;
+                  if (mediaId) {
+                    mediaBuffer = await downloadMetaCloudMedia(mediaId, device?.cloudApiKey || device?.token || device?.apiKey);
+                  }
+                  messageContent = { 
+                    documentMessage: { mimetype: mimeType, fileName, caption }, 
+                    mediaBuffer 
+                  };
                 } else if (msg.type === 'interactive') {
                    // For interactive list/button responses
                    if (msg.interactive.type === 'button_reply') {
@@ -6891,13 +7015,7 @@ app.post('/api/agents/:agentId/toggle-status', (req, res) => {
   res.json({ success: true, agentId, disabled: newStatus, agentsConfig: updated });
 });
 
-app.get('/api/agents/stats', (req, res) => {
-  res.json({
-    success: true,
-    stats: getAgentStats(),
-    auditLogs: getAgentAuditLogs(50)
-  });
-});
+// Legacy agent stats route removed (handled by telemetry router below)
 
 // ==========================================
 // SUPABASE AI STAFF & TRAINING CENTER ENDPOINTS
