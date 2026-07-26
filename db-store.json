@@ -20,10 +20,10 @@
       "password": "Tarek@2026",
       "username": "Tarek Roshdi",
       "avatarUrl": "https://pps.whatsapp.net/v/t61.24694-24/747126771_1038422479116934_1152221218606645899_n.jpg?ccb=11-4&oh=01_Q5Aa5AGWFoG_5Goh20qre3yFcXlNedyK0VvFbltvX6rgnaGfAQ&oe=6A6D031E&_nc_sid=5e03e0&_nc_cat=108",
-      "lastSeenAt": "2026-07-26T16:48:00.673Z",
+      "lastSeenAt": "2026-07-26T16:59:29.847Z",
       "statusText": "System Administrator",
       "costInDollars": 0,
-      "aiMessagesUsed": 53,
+      "aiMessagesUsed": 54,
       "aiMessagesLimit": 2500,
       "totalTokensUsed": 0,
       "subscriptionPlan": "starter",
@@ -260,26 +260,7 @@
       "aiPaused": false,
       "deviceId": "dev_8f17xgfxp",
       "createdAt": "2026-07-20T16:23:02.538Z",
-      "updatedAt": "2026-07-26T16:48:25.492Z",
-      "aiAnalysis": {
-        "intent": "تفاصيل عن النظام",
-        "summary": "العميل يطلب تفاصيل عن نظام ChatCore ويبدو مهتمًا بمعرفة المزيد عن المميزات والباقات.",
-        "intentEn": "Details about the system",
-        "keyNeeds": [
-          "معرفة المميزات الرئيسية للنظام",
-          "التفاصيل حول الباقات المتاحة"
-        ],
-        "summaryEn": "The customer is asking for details about the ChatCore system and seems interested in learning more about the features and packages.",
-        "confidence": 90,
-        "draftReply": "🚀 **أهلاً بيك يا فندم Roshdi!**\n\nشكراً لاهتمامك بـ *ChatCore*! إليك ملخص سريع:\n\n🔹 **المميزات الرئيسية**:\n- صندوق وارد موحد لإدارة المحادثات.\n- روبوت ذكي للرد التلقائي.\n- حملات جماعية ذكية.\n- تكامل مع أنظمة أخرى.\n\n🔸 **الباقات**:\n1️⃣ **البداية**: 1,200 ج.م/شهر.\n2️⃣ **الأعمال**: 2,500 ج.م/شهر.\n3️⃣ **المؤسسات**: 4,900 ج.م/شهر.\n\n💡 يمكنك تجربة النظام مجاناً لمدة 7 أيام عبر الرابط: [رابط التجربة].\n\nهل لديك أي استفسارات أخرى؟ 🤖",
-        "keyNeedsEn": [
-          "Understanding the main features of the system",
-          "Details about available packages"
-        ],
-        "draftReplyEn": "🚀 **Hello Mr. Roshdi!**\n\nThank you for your interest in *ChatCore*! Here’s a quick summary:\n\n🔹 **Key Features**:\n- Unified inbox for conversation management.\n- Smart AI bot for automatic replies.\n- Intelligent mass campaigns.\n- Integration with other systems.\n\n🔸 **Packages**:\n1️⃣ **Starter**: 1,200 EGP/month.\n2️⃣ **Business**: 2,500 EGP/month.\n3️⃣ **Enterprise**: 4,900 EGP/month.\n\n💡 You can try the system for free for 7 days via this link: [Trial Link].\n\nDo you have any other questions? 🤖",
-        "recommendedAction": "توفير تفاصيل شاملة عن المميزات والباقات مع إبراز الفوائد لكل باقة.",
-        "recommendedActionEn": "Provide comprehensive details about the features and packages, highlighting the benefits of each package."
-      },
+      "updatedAt": "2026-07-26T16:59:44.516Z",
       "adminReport": {
         "content": "[ADMIN_REPORT]\n\n### ملخص المحادثة:\nبدأت المحادثة بسلسلة طويلة من التحيات المتبادلة وعلامات الاستفهام المتكررة من طرف العميل (الذي تمت مخاطبته باسم الأستاذ Roshdi بناءً على بيانات النظام)، وكان الرد الآلي يرحب به باستمرار ويعرض عليه المساعدة في التعرف على الباقات والخدمات. \nبعد عدة محاولات، طرح العميل طلباً تقنياً وفنياً مفصلاً يطلب فيه كتابة \"برومبتات\" (Prompts) لتوليد 8 صور مخصصة لمنصة تيك توك (بمقاس 1:1)، تتبع الهوية البصرية لـ \"أدفين\" (Adveen)، مع شروط تقنية صارمة تشمل:\n- مراعاة منطقة الأمان (Safe Zone) بمقدار 120px للداخل في صورة الغلاف.\n- استخدام خط Cairo.\n- كتابة نصوص عربية كثيرة للشرح والتفاصيل داخل الصور.\n- تقسيم الصور كالتالي: (صورة غلاف بهوك قوي، 5 صور للأسباب والحلول، صورة للخلاصة، وصورة للتفاعل والحفظ).\n\nنظراً لخصوصية الطلب وحاجته لتدخل إبداعي دقيق، حاول المساعد الآلي مراراً وتكراراً تسجيل الطلب وطلب من العميل تزويده بـ \"الاسم الكامل\" ليتمكن من فتح تذكرة دعم ذات أولوية قصوى وتحويله إلى مصمم بشري مختص من الفريق الإبداعي. إلا أن العميل استمر في إرسال رسائل مقتضبة وعلامات استفهام (\"؟\"، \"الو\"، \"السلام عليكم\") دون تزويد النظام بالاسم المطلوب، مما أدى في النهاية إلى تفعيل الرد التلقائي العام للنظام الذي يفيد باستلام الرسالة وجاري الرد عليها.\n\n### نية العميل (User Intent):\nطلب خدمة إبداعية وتقنية متخصصة (كتابة وتنسيق برومبتات لتوليد صور متوافقة مع الهوية البصرية لـ \"أدفين\" ومعايير النشر على تيك توك).\n\n### الحالة المزاجية (Sentiment):\nمحايد إلى غير صبور (يظهر ذلك من تكرار إرسال علامات الاستفهام والتحيات المتتالية دون التفاعل مع أسئلة المساعد الآلي أو تقديم الاسم المطلوب لتسهيل عملية التحويل).\n\n### الإجراء الذي تم اتخاذه (Action Taken):\n1. الرد الفوري والترحيب المستمر بالعميل بأسلوب مهني وودود للغاية طوال فترة المحادثة.\n2. استلام الطلب الفني وتأكيد تسجيل كافة التفاصيل والاشتراطات الخاصة بالعميل (الخط، المقاسات، منطقة الأمان، وتوزيع الصور الثمانية).\n3. توضيح الحاجة لتدخل بشري لضمان جودة التصاميم ومطابقتها للهوية البصرية.\n4. المحاولة المتكررة للحصول على الاسم الكامل لربط العميل بالفريق المختص وتوجيه تذكرة الدعم كـ \"أولوية قصوى\".\n5. تحويل المحادثة إلى وضع الانتظار لإجراء الرد البشري بعد تعذر استجابة العميل الآلية.\n\n### النقاط المفتوحة / التوصيات (Pending Items / Recommendations):\n- **تدخل بشري فوري:** يجب على أحد ممثلي الدعم البشري أو أحد المصممين في فريق \"أدفين\" التدخل يدوياً والتواصل مع العميل مباشرة دون اشتراط الحصول على الاسم أولاً لتفادي خسارته أو زيادة إحباطه.\n- **تجهيز الطلب:** يُوصى بأن يقوم الفريق الإبداعي بصياغة البرومبتات الثمانية المطلوبة مسبقاً بناءً على التفاصيل التقنية المذكورة في المحادثة وتقديمها للعميل مباشرة كبادرة حسن نية واحترافية لتسهيل إتمام عملية البيع أو الخدمة.",
         "updatedAt": "2026-07-22T03:11:00.606Z"
@@ -2248,6 +2229,36 @@
       "timestamp": "2026-07-26T16:48:25.492Z",
       "recipientId": "contact_201115822923",
       "conversationId": "conv_9vgehiffd"
+    },
+    {
+      "id": "msg_n9sgttkrh",
+      "type": "text",
+      "status": "delivered",
+      "content": "أهلاً بك يا أستاذ Roshdi! 👋\nمعاك *أحمد المبيعات* وطاقم الموظفين الذكيين في منصة ChatCore.\nكيف يمكنني مساعدتك اليوم في تفعيل خدمات الواتساب والربط الذكي؟ 🚀",
+      "senderId": "admin-tarek",
+      "timestamp": "2026-07-26T16:58:18.423Z",
+      "recipientId": "contact_201115822923",
+      "conversationId": "conv_9vgehiffd"
+    },
+    {
+      "id": "wamid.HBgMMjAxMTE1ODIyOTIzFQIAEhggQUMyODM3OTgwREQxRjlENkM3QUJBNUJCMTMwREFEREQA",
+      "type": "text",
+      "status": "read",
+      "content": "السلام عليكم",
+      "senderId": "contact_201115822923",
+      "timestamp": "2026-07-26T16:59:37.000Z",
+      "recipientId": "admin-tarek",
+      "conversationId": "conv_9vgehiffd"
+    },
+    {
+      "id": "msg_tgxuzibfk",
+      "type": "text",
+      "status": "delivered",
+      "content": "أهلاً بك يا أستاذ Roshdi! 👋\nمعاك *أحمد المبيعات* وطاقم الموظفين الذكيين في منصة ChatCore.\nكيف يمكنني مساعدتك اليوم في تفعيل خدمات الواتساب والربط الذكي؟ 🚀",
+      "senderId": "admin-tarek",
+      "timestamp": "2026-07-26T16:59:44.516Z",
+      "recipientId": "contact_201115822923",
+      "conversationId": "conv_9vgehiffd"
     }
   ],
   "statuses": [],
@@ -2356,7 +2367,7 @@
       "phone": "201115822923",
       "status": "new",
       "username": "Roshdi",
-      "createdAt": "2026-07-26T16:48:23.891Z",
+      "createdAt": "2026-07-26T16:59:38.786Z",
       "leadSource": "whatsapp"
     }
   ],
@@ -2373,8 +2384,8 @@
       "visualsGenerated": 12
     },
     "sales": {
-      "tasksCount": 49,
-      "lastActiveAt": "2026-07-26T16:48:24.257Z",
+      "tasksCount": 43,
+      "lastActiveAt": "2026-07-26T16:59:39.030Z",
       "invoicesIssued": 0,
       "ticketsCreated": 0,
       "visualsGenerated": 0
@@ -2406,78 +2417,12 @@
   },
   "agentAuditLogs": [
     {
-      "id": "log_uwvo08l4i",
+      "id": "log_9wq94vzy5",
       "agentId": "sales",
       "details": {},
-      "summary": "",
+      "summary": "السلام عليكم",
       "agentName": "أحمد المبيعات",
-      "timestamp": "2026-07-26T16:48:24.257Z",
-      "actionType": "task_completed",
-      "customerName": "Roshdi",
-      "customerPhone": "201115822923"
-    },
-    {
-      "id": "log_eelwwmwx5",
-      "agentId": "sales",
-      "details": {},
-      "summary": "[رسالة صوتية/Voice Note]",
-      "agentName": "أحمد المبيعات",
-      "timestamp": "2026-07-26T16:47:36.205Z",
-      "actionType": "task_completed",
-      "customerName": "Roshdi",
-      "customerPhone": "201115822923"
-    },
-    {
-      "id": "log_88prbg1zs",
-      "agentId": "sales",
-      "details": {},
-      "summary": "تفاصيل عن النظام",
-      "agentName": "أحمد المبيعات",
-      "timestamp": "2026-07-26T16:43:18.797Z",
-      "actionType": "task_completed",
-      "customerName": "Roshdi",
-      "customerPhone": "201115822923"
-    },
-    {
-      "id": "log_90lusas17",
-      "agentId": "sales",
-      "details": {},
-      "summary": "انت تمام ؟",
-      "agentName": "أحمد المبيعات",
-      "timestamp": "2026-07-26T16:42:49.916Z",
-      "actionType": "task_completed",
-      "customerName": "Roshdi",
-      "customerPhone": "201115822923"
-    },
-    {
-      "id": "log_zmdn9wm34",
-      "agentId": "sales",
-      "details": {},
-      "summary": "ماشي ياسطا",
-      "agentName": "أحمد المبيعات",
-      "timestamp": "2026-07-26T16:42:25.133Z",
-      "actionType": "task_completed",
-      "customerName": "Roshdi",
-      "customerPhone": "201115822923"
-    },
-    {
-      "id": "log_rfbqk8u3h",
-      "agentId": "sales",
-      "details": {},
-      "summary": "[رسالة صوتية/Voice Note]",
-      "agentName": "أحمد المبيعات",
-      "timestamp": "2026-07-26T16:38:17.919Z",
-      "actionType": "task_completed",
-      "customerName": "Roshdi",
-      "customerPhone": "201115822923"
-    },
-    {
-      "id": "log_a6is1o0ki",
-      "agentId": "sales",
-      "details": {},
-      "summary": "[رسالة صوتية/Voice Note]",
-      "agentName": "أحمد المبيعات",
-      "timestamp": "2026-07-26T16:26:48.709Z",
+      "timestamp": "2026-07-26T16:59:39.030Z",
       "actionType": "task_completed",
       "customerName": "Roshdi",
       "customerPhone": "201115822923"

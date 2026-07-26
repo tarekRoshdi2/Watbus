@@ -30,30 +30,25 @@ export class RagAgent {
   /**
    * Analyzes an image sent by the customer (Computer Vision)
    */
-  async analyzeProductImage(base64Image: string, mimeType: string = 'image/jpeg', catalog: CatalogItem[]): Promise<RagResponse> {
-    if (!this.ai) {
-      return {
-        reply: 'عذراً، خدمة تحليل الصور غير متوفرة حالياً. يمكنك تزويدنا باسم المنتج المطلوب.',
-        matchedProducts: []
-      };
-    }
-
+  async analyzeProductImage(
+    base64Image: string, 
+    mimeType: string = 'image/jpeg', 
+    catalog: CatalogItem[],
+    geminiCaller?: (params: { model: string; contents: any; config?: any }) => Promise<any>
+  ): Promise<RagResponse> {
     try {
       // Strip data url prefix if present
       const cleanBase64 = base64Image.replace(/^data:image\/\w+;base64,/, '');
-
       const catalogSummary = catalog.map(c => `- ID: ${c.id}, Name: ${c.name}, Price: ${c.price} EGP, Description: ${c.description}`).join('\n');
 
-      const response = await this.ai.models.generateContent({
-        model: 'gemini-2.0-flash',
-        contents: [
-          {
-            inlineData: {
-              data: cleanBase64,
-              mimeType
-            }
-          },
-          `You are an AI Sales Agent with Computer Vision capabilities for an Egyptian clothing/e-commerce store.
+      const promptPayload = [
+        {
+          inlineData: {
+            data: cleanBase64,
+            mimeType
+          }
+        },
+        `You are an AI Sales Agent with Computer Vision capabilities for an Egyptian clothing/e-commerce store.
 Analyze this product image sent by the customer (identify clothing type, color, style, fabric, or size details).
 
 Available Store Catalog:
@@ -74,13 +69,19 @@ Return JSON ONLY:
   "reply": "Arabic message for WhatsApp customer",
   "matchedCatalogIds": string[]
 }`
-        ]
-      });
+      ];
 
-      const text = response.text || '';
+      let text = '';
+      if (geminiCaller) {
+        const res = await geminiCaller({ model: 'gemini-2.0-flash', contents: promptPayload });
+        text = res?.text || '';
+      } else if (this.ai) {
+        const res = await this.ai.models.generateContent({ model: 'gemini-2.0-flash', contents: promptPayload });
+        text = res.text || '';
+      }
+
       const cleanJson = text.replace(/```json/g, '').replace(/```/g, '').trim();
       const parsed = JSON.parse(cleanJson);
-
       const matchedProducts = catalog.filter(item => (parsed.matchedCatalogIds || []).includes(item.id));
 
       return {
@@ -89,7 +90,7 @@ Return JSON ONLY:
         detectedSpecs: parsed.detectedSpecs
       };
     } catch (err) {
-      console.error('[RagAgent Vision Error]', err);
+      console.warn('[RagAgent Vision Warning]', err);
       return {
         reply: 'تم استلام الصورة بنجاح! يبدو أنك تبحث عن منتج مشابه. هل تود معرفة المقاسات المتوفرة والأسعار؟',
         matchedProducts: []
@@ -100,17 +101,15 @@ Return JSON ONLY:
   /**
    * RAG Query over Catalog and Store Data
    */
-  async queryCatalog(customerMessage: string, catalog: CatalogItem[], conversationHistory: string = ''): Promise<string> {
-    if (!this.ai) {
-      return 'أهلاً بك! يمكنك تصفح المنتجات المتوفرة من خلال الكتالوج الخاص بنا.';
-    }
-
+  async queryCatalog(
+    customerMessage: string, 
+    catalog: CatalogItem[], 
+    conversationHistory: string = '',
+    geminiCaller?: (params: { model: string; contents: any; config?: any }) => Promise<any>
+  ): Promise<string> {
     try {
       const catalogSummary = catalog.map(c => `- ${c.name} (${c.price} ج.م): ${c.description}`).join('\n');
-
-      const response = await this.ai.models.generateContent({
-        model: 'gemini-2.0-flash',
-        contents: `أنت "أحمد المبيعات" - المدير التنفيذي للمبيعات والإغلاق (Chief Sales Officer) لمنصة "شات كور (ChatCore Enterprise AI)" لربط خطوط الواتساب والتليجرام وطاقم الموظفين الذكاء الاصطناعي في مصر والوطن العربي.
+      const promptText = `أنت "أحمد المبيعات" - المدير التنفيذي للمبيعات والإغلاق (Chief Sales Officer) لمنصة "شات كور (ChatCore Enterprise AI)" لربط خطوط الواتساب والتليجرام وطاقم الموظفين الذكاء الاصطناعي في مصر والوطن العربي.
 تتحدث بالعامية المصرية الراقية جداً والودودة والمحترفة.
 
 خدمات وباقات اشتراك منصة شات كور (ChatCore SaaS Plans):
@@ -134,12 +133,20 @@ ${conversationHistory || 'لا يوجد سياق سابق.'}
 
 القواعد المطلوبة:
 - اكتب بأسلوب مصري تجاري راقٍ وممتع مناسب للواتساب مع رموز تعبيرية ⚡.
-- قم بتأكيد الخطوة التالية لإغلاق البيعة (Call to Action).`
-      });
+- قم بتأكيد الخطوة التالية لإغلاق البيعة (Call to Action).`;
 
-      return response.text || 'أهلاً بك! كيف يمكنني مساعدتك اليوم في تصفح منتجاتنا؟';
+      let responseText = '';
+      if (geminiCaller) {
+        const res = await geminiCaller({ model: 'gemini-2.0-flash', contents: promptText });
+        responseText = res?.text || '';
+      } else if (this.ai) {
+        const res = await this.ai.models.generateContent({ model: 'gemini-2.0-flash', contents: promptText });
+        responseText = res.text || '';
+      }
+
+      return responseText || 'أهلاً بك! كيف يمكنني مساعدتك اليوم في تصفح منتجاتنا؟';
     } catch (err) {
-      console.error('[RagAgent Query Error]', err);
+      console.warn('[RagAgent Query Warning]', err);
       return 'أهلاً بك! نحن متواجدون لمساعدتك. تفضل بالسؤال عن أي منتج.';
     }
   }

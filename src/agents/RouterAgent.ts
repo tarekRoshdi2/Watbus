@@ -34,7 +34,12 @@ export class RouterAgent {
   /**
    * Classifies the customer message and returns routing decision
    */
-  async classifyIntent(messageText: string, hasImage: boolean = false, hasAudio: boolean = false): Promise<RouteResult> {
+  async classifyIntent(
+    messageText: string, 
+    hasImage: boolean = false, 
+    hasAudio: boolean = false,
+    geminiCaller?: (params: { model: string; contents: any; config?: any }) => Promise<any>
+  ): Promise<RouteResult> {
     if (hasAudio) {
       return {
         intent: 'general_faq',
@@ -80,7 +85,7 @@ export class RouterAgent {
       };
     }
 
-    if (!this.ai || !messageText.trim()) {
+    if (!messageText.trim()) {
       return {
         intent: 'general_faq',
         confidence: 0.5,
@@ -89,10 +94,7 @@ export class RouterAgent {
       };
     }
 
-    try {
-      const response = await this.ai.models.generateContent({
-        model: 'gemini-2.0-flash',
-        contents: `You are an AI Routing Agent for an enterprise WhatsApp multi-agent system.
+    const promptText = `You are an AI Routing Agent for an enterprise WhatsApp multi-agent system.
 Classify the customer message into EXACTLY ONE category:
 - general_faq (greeting, policy, location, working hours)
 - catalog_inquiry (product prices, stock, sizes, colors, recommendation)
@@ -109,11 +111,19 @@ Return JSON ONLY:
   "reasoning": "explanation"
 }
 
-Customer Message: "${messageText}"`
-      });
+Customer Message: "${messageText}"`;
 
-      const text = response.text || '';
-      const cleanJson = text.replace(/```json/g, '').replace(/```/g, '').trim();
+    try {
+      let responseText = '';
+      if (geminiCaller) {
+        const res = await geminiCaller({ model: 'gemini-2.0-flash', contents: promptText });
+        responseText = res?.text || '';
+      } else if (this.ai) {
+        const res = await this.ai.models.generateContent({ model: 'gemini-2.0-flash', contents: promptText });
+        responseText = res.text || '';
+      }
+
+      const cleanJson = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
       const parsed = JSON.parse(cleanJson);
 
       let suggestedAgent: 'router' | 'rag' | 'voice' | 'human' | 'invoice' | 'media' | 'support' = 'rag';
@@ -129,7 +139,7 @@ Customer Message: "${messageText}"`
         suggestedAgent
       };
     } catch (err) {
-      console.error('[RouterAgent Error]', err);
+      console.warn('[RouterAgent Warning] Classification fallback:', err);
       return {
         intent: 'catalog_inquiry',
         confidence: 0.6,

@@ -6454,20 +6454,16 @@ ${formattedHistory || '(No previous messages)'}
 
 Formulate your exceptionally smart and professional response now:`;
 
-          let modelName = device.aiModel || 'gemini-3.5-flash';
-          // Safely map any deprecated, placeholder, or unsupported model names to correct recommended ones
-          if (modelName === 'gemini-2.5-flash' || modelName.startsWith('gemini-2.0') || modelName.startsWith('gemini-1.5')) {
-            modelName = 'gemini-3.5-flash';
+          let modelName = device.aiModel || 'gemini-2.0-flash';
+          // Safely map any model names to valid active Google Gemini models for Paid Tier
+          if (!modelName || modelName.includes('3.5') || modelName.includes('1.5')) {
+            modelName = 'gemini-2.0-flash';
           }
-          if (modelName === 'gemini-3.5-pro') {
-            modelName = 'gemini-3.1-pro-preview';
-          }
-
 
           // Multi-Agent Ecosystem Pipeline
           try {
             console.log(`[Multi-Agent Router] Classifying intent for message: "${userMessageText.substring(0, 50)} "...`);
-            const routeResult = await routerAgent.classifyIntent(userMessageText, !!messageContent.imageMessage, !!messageContent.audioMessage);
+            const routeResult = await routerAgent.classifyIntent(userMessageText, !!messageContent.imageMessage, !!messageContent.audioMessage, callGeminiWithRetry);
             console.log(`[Multi-Agent Router] Decision: Intent=${routeResult.intent}, Suggested Agent=${routeResult.suggestedAgent}`);
 
             // Lead Generation Auto-Capture
@@ -6484,13 +6480,13 @@ Formulate your exceptionally smart and professional response now:`;
             // Vision / RAG Catalog Query handling
             if (messageContent.imageMessage && contentsPayload?.parts?.[0]?.inlineData?.data) {
               console.log(`[Multi-Agent] Routing image to RagAgent (Computer Vision)...`);
-              const visionRes = await ragAgent.analyzeProductImage(contentsPayload.parts[0].inlineData.data, contentsPayload.parts[0].inlineData.mimeType, readDb().catalog || []);
+              const visionRes = await ragAgent.analyzeProductImage(contentsPayload.parts[0].inlineData.data, contentsPayload.parts[0].inlineData.mimeType, readDb().catalog || [], callGeminiWithRetry);
               if (visionRes.reply) {
                 responseText = visionRes.reply;
               }
             } else if (routeResult.suggestedAgent === 'rag' || routeResult.intent === 'catalog_inquiry') {
               console.log(`[Multi-Agent] Querying RagAgent (RAG Catalog Sync)...`);
-              const ragReply = await ragAgent.queryCatalog(userMessageText, readDb().catalog || [], formattedHistory);
+              const ragReply = await ragAgent.queryCatalog(userMessageText, readDb().catalog || [], formattedHistory, callGeminiWithRetry);
               if (ragReply) {
                 responseText = ragReply;
               }

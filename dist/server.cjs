@@ -1592,7 +1592,7 @@ var init_RouterAgent = __esm({
       /**
        * Classifies the customer message and returns routing decision
        */
-      async classifyIntent(messageText, hasImage = false, hasAudio = false) {
+      async classifyIntent(messageText, hasImage = false, hasAudio = false, geminiCaller) {
         if (hasAudio) {
           return {
             intent: "general_faq",
@@ -1634,7 +1634,7 @@ var init_RouterAgent = __esm({
             suggestedAgent: "support"
           };
         }
-        if (!this.ai || !messageText.trim()) {
+        if (!messageText.trim()) {
           return {
             intent: "general_faq",
             confidence: 0.5,
@@ -1642,10 +1642,7 @@ var init_RouterAgent = __esm({
             suggestedAgent: "rag"
           };
         }
-        try {
-          const response = await this.ai.models.generateContent({
-            model: "gemini-2.0-flash",
-            contents: `You are an AI Routing Agent for an enterprise WhatsApp multi-agent system.
+        const promptText = `You are an AI Routing Agent for an enterprise WhatsApp multi-agent system.
 Classify the customer message into EXACTLY ONE category:
 - general_faq (greeting, policy, location, working hours)
 - catalog_inquiry (product prices, stock, sizes, colors, recommendation)
@@ -1662,10 +1659,17 @@ Return JSON ONLY:
   "reasoning": "explanation"
 }
 
-Customer Message: "${messageText}"`
-          });
-          const text = response.text || "";
-          const cleanJson = text.replace(/```json/g, "").replace(/```/g, "").trim();
+Customer Message: "${messageText}"`;
+        try {
+          let responseText = "";
+          if (geminiCaller) {
+            const res = await geminiCaller({ model: "gemini-2.0-flash", contents: promptText });
+            responseText = res?.text || "";
+          } else if (this.ai) {
+            const res = await this.ai.models.generateContent({ model: "gemini-2.0-flash", contents: promptText });
+            responseText = res.text || "";
+          }
+          const cleanJson = responseText.replace(/```json/g, "").replace(/```/g, "").trim();
           const parsed = JSON.parse(cleanJson);
           let suggestedAgent = "rag";
           if (parsed.intent === "human_handoff") suggestedAgent = "human";
@@ -1679,7 +1683,7 @@ Customer Message: "${messageText}"`
             suggestedAgent
           };
         } catch (err) {
-          console.error("[RouterAgent Error]", err);
+          console.warn("[RouterAgent Warning] Classification fallback:", err);
           return {
             intent: "catalog_inquiry",
             confidence: 0.6,
@@ -1708,26 +1712,18 @@ var init_RagAgent = __esm({
       /**
        * Analyzes an image sent by the customer (Computer Vision)
        */
-      async analyzeProductImage(base64Image, mimeType = "image/jpeg", catalog) {
-        if (!this.ai) {
-          return {
-            reply: "\u0639\u0630\u0631\u0627\u064B\u060C \u062E\u062F\u0645\u0629 \u062A\u062D\u0644\u064A\u0644 \u0627\u0644\u0635\u0648\u0631 \u063A\u064A\u0631 \u0645\u062A\u0648\u0641\u0631\u0629 \u062D\u0627\u0644\u064A\u0627\u064B. \u064A\u0645\u0643\u0646\u0643 \u062A\u0632\u0648\u064A\u062F\u0646\u0627 \u0628\u0627\u0633\u0645 \u0627\u0644\u0645\u0646\u062A\u062C \u0627\u0644\u0645\u0637\u0644\u0648\u0628.",
-            matchedProducts: []
-          };
-        }
+      async analyzeProductImage(base64Image, mimeType = "image/jpeg", catalog, geminiCaller) {
         try {
           const cleanBase64 = base64Image.replace(/^data:image\/\w+;base64,/, "");
           const catalogSummary = catalog.map((c) => `- ID: ${c.id}, Name: ${c.name}, Price: ${c.price} EGP, Description: ${c.description}`).join("\n");
-          const response = await this.ai.models.generateContent({
-            model: "gemini-2.0-flash",
-            contents: [
-              {
-                inlineData: {
-                  data: cleanBase64,
-                  mimeType
-                }
-              },
-              `You are an AI Sales Agent with Computer Vision capabilities for an Egyptian clothing/e-commerce store.
+          const promptPayload = [
+            {
+              inlineData: {
+                data: cleanBase64,
+                mimeType
+              }
+            },
+            `You are an AI Sales Agent with Computer Vision capabilities for an Egyptian clothing/e-commerce store.
 Analyze this product image sent by the customer (identify clothing type, color, style, fabric, or size details).
 
 Available Store Catalog:
@@ -1748,9 +1744,15 @@ Return JSON ONLY:
   "reply": "Arabic message for WhatsApp customer",
   "matchedCatalogIds": string[]
 }`
-            ]
-          });
-          const text = response.text || "";
+          ];
+          let text = "";
+          if (geminiCaller) {
+            const res = await geminiCaller({ model: "gemini-2.0-flash", contents: promptPayload });
+            text = res?.text || "";
+          } else if (this.ai) {
+            const res = await this.ai.models.generateContent({ model: "gemini-2.0-flash", contents: promptPayload });
+            text = res.text || "";
+          }
           const cleanJson = text.replace(/```json/g, "").replace(/```/g, "").trim();
           const parsed = JSON.parse(cleanJson);
           const matchedProducts = catalog.filter((item) => (parsed.matchedCatalogIds || []).includes(item.id));
@@ -1760,7 +1762,7 @@ Return JSON ONLY:
             detectedSpecs: parsed.detectedSpecs
           };
         } catch (err) {
-          console.error("[RagAgent Vision Error]", err);
+          console.warn("[RagAgent Vision Warning]", err);
           return {
             reply: "\u062A\u0645 \u0627\u0633\u062A\u0644\u0627\u0645 \u0627\u0644\u0635\u0648\u0631\u0629 \u0628\u0646\u062C\u0627\u062D! \u064A\u0628\u062F\u0648 \u0623\u0646\u0643 \u062A\u0628\u062D\u062B \u0639\u0646 \u0645\u0646\u062A\u062C \u0645\u0634\u0627\u0628\u0647. \u0647\u0644 \u062A\u0648\u062F \u0645\u0639\u0631\u0641\u0629 \u0627\u0644\u0645\u0642\u0627\u0633\u0627\u062A \u0627\u0644\u0645\u062A\u0648\u0641\u0631\u0629 \u0648\u0627\u0644\u0623\u0633\u0639\u0627\u0631\u061F",
             matchedProducts: []
@@ -1770,15 +1772,10 @@ Return JSON ONLY:
       /**
        * RAG Query over Catalog and Store Data
        */
-      async queryCatalog(customerMessage, catalog, conversationHistory = "") {
-        if (!this.ai) {
-          return "\u0623\u0647\u0644\u0627\u064B \u0628\u0643! \u064A\u0645\u0643\u0646\u0643 \u062A\u0635\u0641\u062D \u0627\u0644\u0645\u0646\u062A\u062C\u0627\u062A \u0627\u0644\u0645\u062A\u0648\u0641\u0631\u0629 \u0645\u0646 \u062E\u0644\u0627\u0644 \u0627\u0644\u0643\u062A\u0627\u0644\u0648\u062C \u0627\u0644\u062E\u0627\u0635 \u0628\u0646\u0627.";
-        }
+      async queryCatalog(customerMessage, catalog, conversationHistory = "", geminiCaller) {
         try {
           const catalogSummary = catalog.map((c) => `- ${c.name} (${c.price} \u062C.\u0645): ${c.description}`).join("\n");
-          const response = await this.ai.models.generateContent({
-            model: "gemini-2.0-flash",
-            contents: `\u0623\u0646\u062A "\u0623\u062D\u0645\u062F \u0627\u0644\u0645\u0628\u064A\u0639\u0627\u062A" - \u0627\u0644\u0645\u062F\u064A\u0631 \u0627\u0644\u062A\u0646\u0641\u064A\u0630\u064A \u0644\u0644\u0645\u0628\u064A\u0639\u0627\u062A \u0648\u0627\u0644\u0625\u063A\u0644\u0627\u0642 (Chief Sales Officer) \u0644\u0645\u0646\u0635\u0629 "\u0634\u0627\u062A \u0643\u0648\u0631 (ChatCore Enterprise AI)" \u0644\u0631\u0628\u0637 \u062E\u0637\u0648\u0637 \u0627\u0644\u0648\u0627\u062A\u0633\u0627\u0628 \u0648\u0627\u0644\u062A\u0644\u064A\u062C\u0631\u0627\u0645 \u0648\u0637\u0627\u0642\u0645 \u0627\u0644\u0645\u0648\u0638\u0641\u064A\u0646 \u0627\u0644\u0630\u0643\u0627\u0621 \u0627\u0644\u0627\u0635\u0637\u0646\u0627\u0639\u064A \u0641\u064A \u0645\u0635\u0631 \u0648\u0627\u0644\u0648\u0637\u0646 \u0627\u0644\u0639\u0631\u0628\u064A.
+          const promptText = `\u0623\u0646\u062A "\u0623\u062D\u0645\u062F \u0627\u0644\u0645\u0628\u064A\u0639\u0627\u062A" - \u0627\u0644\u0645\u062F\u064A\u0631 \u0627\u0644\u062A\u0646\u0641\u064A\u0630\u064A \u0644\u0644\u0645\u0628\u064A\u0639\u0627\u062A \u0648\u0627\u0644\u0625\u063A\u0644\u0627\u0642 (Chief Sales Officer) \u0644\u0645\u0646\u0635\u0629 "\u0634\u0627\u062A \u0643\u0648\u0631 (ChatCore Enterprise AI)" \u0644\u0631\u0628\u0637 \u062E\u0637\u0648\u0637 \u0627\u0644\u0648\u0627\u062A\u0633\u0627\u0628 \u0648\u0627\u0644\u062A\u0644\u064A\u062C\u0631\u0627\u0645 \u0648\u0637\u0627\u0642\u0645 \u0627\u0644\u0645\u0648\u0638\u0641\u064A\u0646 \u0627\u0644\u0630\u0643\u0627\u0621 \u0627\u0644\u0627\u0635\u0637\u0646\u0627\u0639\u064A \u0641\u064A \u0645\u0635\u0631 \u0648\u0627\u0644\u0648\u0637\u0646 \u0627\u0644\u0639\u0631\u0628\u064A.
 \u062A\u062A\u062D\u062F\u062B \u0628\u0627\u0644\u0639\u0627\u0645\u064A\u0629 \u0627\u0644\u0645\u0635\u0631\u064A\u0629 \u0627\u0644\u0631\u0627\u0642\u064A\u0629 \u062C\u062F\u0627\u064B \u0648\u0627\u0644\u0648\u062F\u0648\u062F\u0629 \u0648\u0627\u0644\u0645\u062D\u062A\u0631\u0641\u0629.
 
 \u062E\u062F\u0645\u0627\u062A \u0648\u0628\u0627\u0642\u0627\u062A \u0627\u0634\u062A\u0631\u0627\u0643 \u0645\u0646\u0635\u0629 \u0634\u0627\u062A \u0643\u0648\u0631 (ChatCore SaaS Plans):
@@ -1802,11 +1799,18 @@ ${conversationHistory || "\u0644\u0627 \u064A\u0648\u062C\u062F \u0633\u064A\u06
 
 \u0627\u0644\u0642\u0648\u0627\u0639\u062F \u0627\u0644\u0645\u0637\u0644\u0648\u0628\u0629:
 - \u0627\u0643\u062A\u0628 \u0628\u0623\u0633\u0644\u0648\u0628 \u0645\u0635\u0631\u064A \u062A\u062C\u0627\u0631\u064A \u0631\u0627\u0642\u064D \u0648\u0645\u0645\u062A\u0639 \u0645\u0646\u0627\u0633\u0628 \u0644\u0644\u0648\u0627\u062A\u0633\u0627\u0628 \u0645\u0639 \u0631\u0645\u0648\u0632 \u062A\u0639\u0628\u064A\u0631\u064A\u0629 \u26A1.
-- \u0642\u0645 \u0628\u062A\u0623\u0643\u064A\u062F \u0627\u0644\u062E\u0637\u0648\u0629 \u0627\u0644\u062A\u0627\u0644\u064A\u0629 \u0644\u0625\u063A\u0644\u0627\u0642 \u0627\u0644\u0628\u064A\u0639\u0629 (Call to Action).`
-          });
-          return response.text || "\u0623\u0647\u0644\u0627\u064B \u0628\u0643! \u0643\u064A\u0641 \u064A\u0645\u0643\u0646\u0646\u064A \u0645\u0633\u0627\u0639\u062F\u062A\u0643 \u0627\u0644\u064A\u0648\u0645 \u0641\u064A \u062A\u0635\u0641\u062D \u0645\u0646\u062A\u062C\u0627\u062A\u0646\u0627\u061F";
+- \u0642\u0645 \u0628\u062A\u0623\u0643\u064A\u062F \u0627\u0644\u062E\u0637\u0648\u0629 \u0627\u0644\u062A\u0627\u0644\u064A\u0629 \u0644\u0625\u063A\u0644\u0627\u0642 \u0627\u0644\u0628\u064A\u0639\u0629 (Call to Action).`;
+          let responseText = "";
+          if (geminiCaller) {
+            const res = await geminiCaller({ model: "gemini-2.0-flash", contents: promptText });
+            responseText = res?.text || "";
+          } else if (this.ai) {
+            const res = await this.ai.models.generateContent({ model: "gemini-2.0-flash", contents: promptText });
+            responseText = res.text || "";
+          }
+          return responseText || "\u0623\u0647\u0644\u0627\u064B \u0628\u0643! \u0643\u064A\u0641 \u064A\u0645\u0643\u0646\u0646\u064A \u0645\u0633\u0627\u0639\u062F\u062A\u0643 \u0627\u0644\u064A\u0648\u0645 \u0641\u064A \u062A\u0635\u0641\u062D \u0645\u0646\u062A\u062C\u0627\u062A\u0646\u0627\u061F";
         } catch (err) {
-          console.error("[RagAgent Query Error]", err);
+          console.warn("[RagAgent Query Warning]", err);
           return "\u0623\u0647\u0644\u0627\u064B \u0628\u0643! \u0646\u062D\u0646 \u0645\u062A\u0648\u0627\u062C\u062F\u0648\u0646 \u0644\u0645\u0633\u0627\u0639\u062F\u062A\u0643. \u062A\u0641\u0636\u0644 \u0628\u0627\u0644\u0633\u0624\u0627\u0644 \u0639\u0646 \u0623\u064A \u0645\u0646\u062A\u062C.";
         }
       }
@@ -9108,16 +9112,13 @@ Conversation History (Last 20 messages for context):
 ${formattedHistory || "(No previous messages)"}
 
 Formulate your exceptionally smart and professional response now:`;
-        let modelName = device.aiModel || "gemini-3.5-flash";
-        if (modelName === "gemini-2.5-flash" || modelName.startsWith("gemini-2.0") || modelName.startsWith("gemini-1.5")) {
-          modelName = "gemini-3.5-flash";
-        }
-        if (modelName === "gemini-3.5-pro") {
-          modelName = "gemini-3.1-pro-preview";
+        let modelName = device.aiModel || "gemini-2.0-flash";
+        if (!modelName || modelName.includes("3.5") || modelName.includes("1.5")) {
+          modelName = "gemini-2.0-flash";
         }
         try {
           console.log(`[Multi-Agent Router] Classifying intent for message: "${userMessageText.substring(0, 50)} "...`);
-          const routeResult = await routerAgent2.classifyIntent(userMessageText, !!messageContent.imageMessage, !!messageContent.audioMessage);
+          const routeResult = await routerAgent2.classifyIntent(userMessageText, !!messageContent.imageMessage, !!messageContent.audioMessage, callGeminiWithRetry);
           console.log(`[Multi-Agent Router] Decision: Intent=${routeResult.intent}, Suggested Agent=${routeResult.suggestedAgent}`);
           saveLead({
             id: `lead_${contactPhone}`,
@@ -9130,13 +9131,13 @@ Formulate your exceptionally smart and professional response now:`;
           });
           if (messageContent.imageMessage && contentsPayload?.parts?.[0]?.inlineData?.data) {
             console.log(`[Multi-Agent] Routing image to RagAgent (Computer Vision)...`);
-            const visionRes = await ragAgent2.analyzeProductImage(contentsPayload.parts[0].inlineData.data, contentsPayload.parts[0].inlineData.mimeType, readDb().catalog || []);
+            const visionRes = await ragAgent2.analyzeProductImage(contentsPayload.parts[0].inlineData.data, contentsPayload.parts[0].inlineData.mimeType, readDb().catalog || [], callGeminiWithRetry);
             if (visionRes.reply) {
               responseText = visionRes.reply;
             }
           } else if (routeResult.suggestedAgent === "rag" || routeResult.intent === "catalog_inquiry") {
             console.log(`[Multi-Agent] Querying RagAgent (RAG Catalog Sync)...`);
-            const ragReply = await ragAgent2.queryCatalog(userMessageText, readDb().catalog || [], formattedHistory);
+            const ragReply = await ragAgent2.queryCatalog(userMessageText, readDb().catalog || [], formattedHistory, callGeminiWithRetry);
             if (ragReply) {
               responseText = ragReply;
             }
