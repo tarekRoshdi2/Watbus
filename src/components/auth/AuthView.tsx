@@ -310,25 +310,6 @@ export default function AuthView({ onLoginSuccess, onBackToLanding, initialMode 
                       onChange={(e) => setPhone(e.target.value)}
                       className="w-full bg-zinc-50 dark:bg-zinc-950 text-zinc-800 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-800 rounded-2xl px-4 py-3 text-xs outline-none focus:border-[#00a884] focus:bg-white dark:focus:bg-zinc-950 transition-all text-right"
                     />
-
-                    {(phone.includes('1115822923') || username.toLowerCase().includes('roshdi') || username.toLowerCase().includes('tarek')) && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          onLoginSuccess({
-                            id: 'admin_tarek',
-                            username: 'م. طارق رشدي',
-                            role: 'admin',
-                            statusText: 'المالك والمؤسس M. Tarek Roshdi',
-                            avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80'
-                          } as any);
-                        }}
-                        className="w-full mt-3.5 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-bold rounded-xl text-xs transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer"
-                      >
-                        <Zap className="w-4 h-4 text-amber-300 fill-amber-300" />
-                        ⚡ دخول فوري أوتوماتيكي بدون OTP (حساب المالك م. طارق رشدي)
-                      </button>
-                    )}
                   </div>
                   <div>
                     <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-wider mb-2">
@@ -430,8 +411,18 @@ export default function AuthView({ onLoginSuccess, onBackToLanding, initialMode 
                     onChange={(e) => setOtp(e.target.value)}
                     className="w-full bg-zinc-50 dark:bg-zinc-950 text-zinc-800 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-800 rounded-2xl px-4 py-3 text-xs outline-none focus:border-[#00a884] focus:bg-white dark:focus:bg-zinc-950 transition-all text-center tracking-widest text-lg font-mono font-bold"
                   />
+
+                  <a
+                    href={`https://wa.me/201115822923?text=${encodeURIComponent(`طلب كود التحقق OTP لتفعيل حساب ChatCore برقم ${phone || 'المسجل'}`)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full mt-3 py-3 bg-[#00a884] hover:bg-[#008f70] text-white font-bold rounded-2xl text-xs transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer text-center"
+                  >
+                    <span>💬 طلب كود الـ OTP مباشرة عبر الواتساب | Request OTP via WhatsApp</span>
+                  </a>
+
                   {otpFallbackCode && (
-                    <p className="text-[11px] text-emerald-600 dark:text-emerald-400 mt-2 font-bold text-center bg-emerald-50 dark:bg-emerald-950/40 p-2 rounded-xl border border-emerald-200 dark:border-emerald-800/50">
+                    <p className="text-[11px] text-emerald-600 dark:text-emerald-400 mt-2.5 font-bold text-center bg-emerald-50 dark:bg-emerald-950/40 p-2.5 rounded-xl border border-emerald-200 dark:border-emerald-800/50">
                       ✨ تم توليد كود التحقق وتعبئته أوتوماتيكياً: <span className="font-mono underline">{otpFallbackCode}</span>
                     </p>
                   )}
