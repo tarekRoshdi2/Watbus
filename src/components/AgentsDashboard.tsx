@@ -217,6 +217,8 @@ export default function AgentsDashboard({ lang, initialTab = 'roster' }: { lang:
     { id: 'TCK-6612', customer: 'خالد عبد الفتاح', phone: '+201555443322', category: 'technical', priority: 'low', status: 'escalated', time: '09:45 AM', issue: 'استفسار عن طريقة تصدير جهات الاتصال إلى ملف Excel', solution: 'تم تحويل المحادثة لممثل خدمة العملاء المباشر مع إرسال فيديو توضيحي.', assignedTo: 'مشرف بشرى' }
   ]);
   const [selectedTicketModal, setSelectedTicketModal] = useState<any>(null);
+  const [selectedCustomerModal, setSelectedCustomerModal] = useState<any>(null);
+  const [customerNotesEdit, setCustomerNotesEdit] = useState('');
 
   const handleCreateTicketSubmit = async () => {
     if (!newTicketCustomer || !newTicketIssue) return;
@@ -1610,13 +1612,23 @@ export default function AgentsDashboard({ lang, initialTab = 'roster' }: { lang:
                     </p>
                   </div>
 
-                  {/* Filter Pills */}
-                  <div className="flex items-center gap-1.5 bg-zinc-100 dark:bg-zinc-800 p-1 rounded-lg text-xs font-bold">
-                    <button onClick={() => setTicketFilter('all')} className={`px-3 py-1.5 rounded-md cursor-pointer transition-all ${ticketFilter === 'all' ? 'bg-white dark:bg-zinc-900 text-emerald-600 shadow-xs' : 'text-zinc-500'}`}>الجميع ({ticketsList.length})</button>
-                    <button onClick={() => setTicketFilter('open')} className={`px-3 py-1.5 rounded-md cursor-pointer transition-all ${ticketFilter === 'open' ? 'bg-white dark:bg-zinc-900 text-amber-600 shadow-xs' : 'text-zinc-500'}`}>مفتوحة</button>
-                    <button onClick={() => setTicketFilter('in_progress')} className={`px-3 py-1.5 rounded-md cursor-pointer transition-all ${ticketFilter === 'in_progress' ? 'bg-white dark:bg-zinc-900 text-sky-600 shadow-xs' : 'text-zinc-500'}`}>جارِ المتابعة</button>
-                    <button onClick={() => setTicketFilter('resolved')} className={`px-3 py-1.5 rounded-md cursor-pointer transition-all ${ticketFilter === 'resolved' ? 'bg-white dark:bg-zinc-900 text-emerald-600 shadow-xs' : 'text-zinc-500'}`}>تم الحل</button>
-                    <button onClick={() => setTicketFilter('escalated')} className={`px-3 py-1.5 rounded-md cursor-pointer transition-all ${ticketFilter === 'escalated' ? 'bg-white dark:bg-zinc-900 text-purple-600 shadow-xs' : 'text-zinc-500'}`}>محولة للبشر</button>
+                  {/* Action Button & Filter Pills */}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      onClick={() => setIsCreateTicketModalOpen(true)}
+                      className="px-3.5 py-2 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white font-bold rounded-lg text-xs flex items-center gap-1.5 shadow-xs cursor-pointer transition-all"
+                    >
+                      <Plus className="w-4 h-4" />
+                      {isAr ? 'إنشاء تذكرة دعم جديدة' : 'Create New Ticket'}
+                    </button>
+
+                    <div className="flex items-center gap-1.5 bg-zinc-100 dark:bg-zinc-800 p-1 rounded-lg text-xs font-bold">
+                      <button onClick={() => setTicketFilter('all')} className={`px-3 py-1.5 rounded-md cursor-pointer transition-all ${ticketFilter === 'all' ? 'bg-white dark:bg-zinc-900 text-emerald-600 shadow-xs' : 'text-zinc-500'}`}>الجميع ({ticketsList.length})</button>
+                      <button onClick={() => setTicketFilter('open')} className={`px-3 py-1.5 rounded-md cursor-pointer transition-all ${ticketFilter === 'open' ? 'bg-white dark:bg-zinc-900 text-amber-600 shadow-xs' : 'text-zinc-500'}`}>مفتوحة</button>
+                      <button onClick={() => setTicketFilter('in_progress')} className={`px-3 py-1.5 rounded-md cursor-pointer transition-all ${ticketFilter === 'in_progress' ? 'bg-white dark:bg-zinc-900 text-sky-600 shadow-xs' : 'text-zinc-500'}`}>جارِ المتابعة</button>
+                      <button onClick={() => setTicketFilter('resolved')} className={`px-3 py-1.5 rounded-md cursor-pointer transition-all ${ticketFilter === 'resolved' ? 'bg-white dark:bg-zinc-900 text-emerald-600 shadow-xs' : 'text-zinc-500'}`}>تم الحل</button>
+                      <button onClick={() => setTicketFilter('escalated')} className={`px-3 py-1.5 rounded-md cursor-pointer transition-all ${ticketFilter === 'escalated' ? 'bg-white dark:bg-zinc-900 text-purple-600 shadow-xs' : 'text-zinc-500'}`}>محولة للبشر</button>
+                    </div>
                   </div>
                 </div>
 
@@ -1723,11 +1735,16 @@ export default function AgentsDashboard({ lang, initialTab = 'roster' }: { lang:
                         <th className="p-3">عدد المحادثات</th>
                         <th className="p-3">حالة العميل الحالية</th>
                         <th className="p-3">الموظف المسؤول عنه</th>
+                        <th className="p-3 text-center">الملف والبيانات</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
                       {crmCustomers.map((c, idx) => (
-                        <tr key={idx} className="hover:bg-zinc-50/60 dark:hover:bg-zinc-800/40">
+                        <tr 
+                          key={idx} 
+                          onClick={() => { setSelectedCustomerModal(c); setCustomerNotesEdit((c as any).notes || ''); }}
+                          className="hover:bg-indigo-50/50 dark:hover:bg-indigo-950/30 cursor-pointer transition-colors"
+                        >
                           <td className="p-3 font-mono font-bold text-indigo-600 dark:text-indigo-400">{c.id}</td>
                           <td className="p-3 font-bold text-zinc-900 dark:text-white">
                             {c.name}
@@ -1742,6 +1759,14 @@ export default function AgentsDashboard({ lang, initialTab = 'roster' }: { lang:
                             </span>
                           </td>
                           <td className="p-3 font-semibold">{c.agent}</td>
+                          <td className="p-3 text-center">
+                            <button
+                              onClick={(e) => { e.stopPropagation(); setSelectedCustomerModal(c); setCustomerNotesEdit((c as any).notes || ''); }}
+                              className="px-2.5 py-1 bg-indigo-50 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 rounded font-bold text-[11px] transition-colors cursor-pointer border border-indigo-200 dark:border-indigo-800"
+                            >
+                              عرض البيانات التفصيلية 🔍
+                            </button>
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -3677,12 +3702,245 @@ export default function AgentsDashboard({ lang, initialTab = 'roster' }: { lang:
                 </button>
                 <button
                   onClick={() => handleUpdateTicket(selectedTicketModal.id, { solution: selectedTicketModal.solution })}
-                  className="px-5 py-2 bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-lg text-xs transition-colors shadow-sm cursor-pointer"
+                  className="px-5 py-2 bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-lg text-xs transition-colors shadow-xs cursor-pointer"
                 >
                   حفظ الحل والتحديث
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 1: CREATE SUPPORT TICKET MODAL */}
+      {isCreateTicketModalOpen && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
+          <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl max-w-lg w-full p-6 space-y-5 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-emerald-500/10 text-emerald-500 flex items-center justify-center">
+                  <Ticket className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-base text-zinc-900 dark:text-white">
+                    {isAr ? 'إنشاء تذكرة دعم فني جديدة (#TCK)' : 'Create Support Ticket'}
+                  </h3>
+                  <p className="text-xs text-zinc-500">
+                    {isAr ? 'إدراج بلاغ أو مشكلة وتسجيلها سحابياً في قاعدة بيانات Supabase' : 'Log a new ticket synced to Supabase'}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsCreateTicketModalOpen(false)}
+                className="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 text-lg font-bold cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-4 text-xs rtl:text-right ltr:text-left">
+              <div>
+                <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1">اسم العميل:</label>
+                <input
+                  type="text"
+                  value={newTicketCustomer}
+                  onChange={e => setNewTicketCustomer(e.target.value)}
+                  placeholder="مثال: م. أحمد الشريف أو شركة النور..."
+                  className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-white rounded-lg p-2.5 outline-none focus:border-emerald-500 font-bold"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1">رقم هاتف العميل:</label>
+                  <input
+                    type="text"
+                    value={newTicketPhone}
+                    onChange={e => setNewTicketPhone(e.target.value)}
+                    placeholder="+201115822923"
+                    className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-white rounded-lg p-2.5 outline-none font-mono"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1">درجة الأهمية (Priority):</label>
+                  <select
+                    value={newTicketPriority}
+                    onChange={e => setNewTicketPriority(e.target.value)}
+                    className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-white rounded-lg p-2.5 outline-none font-bold"
+                  >
+                    <option value="urgent">🔴 عاجل جداً (Urgent)</option>
+                    <option value="high">🟠 مرتفع (High)</option>
+                    <option value="medium">🔵 متوسط (Medium)</option>
+                    <option value="low">⚪ منخفض (Low)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1">المسؤول عن الحل والرصد:</label>
+                <select
+                  value={newTicketAssigned}
+                  onChange={e => setNewTicketAssigned(e.target.value)}
+                  className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-white rounded-lg p-2.5 outline-none font-bold"
+                >
+                  <option value="مهندس عمر الدعم">🛠️ مهندس عمر (Support Agent)</option>
+                  <option value="الأستاذ صلاح الحسابات">🧾 الأستاذ صلاح (Invoice Chief)</option>
+                  <option value="أحمد المبيعات">💼 أحمد المبيعات (Sales Specialist)</option>
+                  <option value="مشرف بشرى">👤 مشرف بشرى (Human Escalation)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1">تفاصيل وموضوع المشكلة:</label>
+                <textarea
+                  rows={3}
+                  value={newTicketIssue}
+                  onChange={e => setNewTicketIssue(e.target.value)}
+                  placeholder="اشرح المشكلة التقنية أو البلاغ بالتفصيل..."
+                  className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-white rounded-xl p-3 outline-none focus:border-emerald-500 font-sans"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-zinc-100 dark:border-zinc-800">
+              <button
+                onClick={() => setIsCreateTicketModalOpen(false)}
+                className="px-4 py-2 bg-zinc-200 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 rounded-lg text-xs font-bold cursor-pointer"
+              >
+                إلغاء
+              </button>
+              <button
+                onClick={handleCreateTicketSubmit}
+                className="px-5 py-2 bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-lg text-xs transition-colors shadow-xs flex items-center gap-1.5 cursor-pointer"
+              >
+                <Plus className="w-4 h-4" />
+                حفظ وتفعيل التذكرة 🚀
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 2: CUSTOMER DEEP PROFILE MODAL (Enterprise CRM) */}
+      {selectedCustomerModal && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
+          <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl max-w-2xl w-full p-6 space-y-6 shadow-2xl max-h-[90vh] overflow-y-auto rtl:text-right ltr:text-left">
+            
+            {/* Profile Header Banner */}
+            <div className="flex items-start justify-between border-b border-zinc-100 dark:border-zinc-800 pb-4">
+              <div className="flex items-center gap-4">
+                <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 text-white flex items-center justify-center font-bold text-2xl shadow-md">
+                  {selectedCustomerModal.name ? selectedCustomerModal.name.charAt(0) : '👤'}
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h2 className="font-extrabold text-lg text-zinc-900 dark:text-white">
+                      {selectedCustomerModal.name}
+                    </h2>
+                    <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-indigo-50 text-indigo-600 dark:bg-indigo-950 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800">
+                      {selectedCustomerModal.id}
+                    </span>
+                  </div>
+                  <p className="text-xs font-mono text-zinc-500 dark:text-zinc-400 mt-0.5">
+                    📱 {selectedCustomerModal.phone}
+                  </p>
+                </div>
+              </div>
+
+              <button
+                onClick={() => setSelectedCustomerModal(null)}
+                className="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 text-xl font-bold cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* KPI Cards Bar */}
+            <div className="grid grid-cols-3 gap-3">
+              <div className="bg-emerald-50/50 dark:bg-emerald-950/30 p-3 rounded-xl border border-emerald-200/50 dark:border-emerald-800/40 text-center">
+                <span className="text-[10px] text-emerald-700 dark:text-emerald-400 block font-bold mb-0.5">القيمة التراكمية (LTV)</span>
+                <span className="text-lg font-black text-emerald-600 dark:text-emerald-400">{selectedCustomerModal.ltv}</span>
+              </div>
+
+              <div className="bg-purple-50/50 dark:bg-purple-950/30 p-3 rounded-xl border border-purple-200/50 dark:border-purple-800/40 text-center">
+                <span className="text-[10px] text-purple-700 dark:text-purple-400 block font-bold mb-0.5">شريحة العميل</span>
+                <span className="text-sm font-bold text-purple-600 dark:text-purple-400">{selectedCustomerModal.segment}</span>
+              </div>
+
+              <div className="bg-sky-50/50 dark:bg-sky-950/30 p-3 rounded-xl border border-sky-200/50 dark:border-sky-800/40 text-center">
+                <span className="text-[10px] text-sky-700 dark:text-sky-400 block font-bold mb-0.5">عدد المحادثات</span>
+                <span className="text-lg font-extrabold text-sky-600 dark:text-sky-400">{selectedCustomerModal.chats || 1}</span>
+              </div>
+            </div>
+
+            {/* Detailed Meta Fields */}
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4 text-xs">
+                <div className="bg-zinc-50 dark:bg-zinc-800/50 p-3 rounded-xl border border-zinc-200 dark:border-zinc-800">
+                  <span className="text-zinc-400 block font-bold mb-1">الموظف المسؤول المباشر:</span>
+                  <span className="font-bold text-zinc-900 dark:text-white flex items-center gap-1.5">
+                    🤖 {selectedCustomerModal.agent || 'أحمد المبيعات'}
+                  </span>
+                </div>
+
+                <div className="bg-zinc-50 dark:bg-zinc-800/50 p-3 rounded-xl border border-zinc-200 dark:border-zinc-800">
+                  <span className="text-zinc-400 block font-bold mb-1">حالة العميل الحالية:</span>
+                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-400 inline-block">
+                    {selectedCustomerModal.status || 'Active Buyer'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Notes & Training Instructions for this Customer */}
+              <div>
+                <label className="block font-bold text-xs text-zinc-700 dark:text-zinc-300 mb-1.5 flex items-center gap-1.5">
+                  📝 ملاحظات مخصصة وسياق خاص بالعميل (CRM Notes):
+                </label>
+                <textarea
+                  rows={3}
+                  value={customerNotesEdit}
+                  onChange={e => setCustomerNotesEdit(e.target.value)}
+                  placeholder="اكتب أي ملاحظات خاصة بالعميل (مثال: يفضل الشراء بالتقسيط، ميزانية 5000 ج.م، مهتم بباقة الأعمال)..."
+                  className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-white rounded-xl p-3 text-xs outline-none focus:border-indigo-500 font-sans"
+                />
+              </div>
+            </div>
+
+            {/* Quick Action Footer */}
+            <div className="flex items-center justify-between pt-4 border-t border-zinc-100 dark:border-zinc-800 gap-2">
+              <button
+                onClick={() => {
+                  const phone = selectedCustomerModal.phone.replace(/[^0-9]/g, '');
+                  window.location.href = `/crm?chat=${phone}`;
+                }}
+                className="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-xl text-xs transition-colors shadow-xs flex items-center gap-1.5 cursor-pointer"
+              >
+                💬 فتح المحادثة المباشرة
+              </button>
+
+              <div className="flex gap-2">
+                <button
+                  onClick={() => {
+                    setNewTicketCustomer(selectedCustomerModal.name);
+                    setNewTicketPhone(selectedCustomerModal.phone);
+                    setIsCreateTicketModalOpen(true);
+                    setSelectedCustomerModal(null);
+                  }}
+                  className="px-3.5 py-2 bg-amber-500/10 text-amber-600 dark:text-amber-400 hover:bg-amber-500/20 font-bold rounded-xl text-xs transition-colors cursor-pointer"
+                >
+                  🎫 إنشاء تذكرة دعم
+                </button>
+
+                <button
+                  onClick={() => setSelectedCustomerModal(null)}
+                  className="px-4 py-2 bg-zinc-200 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 font-bold rounded-xl text-xs cursor-pointer"
+                >
+                  إغلاق
+                </button>
+              </div>
+            </div>
+
           </div>
         </div>
       )}

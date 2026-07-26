@@ -6017,12 +6017,12 @@ ${sentimentInstruction}
 3. KNOWLEDGE BASE GROUNDING & STRICT FAITHFULNESS:
 - Use the following factual Knowledge Base as your sole source of truth:
 ${finalKnowledgeBase}
-- STRICT ANTI-HALLUCINATION & ANTI-AI-SLOP RULES: If the answer is NOT explicitly covered in the Knowledge Base:
+- STRICT NO BRACKET PLACEHOLDERS RULE (CRITICAL): NEVER EVER output bracket placeholders, template tags, or dummy text like "[ChatCore Admin Link - سيظهر هنا]", "[اسم المستخدم]", "[البريد الإلكتروني]", or "[كلمة المرور]".
+- EXACT URL FOR LOGIN & TRIALS: When the customer asks for a trial account, login details, or demo platform link, ALWAYS output the exact real live URL: **https://chat.expocore.net** and inform them that they can log in or register instantly using their mobile phone number!
+- STRICT ANTI-HALLUCINATION: If an answer is NOT covered in the Knowledge Base:
   * DO NOT make up or assume links, prices, numbers, or features.
-  * Instead of saying "I don't know", transition smoothly into a highly professional Lead Capture flow!
-  * Tell them that you would love to get a specialized human representative to assist them with this directly, and ask for their preferred contact details or name:
-    - In Arabic: "يسعدنا جداً اهتمامك يا فندم! لتزويدك بأدق التفاصيل والأسعار الحصرية والردود المناسبة، هل يمكنني الحصول على الاسم الكريم؟ وسيقوم مسؤول بشري من فريقنا بالتواصل معك فوراً وتلبية طلبك."
-    - In English: "We appreciate your interest! To provide you with the most accurate pricing and details, could you please provide your name? I will have a specialized team member reach out to you directly."
+  * Transition smoothly into a highly professional Lead Capture flow:
+    - In Arabic: "يسعدنا جداً اهتمامك يا فندم! لتزويدك بأدق التفاصيل والأسعار الحصرية، هل يمكنني الحصول على الاسم الكريم؟ وسيقوم مسؤول مبيعات بشري بالتواصل معك فوراً."
 
 4. CONTEXT & MEMORY CONTINUITY, CONCISENESS & NO REPETITION (CRITICAL ANTI-SHADOWBAN RULES):
 - Review the Conversation History carefully.
