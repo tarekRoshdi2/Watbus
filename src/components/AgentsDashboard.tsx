@@ -1013,6 +1013,18 @@ export default function AgentsDashboard({ lang, initialTab = 'roster' }: { lang:
         </button>
 
         <button
+          onClick={() => setMainHubTab('omni_flow')}
+          className={`px-3.5 py-2 rounded-lg flex items-center gap-2 transition-all cursor-pointer whitespace-nowrap font-bold ${
+            mainHubTab === 'omni_flow' 
+              ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-md' 
+              : 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800/80 hover:bg-indigo-100'
+          }`}
+        >
+          <Network className="w-4 h-4 text-purple-400" />
+          {isAr ? '🌐 مخطط التدفق البصري ورحلة العميل (Omni Flow Architecture)' : 'Omni Flow Architecture'}
+        </button>
+
+        <button
           onClick={() => setMainHubTab('dev_agent')}
           className={`px-3.5 py-2 rounded-lg flex items-center gap-2 transition-all cursor-pointer relative whitespace-nowrap ${
             mainHubTab === 'dev_agent' 
