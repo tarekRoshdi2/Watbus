@@ -39,16 +39,12 @@ export class VoiceAgent {
   /**
    * Processes incoming voice message (STT using Gemini Audio capabilities with model fallback chain)
    */
-  async processVoiceMessage(base64Audio: string, mimeType: string = 'audio/ogg', externalAiClient?: GoogleGenAI): Promise<VoiceProcessResult> {
-    const client = externalAiClient || this.getClient();
-    if (!client) {
-      console.warn('[VoiceAgent] No Gemini API key configured for audio transcription.');
-      return {
-        transcription: '[رسالة صوتية لم يُتمكن من فك تشفيرها]',
-        responseReply: 'عذراً، لم نتمكن من معالجة الرسالة الصوتية في الوقت الحالي. هل يمكنك كتابة طلبك؟'
-      };
-    }
-
+  async processVoiceMessage(
+    base64Audio: string, 
+    mimeType: string = 'audio/ogg', 
+    externalAiClient?: GoogleGenAI,
+    geminiCaller?: (params: { model: string; contents: any; config?: any }) => Promise<any>
+  ): Promise<VoiceProcessResult> {
     let cleanBase64 = base64Audio;
     if (base64Audio.includes(',')) {
       cleanBase64 = base64Audio.split(',')[1];
@@ -59,7 +55,55 @@ export class VoiceAgent {
       cleanMime = 'audio/ogg';
     }
 
-    const modelsToTry = ['gemini-2.0-flash', 'gemini-2.0-flash-lite', 'gemini-1.5-flash'];
+    const promptContent = [
+      {
+        parts: [
+          {
+            inlineData: {
+              data: cleanBase64,
+              mimeType: cleanMime
+            }
+          },
+          {
+            text: `أنت خبير تفريغ ونطق الرسائل الصوتية بالعامية المصرية والعربية.
+استمع إلى التسجيل الصوتي جيداً واكتب النص المنطوق بالكامل بدقة عالية وبدون تلخيص أو تعليقات إضافية.`
+          }
+        ]
+      }
+    ];
+
+    // If geminiCaller helper is provided (with Multi-Key rotation & retry), use it first!
+    if (geminiCaller) {
+      try {
+        console.log(`[VoiceAgent] Transcribing voice note via geminiCaller (with Multi-Key Rotation)...`);
+        const response = await geminiCaller({
+          model: 'gemini-2.0-flash',
+          contents: promptContent
+        });
+        const rawOutput = response?.text || '';
+        let transcriptionText = rawOutput.trim().replace(/^"|"$/g, '');
+        if (transcriptionText && transcriptionText.length > 1 && !transcriptionText.includes('Error')) {
+          console.log(`[VoiceAgent geminiCaller Success] Transcribed audio: "${transcriptionText}"`);
+          return {
+            transcription: transcriptionText,
+            responseReply: `فهمت من رسالتك الصوتية: "${transcriptionText}".`
+          };
+        }
+      } catch (gErr: any) {
+        console.warn('[VoiceAgent geminiCaller Warning]', gErr?.message || gErr);
+      }
+    }
+
+    const client = externalAiClient || this.getClient();
+    if (!client) {
+      console.warn('[VoiceAgent] No Gemini API key configured for audio transcription.');
+      return {
+        transcription: '[رسالة صوتية لم يُتمكن من فك تشفيرها]',
+        responseReply: 'عذراً، لم نتمكن من معالجة الرسالة الصوتية في الوقت الحالي. هل يمكنك كتابة طلبك؟'
+      };
+    }
+
+    const modelsToTry = ['gemini-2.0-flash', 'gemini-2.0-flash-lite', 'gemini-2.0-flash-exp'];
 
     // Try model fallback chain
     for (const model of modelsToTry) {
@@ -67,22 +111,7 @@ export class VoiceAgent {
         console.log(`[VoiceAgent] Transcribing voice note using model "${model}" with mime "${cleanMime}"...`);
         const response = await client.models.generateContent({
           model,
-          contents: [
-            {
-              parts: [
-                {
-                  inlineData: {
-                    data: cleanBase64,
-                    mimeType: cleanMime
-                  }
-                },
-                {
-                  text: `أنت خبير تفريغ ونطق الرسائل الصوتية بالعامية المصرية والعربية.
-استمع إلى التسجيل الصوتي جيداً واكتب النص المنطوق بالكامل بدقة عالية وبدون تلخيص أو تعليقات إضافية.`
-                }
-              ]
-            }
-          ]
+          contents: promptContent
         });
 
         const rawOutput = response.text || '';
